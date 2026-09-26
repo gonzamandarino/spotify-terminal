@@ -167,7 +167,7 @@ pero sirven para comparar consumo y enfoques.
       Studio; verificar `cargo --version`
 - [x] T1 — `cargo init`, `Cargo.toml` con perfil release y crates fijadas,
       `.env.example`, `config.rs` + `error.rs` con tests (AC-7)
-- [ ] T2 — Spike: sesión `librespot` reproduciendo un URI fijo con un token
+- [x] T2 — Spike: sesión `librespot` reproduciendo un URI fijo con un token
       obtenido a mano; resolver el riesgo de client ID y registrarlo en
       `docs/decisiones.md`
 - [ ] T3 — `auth.rs`: login PKCE + callback local + cache atómico + refresh
@@ -211,3 +211,14 @@ pero sirven para comparar consumo y enfoques.
 - **AC-7:** binario corrido desde una carpeta sin `.env` y sin la variable →
   mensaje con instrucciones, `exit=1`. Cubierto también por los tests
   `client_id_ausente_es_error` y `client_id_vacio_o_con_espacios_es_error`.
+- **T2 — spike (2026-09-26), `examples/spike_librespot.rs`:**
+  - Con **nuestro** Client ID: el login OAuth y `Session::connect` funcionan
+    (el AP autentica al usuario), pero al cargar audio `login5` responde
+    `FaultyRequest(INVALID_CREDENTIALS)` → el tema queda `Unavailable`. El
+    riesgo abierto se confirmó.
+  - Con el Client ID de librespot (`65b7…87bd`, mismo redirect
+    `http://127.0.0.1:8898/login`): carga y reproduce (evento `Playing`,
+    salida WASAPI a los auriculares).
+  - Consumo reproduciendo (build debug): working set 25 MB, memoria privada
+    8 MB, CPU 0,33 % promedio en 10 s.
+  - Estrategia de tokens (uno vs. dos Client IDs): ver `docs/decisiones.md`.

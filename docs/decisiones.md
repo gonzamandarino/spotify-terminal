@@ -33,3 +33,12 @@ entradas viejas — se marcan reemplazadas.
 - **Motivo:** costo (tokens/tiempo) sin beneficio suficiente — pedido de vos.
   Se mantienen las reglas de calidad de Rust (`fmt`, `clippy`, sin `unwrap`).
 - **Estado:** Vigente
+
+## 2026-09-26 — La sesión de audio usa el Client ID de librespot
+- **Decisión:** la sesión de `librespot` se autentica con un token emitido
+  para el Client ID de librespot (`65b708073fc0480ea92a077233ca87bd`).
+- **Evidencia:** spike T2 del spec 001 — con nuestro Client ID, `login5`
+  rechaza el token (`INVALID_CREDENTIALS`) y ningún tema carga.
+- **Pendiente:** si la Web API (playlists, likes, búsqueda) usa ese mismo
+  token (un solo login) o el de nuestra app (dos logins la primera vez).
+- **Estado:** Vigente
