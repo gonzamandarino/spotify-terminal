@@ -15,7 +15,7 @@ main ──> ui::cli (parseo de subcomandos)
   │
   └──> spotify::auth ──> librespot-oauth ──> accounts.spotify.com
             │
-            └──> cache de token (%APPDATA%\spotify-terminal	oken.json)
+            └──> cache de token (%APPDATA%\spotify-terminal\token.json)
 
 config  <── usado por todos (constantes, rutas)
 error   <── usado por todos (AppError con mensajes para el usuario)
