@@ -1,7 +1,7 @@
 # 001 - Stack, reproductor de audio y login con Spotify
 
 ## Estado
-`En plan`
+`En implementación`
 
 ## Contexto
 Es la base de todo el proyecto: sin lenguaje elegido, sin forma de emitir
@@ -79,7 +79,7 @@ pero sirven para comparar consumo y enfoques.
       CPU < 2 % promedio. Si para cumplir AC-5 hace falta más RAM, se
       acepta con el valor real y el motivo registrados en
       `docs/decisiones.md` (en ese caso el AC se tilda con esa nota).
-- [ ] **AC-7** — Sin `Client ID` configurado, el cliente sale con código
+- [x] **AC-7** — Sin `Client ID` configurado, el cliente sale con código
       distinto de 0 y un mensaje que indica cómo configurarlo.
 - [ ] **AC-8** — El comando `logout` borra el cache de token; la siguiente
       ejecución vuelve a pedir login.
@@ -161,16 +161,45 @@ pero sirven para comparar consumo y enfoques.
   `auth` lee/escribe el cache de token.
 
 ## Conceptos de Rust
-*(la completa `rust-mentor` cuando vos apruebe el Plan técnico)*
+*(completada por `rust-mentor` tras aprobar el Plan técnico. Todo es
+*nuevo*: es el primer spec. Ordenado según en qué tarea aparece.)*
 
-- 
+Recurso base: [The Rust Book](https://doc.rust-lang.org/book/) (en adelante
+"Book"). Edición 2024.
+
+**Para T1 (config y errores)**
+1. *nuevo* — **Cargo, crates y módulos** (`Cargo.toml`, `mod`, `pub`, `use`,
+   `crate::`). Book cap. 1.3 y 7.
+2. *nuevo* — **Ownership y borrowing**, `String` vs `&str`: la idea central
+   del lenguaje, aparece en toda firma de función. Book cap. 4 y 8.2.
+3. *nuevo* — **Structs, enums y `match`**, `Option<T>`. Book cap. 5 y 6.
+4. *nuevo* — **Manejo de errores**: `Result<T, E>`, el operador `?`, por qué
+   no `unwrap()`, y `thiserror` para definir errores con mensaje. Book
+   cap. 9 + [docs de thiserror](https://docs.rs/thiserror).
+5. *nuevo* — **Traits y `#[derive]`** (`Debug`, `Display`, `PartialEq`).
+   Book cap. 10.2.
+6. *nuevo* — **Tests unitarios** (`#[cfg(test)]`, `#[test]`, `assert_eq!`).
+   Book cap. 11.1.
+
+**Para T2–T5 (librespot, OAuth, Web API)**
+7. *nuevo* — **async/await y `tokio`**: por qué la red y el audio no bloquean
+   el hilo. [Tutorial de Tokio](https://tokio.rs/tokio/tutorial) (hasta
+   "Spawning") + Book cap. 17.
+8. *nuevo* — **Compartir estado entre tareas**: `Arc`, `Clone` barato de
+   `Session`/`Player` de librespot, canales (`mpsc`). Book cap. 16.
+9. *nuevo* — **Serialización con `serde`** (`Serialize`/`Deserialize`) para
+   el cache de token. [serde.rs](https://serde.rs).
+10. *nuevo* — **Closures e iteradores** (aparecen al manejar eventos del
+    reproductor y teclas). Book cap. 13.
+11. *nuevo, puede aparecer* — **Lifetimes** (`'a`) si alguna función
+    devuelve referencias. Book cap. 10.3.
 
 ## Tareas
 *(desglose del plan, se van tildando)*
 
-- [ ] T0 — Instalar `rustup` (toolchain stable MSVC) y Build Tools de Visual
+- [x] T0 — Instalar `rustup` (toolchain stable MSVC) y Build Tools de Visual
       Studio; verificar `cargo --version` (guiado por `rust-mentor`)
-- [ ] T1 — `cargo init`, `Cargo.toml` con perfil release y crates fijadas,
+- [x] T1 — `cargo init`, `Cargo.toml` con perfil release y crates fijadas,
       `.env.example`, `config.rs` + `error.rs` con tests (AC-7)
 - [ ] T2 — Spike: sesión `librespot` reproduciendo un URI fijo con un token
       obtenido a mano; resolver el riesgo de client ID y registrarlo en
@@ -204,3 +233,16 @@ pero sirven para comparar consumo y enfoques.
 
 ## Notas de verificación
 *(al cerrar: qué se probó y resultado — por AC cuando no sea obvio)*
+
+- **T0** (2026-09-26): rustc/cargo 1.98.1, toolchain
+  `stable-x86_64-pc-windows-msvc`; crate de prueba compila y enlaza con MSVC.
+- **T1 — desvíos del plan (menores):** edición 2024 en lugar de 2021 (es la
+  actual y la que usa el Book); las crates se agregan en la tarea que las
+  usa en vez de todas en T1, para no compilar dependencias sin uso. Versiones
+  relevadas en crates.io el 2026-09-26: `librespot-*` 0.8.0 (TLS
+  `native-tls` → SChannel en Windows, sin OpenSSL), `tokio` 1.53.1,
+  `crossterm` 0.29.0, `serde` 1.0.229, `reqwest` 0.13.5. `.env` usaba la
+  clave `CLIENT_ID`; se renombró a `SPOTIFY_CLIENT_ID` (valor intacto).
+- **AC-7:** binario corrido desde una carpeta sin `.env` y sin la variable →
+  mensaje con instrucciones, `exit=1`. Cubierto también por los tests
+  `client_id_ausente_es_error` y `client_id_vacio_o_con_espacios_es_error`.

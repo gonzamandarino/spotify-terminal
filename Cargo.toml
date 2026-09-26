@@ -1,0 +1,19 @@
+[package]
+name = "spotify-terminal"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Cliente de Spotify liviano para la terminal"
+publish = false
+
+# Las crates se agregan en la tarea que las empieza a usar (ver spec 001).
+[dependencies]
+directories = "6.0.0"
+dotenvy = "0.15.7"
+thiserror = "2.0.21"
+
+# Binario chico y con menos memoria: optimiza por tamaño y enlaza todo junto.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
