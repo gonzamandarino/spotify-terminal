@@ -1,0 +1,70 @@
+name: Notificar PR por Telegram
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notificar:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Avisar por Telegram
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          PR_FILES: ${{ github.event.pull_request.changed_files }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BOT_TOKEN}" ] || [ -z "${CHAT_ID}" ]; then
+            echo "::warning::Faltan los secrets TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID; no se envia el aviso."
+            exit 0
+          fi
+          echo "::add-mask::${BOT_TOKEN}"
+
+          # Los datos del PR son texto no confiable: se escapan para HTML de Telegram.
+          esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+          if [ "${EVENT}" = "workflow_dispatch" ]; then
+            text="Prueba de notificacion de PRs en $(esc "${REPO}")"
+            url="https://github.com/${REPO}/pulls"
+            label="Ver PRs"
+          else
+            text=$(printf '<b>PR para revisar</b> en %s\n\n%s\n\nAutor: %s\nRamas: %s → %s\nArchivos: %s' \
+              "$(esc "${REPO}")" "$(esc "${PR_TITLE}")" "$(esc "${PR_AUTHOR}")" \
+              "$(esc "${PR_HEAD}")" "$(esc "${PR_BASE}")" "$(esc "${PR_FILES}")")
+            url="${PR_URL}/files"
+            label="Revisar y aprobar"
+          fi
+
+          payload=$(jq -n \
+            --arg chat_id "${CHAT_ID}" \
+            --arg text "${text}" \
+            --arg url "${url}" \
+            --arg label "${label}" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "HTML",
+              disable_web_page_preview: true,
+              reply_markup: {inline_keyboard: [[{text: $label, url: $url}]]}}')
+
+          resp=$(curl -sS -X POST \
+            -H 'Content-Type: application/json' \
+            -d "${payload}" \
+            "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage")
+
+          if ! jq -e '.ok == true' <<<"${resp}" >/dev/null; then
+            echo "::error::Telegram rechazo el mensaje: $(jq -r '.description // "sin detalle"' <<<"${resp}")"
+            exit 1
+          fi
+          echo "Aviso enviado."

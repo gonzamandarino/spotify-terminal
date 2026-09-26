@@ -1,0 +1,68 @@
+name: Lint de specs
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "specs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar estructura y estado de los specs
+        run: |
+          set -euo pipefail
+
+          # Secciones que specs/_template.md exige en todo spec. Si el
+          # template cambia, actualizar esta lista en el mismo commit.
+          secciones=(
+            "## Estado"
+            "## Contexto"
+            "## Qué debe pasar"
+            "## Criterios de aceptación"
+            "## Plan técnico"
+            "## Tareas"
+            "## Definition of Done"
+            "## Notas de verificación"
+          )
+
+          fail=0
+
+          shopt -s nullglob
+          for spec in specs/[0-9]*.md; do
+            echo "--- ${spec} ---"
+
+            for s in "${secciones[@]}"; do
+              if ! grep -qF "${s}" "${spec}"; then
+                echo "::error file=${spec}::Falta la sección '${s}' (ver specs/_template.md)"
+                fail=1
+              fi
+            done
+
+            # Texto de "## Estado": todo lo que sigue hasta el próximo "##".
+            estado=$(awk '/^## Estado/{flag=1; next} /^## /{flag=0} flag' "${spec}" | tr -d '\n' | sed 's/^ *//')
+
+            # Solo bloqueamos "Verificado" a secas: "Reabierto (parcial)" es
+            # un estado válido con criterios sin cumplir, a propósito.
+            if [[ "${estado}" == Verificado* ]]; then
+              sin_cumplir=$(awk '/^## Criterios de aceptación/{flag=1; next} /^## /{flag=0} flag' "${spec}" | grep -c '^- \[ \]' || true)
+              if [ "${sin_cumplir}" -gt 0 ]; then
+                echo "::error file=${spec}::Estado 'Verificado' pero hay ${sin_cumplir} criterio(s) de aceptación sin tildar. Usar 'Reabierto (parcial)' si algo queda pendiente a propósito."
+                fail=1
+              fi
+            fi
+          done
+
+          if [ "${fail}" -ne 0 ]; then
+            echo "::error::Lint de specs falló."
+            exit 1
+          fi
+
+          echo "Todos los specs pasan la validación."

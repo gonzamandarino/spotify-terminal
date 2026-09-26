@@ -1,0 +1,10 @@
+#!/bin/sh
+# Bloquea push directo a las ramas protegidas: solo se actualizan por PR mergeado por vos.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main)
+      echo "ERROR: push directo a '${remote_ref#refs/heads/}' bloqueado. Abrir un PR." >&2
+      exit 1
+      ;;
+  esac
+done

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Bloquea commits directos a las ramas protegidas: todo entra por PR aprobado por vos.
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+case "$branch" in
+  main)
+    echo "ERROR: commit directo a '$branch' bloqueado. Crear una rama feature/* y abrir un PR." >&2
+    exit 1
+    ;;
+esac
+
+# Nunca commitear credenciales
+if git diff --cached --name-only | grep -vE '(^|/)\.env\.example$' | grep -qE '(^|/)\.env($|\.)|(^|/)\.spotify_token_cache$|(^|/)tokens\.json$'; then
+  echo "ERROR: archivo de credenciales/secretos no se commitea." >&2
+  exit 1
+fi

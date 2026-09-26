@@ -1,0 +1,9 @@
+# Secretos (nunca commitear)
+.env
+.env.*
+!.env.example
+.spotify_token_cache
+tokens.json
+
+# Claude Code (config local)
+.claude/settings.local.json
