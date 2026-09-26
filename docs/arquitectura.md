@@ -9,10 +9,22 @@ en `CLAUDE.md`.
 un proyecto nuevo antes de que el primer agente toque código:)*
 
 ## Mapa de módulos y flujo de datos
-<!-- Diagrama simple (texto/ASCII alcanza) de qué le pasa datos a qué. -->
+
+```
+main ──> ui::cli (parseo de subcomandos)
+  │
+  └──> spotify::auth ──> librespot-oauth ──> accounts.spotify.com
+            │
+            └──> cache de token (%APPDATA%\spotify-terminal	oken.json)
+
+config  <── usado por todos (constantes, rutas)
+error   <── usado por todos (AppError con mensajes para el usuario)
+```
 
 ## Quién posee qué estado
-<!-- Qué módulo es dueño de cada pieza de estado mutable; nadie más lo escribe. -->
+- **Cache de token:** solo `spotify::auth` lo lee y escribe (escritura
+  atómica: temporal + rename). El resto pide un token con
+  `auth::get_valid_token`.
 
 ## Reglas estructurales
 <!-- Ej: qué capas pueden depender de I/O externo y cuáles deben quedar puras
@@ -28,3 +40,6 @@ corregir la tabla.
 
 | Función/módulo | Archivo | Contrato en |
 |---|---|---|
+| `Config::load`, `Config::token_cache_path` | `src/config.rs` | doc-comment |
+| `auth::get_valid_token`, `auth::logout`, `auth::Token` | `src/spotify/auth.rs` | doc-comment |
+| `cli::parse` | `src/ui/cli.rs` | doc-comment |

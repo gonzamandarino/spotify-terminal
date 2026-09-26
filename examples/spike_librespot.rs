@@ -5,11 +5,7 @@
 //!
 //! Uso: cargo run --example spike_librespot -- <track_id | spotify:track:ID>
 
-use std::{
-    error::Error,
-    fs,
-    time::Duration,
-};
+use std::{error::Error, fs, time::Duration};
 
 use librespot_core::{
     SpotifyUri, authentication::Credentials, config::SessionConfig, session::Session,
@@ -61,7 +57,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::Builder::new()
         .parse_filters(&std::env::var("RUST_LOG").unwrap_or("librespot=debug".into()))
         .init();
-    let _ = dotenvy::dotenv();
     let client_id = if use_librespot_id() {
         LIBRESPOT_CLIENT_ID.to_string()
     } else {

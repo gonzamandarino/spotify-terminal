@@ -9,10 +9,11 @@ publish = false
 # Las crates se agregan en la tarea que las empieza a usar (ver spec 001).
 [dependencies]
 directories = "6.0.0"
-dotenvy = "0.15.7"
 librespot-core = "0.8.0"
 librespot-oauth = "0.8.0"
 librespot-playback = "0.8.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 thiserror = "2.0.21"
 tokio = { version = "1.53.1", features = ["rt", "macros"] }
 

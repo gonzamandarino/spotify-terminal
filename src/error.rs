@@ -6,22 +6,20 @@
 
 use thiserror::Error;
 
-/// Todo lo que puede salir mal en la app, con su mensaje para el usuario.
-///
-/// `#[derive(Error)]` (de `thiserror`) implementa el trait `std::error::Error`
-/// y usa el texto de `#[error(...)]` como implementación de `Display`.
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error(
-        "falta SPOTIFY_CLIENT_ID.\n\
-         Copiá .env.example a .env y poné el Client ID de tu app del \
-         Spotify Developer Dashboard (https://developer.spotify.com/dashboard)."
-    )]
-    MissingClientId,
-
-    #[error("el archivo .env tiene un formato inválido: {0}")]
-    EnvFile(#[from] dotenvy::Error),
+    #[error("{0}")]
+    Usage(String),
 
     #[error("no se pudo determinar la carpeta de configuración del usuario")]
     NoConfigDir,
+
+    #[error("error leyendo/escribiendo datos locales: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error(
+        "no se pudo iniciar sesión con Spotify: {0}\n\
+         Probá de nuevo con `spotify-terminal login`."
+    )]
+    Login(String),
 }

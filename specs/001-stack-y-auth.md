@@ -33,10 +33,13 @@ pero sirven para comparar consumo y enfoques.
   interacción (asumido).
 - **¿Qué plataforma?** → Asumido: Windows 10 primero (máquina de
   desarrollo). Linux/macOS no se prueban en este spec.
-- **¿Credenciales de la app de Spotify?** → Asumido: vos creás una app en el
-  Spotify Developer Dashboard con redirect URI `http://127.0.0.1:8898/login`
-  y el `Client ID` se lee de `.env` (`.env.example` sin valores se
-  commitea). OAuth Authorization Code + PKCE, sin client secret.
+- **¿Credenciales de la app de Spotify?** → ~~Client ID propio en `.env`~~.
+  Reemplazado tras T2: **un solo login con el Client ID de librespot** para
+  audio y Web API (respuesta de vos, opción 1). El Client ID es una
+  constante en `config.rs`; no hace falta `.env` ni app en el Dashboard.
+  OAuth Authorization Code + PKCE vía `librespot-oauth`, sin client secret.
+  Si más adelante un spec necesita un scope nuevo, el cliente detecta que el
+  token cacheado no lo tiene y pide login de nuevo.
 - **¿Qué UI tiene este spec?** → Asumido: comandos de línea mínimos
   (`login`, `logout`, `whoami`, `play <uri>`) y, durante `play`, teclas
   simples (espacio = pausa/reanudar, `q` = salir). La TUI real es otro spec
@@ -59,16 +62,17 @@ pero sirven para comparar consumo y enfoques.
    y permite reproducir un tema dado (por URI o ID de Spotify), pausarlo y
    reanudarlo, con el audio saliendo por esta PC.
 4. Existe un comando para cerrar sesión que borra el token guardado.
-5. Si falta el `Client ID` o la cuenta no es Premium, el cliente sale con un
-   mensaje claro que dice qué hacer, sin stack trace.
+5. Si el login o la sesión fallan (cuenta sin Premium, sin red, login
+   cancelado), el cliente sale con un mensaje claro que dice qué hacer, sin
+   stack trace.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — Con cache de token vacío, el cliente completa el login
+- [x] **AC-1** — Con cache de token vacío, el cliente completa el login
       OAuth PKCE y crea el archivo de cache de token fuera del repo.
 - [ ] **AC-2** — Con cache válido, una segunda ejecución no pide login y
       muestra el nombre del usuario.
-- [ ] **AC-3** — Con access token vencido y refresh token válido, el cliente
+- [x] **AC-3** — Con access token vencido y refresh token válido, el cliente
       lo renueva solo y sigue funcionando sin intervención.
 - [ ] **AC-4** — Dado un URI de tema, el audio suena por esta PC; pausa y
       reanudación funcionan desde la terminal.
@@ -79,11 +83,13 @@ pero sirven para comparar consumo y enfoques.
       CPU < 2 % promedio. Si para cumplir AC-5 hace falta más RAM, se
       acepta con el valor real y el motivo registrados en
       `docs/decisiones.md` (en ese caso el AC se tilda con esa nota).
-- [x] **AC-7** — Sin `Client ID` configurado, el cliente sale con código
-      distinto de 0 y un mensaje que indica cómo configurarlo.
-- [ ] **AC-8** — El comando `logout` borra el cache de token; la siguiente
+- [ ] **AC-7** — Si Spotify rechaza el login o la sesión (sin Premium, sin
+      red, login cancelado), el cliente sale con código distinto de 0 y un
+      mensaje que indica qué hacer. *(Redefinido tras T2: ya no hay Client
+      ID que configurar.)*
+- [x] **AC-8** — El comando `logout` borra el cache de token; la siguiente
       ejecución vuelve a pedir login.
-- [ ] **AC-9** — Ni `.env` ni el cache de token aparecen en `git status`
+- [x] **AC-9** — Ni `.env` ni el cache de token aparecen en `git status`
       después de loguearse.
 
 ## Riesgos / casos de falla
@@ -170,13 +176,13 @@ pero sirven para comparar consumo y enfoques.
 - [x] T2 — Spike: sesión `librespot` reproduciendo un URI fijo con un token
       obtenido a mano; resolver el riesgo de client ID y registrarlo en
       `docs/decisiones.md`
-- [ ] T3 — `auth.rs`: login PKCE + callback local + cache atómico + refresh
+- [x] T3 — `auth.rs`: login PKCE + callback local + cache atómico + refresh
       + logout, con tests (AC-1, AC-3, AC-8)
 - [ ] T4 — `web.rs`: `current_user` + subcomando `whoami` (AC-2)
 - [ ] T5 — `player.rs` + subcomando `play` con pausa/reanudar por teclado
       (AC-4)
-- [ ] T6 — Mensajes de error de usuario (sin Premium, sin red, sin Client
-      ID) (AC-7)
+- [ ] T6 — Mensajes de error de usuario (sin Premium, sin red, login
+      cancelado) (AC-7)
 - [ ] T7 — `scripts/medir-consumo.ps1` + medición de 30 min (AC-5, AC-6),
       ajustando buffers si hay cortes
 - [ ] T8 — `README.md`, `docs/arquitectura.md`, changelog, verificación de
@@ -208,8 +214,8 @@ pero sirven para comparar consumo y enfoques.
   `native-tls` → SChannel en Windows, sin OpenSSL), `tokio` 1.53.1,
   `crossterm` 0.29.0, `serde` 1.0.229, `reqwest` 0.13.5. `.env` usaba la
   clave `CLIENT_ID`; se renombró a `SPOTIFY_CLIENT_ID` (valor intacto).
-- **AC-7:** binario corrido desde una carpeta sin `.env` y sin la variable →
-  mensaje con instrucciones, `exit=1`. Cubierto también por los tests
+- **AC-7 (versión original, ya reemplazada):** binario corrido desde una
+  carpeta sin `.env` y sin la variable → mensaje con instrucciones, `exit=1`. Cubierto también por los tests
   `client_id_ausente_es_error` y `client_id_vacio_o_con_espacios_es_error`.
 - **T2 — spike (2026-09-26), `examples/spike_librespot.rs`:**
   - Con **nuestro** Client ID: el login OAuth y `Session::connect` funcionan
@@ -222,3 +228,16 @@ pero sirven para comparar consumo y enfoques.
   - Consumo reproduciendo (build debug): working set 25 MB, memoria privada
     8 MB, CPU 0,33 % promedio en 10 s.
   - Estrategia de tokens (uno vs. dos Client IDs): ver `docs/decisiones.md`.
+- **T3 (2026-09-26):** `src/spotify/auth.rs` + subcomandos `login`/`logout`.
+  Se usa `librespot-oauth` (PKCE + callback local + refresh) en vez de
+  implementar el flujo a mano. 9 tests unitarios pasan; `fmt`/`clippy` OK.
+  - **AC-1:** cache borrado → `login` abre el navegador → `token.json` creado
+    en `%APPDATA%\spotify-terminal\` (fuera del repo), `exit=0`.
+  - **AC-3:** `expires_at` del cache puesto 10 s en el pasado → `login` sin
+    navegador, access token distinto, vence en 3598 s, refresh token
+    conservado. El token renovado trae todos los scopes del Client ID de
+    librespot (library, playlists, playback...), no solo los pedidos.
+  - **AC-8:** `logout` → cache borrado; segundo `logout` → "No había una
+    sesión guardada"; `login` siguiente vuelve a pasar por el navegador.
+  - **AC-9:** `git status --ignored` después del login: `.env` ignorado (ya no
+    se usa, se puede borrar), el cache vive fuera del repo.

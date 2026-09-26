@@ -39,6 +39,9 @@ entradas viejas — se marcan reemplazadas.
   para el Client ID de librespot (`65b708073fc0480ea92a077233ca87bd`).
 - **Evidencia:** spike T2 del spec 001 — con nuestro Client ID, `login5`
   rechaza el token (`INVALID_CREDENTIALS`) y ningún tema carga.
-- **Pendiente:** si la Web API (playlists, likes, búsqueda) usa ese mismo
-  token (un solo login) o el de nuestra app (dos logins la primera vez).
+- **Web API:** usa ese mismo token — un solo login (opción elegida por vos).
+  Alternativa descartada: token propio para la Web API (dos logins la
+  primera vez, código de tokens duplicado). Contra asumido: si Spotify
+  restringe ese Client ID, se cae todo junto (el audio ya dependía de él).
+  Ya no se usa `.env` ni `SPOTIFY_CLIENT_ID`.
 - **Estado:** Vigente
