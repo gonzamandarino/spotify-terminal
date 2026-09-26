@@ -1,7 +1,7 @@
 # 001 - Stack, reproductor de audio y login con Spotify
 
 ## Estado
-`Draft`
+`En plan`
 
 ## Contexto
 Es la base de todo el proyecto: sin lenguaje elegido, sin forma de emitir
@@ -21,32 +21,33 @@ pero sirven para comparar consumo y enfoques.
 
 ## Preguntas / Supuestos
 
-- **¿Tenés Spotify Premium?** → *Pendiente de respuesta.* Tanto controlar la
-  reproducción vía Web API como usar `librespot` requieren Premium. Si la
-  respuesta es no, el proyecto entero cambia de alcance.
-- **¿Qué emite el audio?** → *Propuesta (pendiente de aprobación):* reproductor
-  embebido basado en `librespot` dentro del mismo proceso, para que el
-  cliente sea un único programa liviano y no dependa de tener otra app de
-  Spotify abierta. Alternativas: (a) controlar un dispositivo Spotify Connect
-  ya existente (celular, otra PC) — más simple, pero no reemplaza a la app;
-  (b) `spotifyd` como proceso aparte — dos procesos que mantener.
-- **¿Lenguaje?** → *Propuesta (pendiente de aprobación):* **Rust**, porque
-  `librespot` es Rust (embebible sin puente), da binario único y el menor
-  consumo de memoria. Alternativas: Go (`go-librespot`, más simple de
-  escribir, consumo algo mayor), Python (lo más rápido de escribir, pero
-  necesita un reproductor externo y consume más). Decisión final va a
-  `docs/decisiones.md`.
-- **¿Presupuesto de recursos?** → *Asumido (ajustable):* ≤ 60 MB de RAM
-  (RSS) reproduciendo y < 2 % de CPU promedio en reposo con un tema sonando,
-  medido en esta PC (Windows 10). Motivo: la app oficial suele usar varios
-  cientos de MB; esto es un orden de magnitud menos y es alcanzable con los
-  clientes de referencia.
-- **¿Qué plataforma?** → *Asumido:* Windows 10 primero (es la máquina de
+- **¿Tenés Spotify Premium?** → Sí (respuesta de vos).
+- **¿Lenguaje?** → Rust (respuesta de vos). Ver `docs/decisiones.md`.
+- **¿Qué emite el audio?** → `librespot` embebido en el mismo proceso.
+  Asumido: vos eligió Rust a partir de esta propuesta y no la objetó.
+  Respaldo: controlar un dispositivo Spotify Connect vía Web API.
+- **¿Presupuesto de recursos?** → "Bajo, pero que no afecte la
+  reproducción" (respuesta de vos). Se traduce en: objetivo ≤ 60 MB de RAM
+  reproduciendo; si bajar de ahí causa cortes, gana la reproducción y se
+  documenta el consumo real. CPU < 2 % promedio en reproducción sin
+  interacción (asumido).
+- **¿Qué plataforma?** → Asumido: Windows 10 primero (máquina de
   desarrollo). Linux/macOS no se prueban en este spec.
-- **¿Credenciales de la app de Spotify?** → *Asumido:* vos creás una app en
-  el Spotify Developer Dashboard y el `Client ID` se lee de `.env`
-  (se commitea `.env.example` sin valores). Flujo OAuth: Authorization Code
-  + PKCE, sin client secret.
+- **¿Credenciales de la app de Spotify?** → Asumido: vos creás una app en el
+  Spotify Developer Dashboard con redirect URI `http://127.0.0.1:8898/login`
+  y el `Client ID` se lee de `.env` (`.env.example` sin valores se
+  commitea). OAuth Authorization Code + PKCE, sin client secret.
+- **¿Qué UI tiene este spec?** → Asumido: comandos de línea mínimos
+  (`login`, `logout`, `whoami`, `play <uri>`) y, durante `play`, teclas
+  simples (espacio = pausa/reanudar, `q` = salir). La TUI real es otro spec
+  (`tui-agent`); acá no se invierte en interfaz.
+- **¿El token de nuestra app sirve para la sesión de `librespot`?** →
+  *Riesgo abierto, se valida en la tarea T2 (spike):* hay reportes de que
+  la sesión de streaming de `librespot` solo acepta tokens emitidos para
+  ciertos client IDs. Si el nuestro no sirve, se usa el flujo OAuth propio
+  de `librespot-oauth` para la sesión de audio y el nuestro solo para la
+  Web API (dos tokens en el mismo cache). La decisión va a
+  `docs/decisiones.md`.
 
 ## Qué debe pasar (no cómo)
 1. La primera vez que se ejecuta el cliente, si no hay sesión guardada, abre
@@ -64,55 +65,127 @@ pero sirven para comparar consumo y enfoques.
 ## Criterios de aceptación
 
 - [ ] **AC-1** — Con cache de token vacío, el cliente completa el login
-      OAuth PKCE y crea el archivo de cache de token (ruta fuera del repo o
-      ignorada por `.gitignore`).
+      OAuth PKCE y crea el archivo de cache de token fuera del repo.
 - [ ] **AC-2** — Con cache válido, una segunda ejecución no pide login y
       muestra el nombre del usuario.
 - [ ] **AC-3** — Con access token vencido y refresh token válido, el cliente
       lo renueva solo y sigue funcionando sin intervención.
 - [ ] **AC-4** — Dado un URI de tema, el audio suena por esta PC; pausa y
       reanudación funcionan desde la terminal.
-- [ ] **AC-5** — Consumo dentro del presupuesto: ≤ 60 MB RSS reproduciendo y
-      < 2 % CPU promedio durante 5 minutos de reproducción sin interacción
-      (medido y anotado en "Notas de verificación").
-- [ ] **AC-6** — Sin `Client ID` configurado, el cliente sale con código
+- [ ] **AC-5** — Reproducción continua de 30 minutos (varios temas
+      seguidos por `play` de un álbum o playlist) sin cortes ni saltos
+      audibles. Este criterio tiene prioridad sobre AC-6.
+- [ ] **AC-6** — Consumo medido durante AC-5: RAM (working set) ≤ 60 MB y
+      CPU < 2 % promedio. Si para cumplir AC-5 hace falta más RAM, se
+      acepta con el valor real y el motivo registrados en
+      `docs/decisiones.md` (en ese caso el AC se tilda con esa nota).
+- [ ] **AC-7** — Sin `Client ID` configurado, el cliente sale con código
       distinto de 0 y un mensaje que indica cómo configurarlo.
-- [ ] **AC-7** — El comando de logout borra el cache de token; la siguiente
+- [ ] **AC-8** — El comando `logout` borra el cache de token; la siguiente
       ejecución vuelve a pedir login.
-- [ ] **AC-8** — Ni `.env` ni el cache de token aparecen en `git status`
-      después de loguearse (verificación de `.gitignore` + hook).
+- [ ] **AC-9** — Ni `.env` ni el cache de token aparecen en `git status`
+      después de loguearse.
 
 ## Riesgos / casos de falla
 
 - **Envío de datos a terceros:** se autentica contra Spotify. Pedir solo los
-  scopes necesarios para este spec (lectura de perfil + control de
-  reproducción/streaming); los scopes de likes/playlists se agregan en sus
-  specs.
+  scopes necesarios para este spec (`user-read-private`, `streaming`,
+  `user-read-playback-state`, `user-modify-playback-state`); los scopes de
+  likes/playlists se agregan en sus specs.
 - **Credenciales locales:** el refresh token da acceso a la cuenta. Se guarda
-  solo en la máquina del usuario, nunca en logs ni en el repo.
+  solo en `%APPDATA%\spotify-terminal\`, nunca en logs ni en el repo.
 - **Interrupción a mitad del login:** si se corta el callback, no debe quedar
-  un cache corrupto; la próxima ejecución reintenta el login desde cero.
+  un cache corrupto (escritura atómica: archivo temporal + rename); la
+  próxima ejecución reintenta el login desde cero.
 - **Spotify API caída o sin red de forma sostenida:** el cliente informa el
-  error y sale (o reintenta con backoff acotado), sin loop de reintentos
-  agresivo que consuma CPU/red.
+  error y sale, o reintenta con backoff exponencial acotado (máximo de
+  intentos en config), sin loop agresivo que consuma CPU/red.
 - **Cambios de política de Spotify:** `librespot` no es oficial y Spotify
-  puede romperlo; registrar la versión usada y la alternativa de respaldo
-  (controlar un dispositivo Connect) en `docs/decisiones.md`.
+  puede romperlo. Se fija la versión exacta en `Cargo.lock` y se registra
+  el respaldo en `docs/decisiones.md`.
+- **Toolchain en Windows:** `librespot` y sus dependencias (TLS, audio)
+  compilan con el toolchain MSVC; si falta algo (Build Tools de Visual
+  Studio, etc.) se documenta en el README como prerequisito.
 
 ## Plan técnico
-*(lo completa el agente después de resolver las preguntas pendientes de
-arriba; se revisa antes de escribir código)*
+*(propuesta — pendiente de revisión de vos antes de escribir código)*
 
-- Archivos que toca:
-- Funciones/estructuras nuevas:
-- Tests necesarios:
-- Contratos a crear/actualizar y cambios en `docs/arquitectura.md`:
+- **Archivos que toca:**
+  - `Cargo.toml`, `Cargo.lock` — crate binaria `spotify-terminal`, edición
+    2021, perfil release con `opt-level = "s"`, `lto = true`,
+    `codegen-units = 1` (binario chico, menos memoria).
+  - `.env.example` — `SPOTIFY_CLIENT_ID=` sin valor.
+  - `src/main.rs` — parseo de subcomandos y arranque del runtime `tokio`.
+  - `src/config.rs` — carga de `.env` y constantes configurables (puerto de
+    callback, ruta de cache, scopes, bitrate, reintentos). Único lugar de
+    umbrales/constantes.
+  - `src/error.rs` — tipo de error de la app con mensajes para el usuario.
+  - `src/spotify/mod.rs`, `src/spotify/auth.rs` — OAuth PKCE, cache de
+    token, refresh.
+  - `src/spotify/player.rs` — sesión `librespot` + reproductor.
+  - `src/spotify/web.rs` — llamadas a la Web API (solo `GET /me` en este
+    spec).
+  - `src/ui/cli.rs` — subcomandos y lectura de teclas durante `play`.
+  - `scripts/medir-consumo.ps1` — muestrea working set y CPU del proceso
+    cada 5 s durante N minutos y resume promedio/máximo (para AC-5/AC-6).
+  - `README.md` — prerequisitos (rustup, Build Tools), cómo crear la app en
+    Spotify Dashboard, cómo correr.
+- **Crates (versiones a fijar en T1, verificando la última estable):**
+  `librespot-core`, `librespot-playback` (backend `rodio`),
+  `librespot-oauth`, `librespot-metadata` si hace falta; `tokio`
+  (features mínimas: `rt`, `macros`, `sync`, `time`), `reqwest` con
+  `rustls` o el cliente HTTP que ya trae `librespot` para evitar dos stacks
+  TLS; `serde`/`serde_json` para el cache; `dotenvy`; `directories` para
+  `%APPDATA%`; `crossterm` para teclas; `thiserror`. Sin `clap`
+  (subcomandos a mano: son 4, no justifican la dependencia).
+- **Funciones/estructuras nuevas:**
+  - `config::Config::load() -> Result<Config, AppError>`
+  - `auth::TokenCache` (serializable) y
+    `auth::get_valid_token(&Config) -> Result<Token, AppError>` (usa cache,
+    refresca si vence, si no hay cache corre el login).
+  - `auth::logout(&Config) -> Result<(), AppError>`
+  - `player::Player::connect(&Config, &Token)`, `.load(uri)`, `.pause()`,
+    `.resume()`, `.stop()`
+  - `web::current_user(&Token) -> Result<User, AppError>`
+- **Tests necesarios:**
+  - Unitarios: `Config::load` sin `Client ID` → error esperado (AC-7);
+    `TokenCache` expira correctamente según `expires_at` (base de AC-3);
+    serialización/escritura atómica del cache; parseo de URI/ID de tema.
+  - Manuales (evidencia en "Notas de verificación"): AC-1, AC-2, AC-4,
+    AC-5, AC-6 (con `scripts/medir-consumo.ps1`), AC-8, AC-9. AC-3 se
+    fuerza editando `expires_at` del cache a una fecha pasada.
+- **Contratos y arquitectura:** doc-comments con Pre/Post/Invariantes en
+  las funciones públicas de `auth`, `player`, `web` y `config`. Se
+  completa `docs/arquitectura.md` con el primer mapa de módulos:
+  `ui → spotify::{auth, player, web} → config`, y la regla de que solo
+  `auth` lee/escribe el cache de token.
+
+## Conceptos de Rust
+*(la completa `rust-mentor` cuando vos apruebe el Plan técnico)*
+
+- 
 
 ## Tareas
 *(desglose del plan, se van tildando)*
 
-- [ ] Resolver las preguntas pendientes y registrar decisiones en `docs/decisiones.md`
-- [ ] Completar Plan técnico y hacerlo revisar
+- [ ] T0 — Instalar `rustup` (toolchain stable MSVC) y Build Tools de Visual
+      Studio; verificar `cargo --version` (guiado por `rust-mentor`)
+- [ ] T1 — `cargo init`, `Cargo.toml` con perfil release y crates fijadas,
+      `.env.example`, `config.rs` + `error.rs` con tests (AC-7)
+- [ ] T2 — Spike: sesión `librespot` reproduciendo un URI fijo con un token
+      obtenido a mano; resolver el riesgo de client ID y registrarlo en
+      `docs/decisiones.md`
+- [ ] T3 — `auth.rs`: login PKCE + callback local + cache atómico + refresh
+      + logout, con tests (AC-1, AC-3, AC-8)
+- [ ] T4 — `web.rs`: `current_user` + subcomando `whoami` (AC-2)
+- [ ] T5 — `player.rs` + subcomando `play` con pausa/reanudar por teclado
+      (AC-4)
+- [ ] T6 — Mensajes de error de usuario (sin Premium, sin red, sin Client
+      ID) (AC-7)
+- [ ] T7 — `scripts/medir-consumo.ps1` + medición de 30 min (AC-5, AC-6),
+      ajustando buffers si hay cortes
+- [ ] T8 — `README.md`, `docs/arquitectura.md`, changelog, verificación de
+      `git status` (AC-9)
 
 ## Definition of Done
 
@@ -122,10 +195,12 @@ arriba; se revisa antes de escribir código)*
 - [ ] Contratos de funciones públicas y doc de arquitectura actualizados si
       el spec cambió una firma, comportamiento o el mapa de módulos
 - [ ] Decisiones de diseño relevantes documentadas (lenguaje, reproductor,
-      flujo OAuth) en `docs/decisiones.md`
+      flujo OAuth, client ID de la sesión de audio) en `docs/decisiones.md`
 - [ ] Changelog actualizado
 - [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
 - [ ] Sin secretos ni credenciales en el diff
+- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [ ] Conceptos de Rust explicados y registrados en `docs/rust-aprendizaje.md`
 
 ## Notas de verificación
 *(al cerrar: qué se probó y resultado — por AC cuando no sea obvio)*
