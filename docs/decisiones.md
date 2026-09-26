@@ -8,8 +8,7 @@ entradas viejas — se marcan reemplazadas.
 - **Decisión:** el cliente se escribe en Rust.
 - **Alternativas:** Go (`go-librespot`), Python (con reproductor externo).
 - **Motivo:** `librespot` es Rust y se embebe sin puente; binario único y el
-  menor consumo de memoria. Además, aprender Rust es un objetivo del
-  proyecto (ver `rust-mentor`).
+  menor consumo de memoria.
 - **Estado:** Vigente (spec 001)
 
 ## 2026-09-26 — Audio: `librespot` embebido en el mismo proceso
@@ -28,3 +27,9 @@ entradas viejas — se marcan reemplazadas.
   la reproducción y se documenta el consumo real acá.
 - **Motivo:** pedido explícito — "bajo, pero que no afecte la reproducción".
 - **Estado:** Vigente (spec 001)
+
+## 2026-09-26 — Sin agente mentor de Rust
+- **Decisión:** se elimina `rust-mentor` y su registro de aprendizaje.
+- **Motivo:** costo (tokens/tiempo) sin beneficio suficiente — pedido de vos.
+  Se mantienen las reglas de calidad de Rust (`fmt`, `clippy`, sin `unwrap`).
+- **Estado:** Vigente

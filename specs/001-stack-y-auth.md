@@ -160,45 +160,11 @@ pero sirven para comparar consumo y enfoques.
   `ui → spotify::{auth, player, web} → config`, y la regla de que solo
   `auth` lee/escribe el cache de token.
 
-## Conceptos de Rust
-*(completada por `rust-mentor` tras aprobar el Plan técnico. Todo es
-*nuevo*: es el primer spec. Ordenado según en qué tarea aparece.)*
-
-Recurso base: [The Rust Book](https://doc.rust-lang.org/book/) (en adelante
-"Book"). Edición 2024.
-
-**Para T1 (config y errores)**
-1. *nuevo* — **Cargo, crates y módulos** (`Cargo.toml`, `mod`, `pub`, `use`,
-   `crate::`). Book cap. 1.3 y 7.
-2. *nuevo* — **Ownership y borrowing**, `String` vs `&str`: la idea central
-   del lenguaje, aparece en toda firma de función. Book cap. 4 y 8.2.
-3. *nuevo* — **Structs, enums y `match`**, `Option<T>`. Book cap. 5 y 6.
-4. *nuevo* — **Manejo de errores**: `Result<T, E>`, el operador `?`, por qué
-   no `unwrap()`, y `thiserror` para definir errores con mensaje. Book
-   cap. 9 + [docs de thiserror](https://docs.rs/thiserror).
-5. *nuevo* — **Traits y `#[derive]`** (`Debug`, `Display`, `PartialEq`).
-   Book cap. 10.2.
-6. *nuevo* — **Tests unitarios** (`#[cfg(test)]`, `#[test]`, `assert_eq!`).
-   Book cap. 11.1.
-
-**Para T2–T5 (librespot, OAuth, Web API)**
-7. *nuevo* — **async/await y `tokio`**: por qué la red y el audio no bloquean
-   el hilo. [Tutorial de Tokio](https://tokio.rs/tokio/tutorial) (hasta
-   "Spawning") + Book cap. 17.
-8. *nuevo* — **Compartir estado entre tareas**: `Arc`, `Clone` barato de
-   `Session`/`Player` de librespot, canales (`mpsc`). Book cap. 16.
-9. *nuevo* — **Serialización con `serde`** (`Serialize`/`Deserialize`) para
-   el cache de token. [serde.rs](https://serde.rs).
-10. *nuevo* — **Closures e iteradores** (aparecen al manejar eventos del
-    reproductor y teclas). Book cap. 13.
-11. *nuevo, puede aparecer* — **Lifetimes** (`'a`) si alguna función
-    devuelve referencias. Book cap. 10.3.
-
 ## Tareas
 *(desglose del plan, se van tildando)*
 
 - [x] T0 — Instalar `rustup` (toolchain stable MSVC) y Build Tools de Visual
-      Studio; verificar `cargo --version` (guiado por `rust-mentor`)
+      Studio; verificar `cargo --version`
 - [x] T1 — `cargo init`, `Cargo.toml` con perfil release y crates fijadas,
       `.env.example`, `config.rs` + `error.rs` con tests (AC-7)
 - [ ] T2 — Spike: sesión `librespot` reproduciendo un URI fijo con un token
@@ -229,7 +195,6 @@ Recurso base: [The Rust Book](https://doc.rust-lang.org/book/) (en adelante
 - [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
 - [ ] Sin secretos ni credenciales en el diff
 - [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
-- [ ] Conceptos de Rust explicados y registrados en `docs/rust-aprendizaje.md`
 
 ## Notas de verificación
 *(al cerrar: qué se probó y resultado — por AC cuando no sea obvio)*
