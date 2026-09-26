@@ -58,6 +58,13 @@ datos, notificaciones a personas reales. Se borra esta sección si no aplica.)*
 - Contratos a crear/actualizar (pre/postcondiciones de funciones públicas) y
   si hace falta tocar el doc de arquitectura del proyecto:
 
+## Conceptos de Rust
+*(la completa `rust-mentor` después del Plan técnico: conceptos que la
+implementación va a tocar, marcados *nuevo* o *repaso*, en orden, con un
+recurso concreto cada uno)*
+
+- 
+
 ## Tareas
 *(desglose del plan, se van tildando)*
 
@@ -77,6 +84,8 @@ las rutas de docs si el proyecto las nombra distinto)*
 - [ ] Changelog actualizado
 - [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
 - [ ] Sin secretos ni credenciales en el diff
+- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [ ] Conceptos de Rust explicados y registrados en `docs/rust-aprendizaje.md`
 
 ## Notas de verificación
 *(al cerrar: qué se probó y resultado — por AC cuando no sea obvio)*

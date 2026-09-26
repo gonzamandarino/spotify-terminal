@@ -26,8 +26,9 @@ sin spec aprobado (ver "Sistema SDD" abajo).
 - Endpoints como `/recommendations` y `/audio-features` fueron restringidos
   para apps nuevas (nov 2024): el generador de playlists no debe asumirlos
   disponibles. Confirmar en el spec del generador.
-- Stack/lenguaje: pendiente de decidir en el primer spec (criterio principal:
-  bajo consumo de recursos). Registrar en `docs/decisiones.md`.
+- Stack: **Rust** + `librespot` embebido para el audio (ver
+  `docs/decisiones.md`). Bajo consumo de RAM, pero nunca a costa de cortes
+  en la reproducción: si hay que elegir, gana la reproducción.
 
 ## Agentes
 
@@ -36,6 +37,16 @@ sin spec aprobado (ver "Sistema SDD" abajo).
 - `tui-agent` — UI de terminal (`src/ui/`).
 - `playlist-gen-agent` — generador de playlists y playlists locales (`src/generator/`, `src/library/`).
 - `testing-agent` — tests y verificación de AC, sin tocar código de producción (`tests/`).
+- `rust-mentor` — enseña Rust sobre el código real del proyecto; no escribe
+  código de producción (`docs/rust-aprendizaje.md`, `ejercicios/`).
+
+## Aprender Rust es parte del proyecto
+
+Vos está aprendiendo Rust con este proyecto. Eso cambia cómo trabajan los
+agentes de dominio: código idiomático y legible antes que ingenioso, sin
+macros ni abstracciones que el spec no necesite, y comentarios que expliquen
+el *por qué* cuando algo es específico de Rust (ownership, lifetimes,
+`Arc<Mutex<_>>`). `rust-mentor` interviene en los pasos 3, 5 y 6 del flujo.
 
 ## Sistema SDD (Spec-Driven Development)
 
@@ -56,14 +67,19 @@ y el agente: evita que el agente asuma cosas que después hay que deshacer.
 3. **Plan** — el agente lee el spec y escribe la sección "Plan técnico": qué
    archivos toca, qué funciones/estructuras nuevas, qué tests hacen falta.
    Vos revisás el plan antes de que se escriba código.
+   Con el plan escrito, `rust-mentor` completa la sección "Conceptos de
+   Rust" del spec: qué vas a necesitar entender y en qué orden.
 4. **Tasks** — el plan se descompone en una lista de tareas chicas y
    verificables (checklist al final del mismo archivo de spec).
 5. **Implement** — el agente ejecuta las tareas una por una, marcando cada
-   checkbox cuando está hecha y testeada.
+   checkbox cuando está hecha y testeada. Después de cada tarea que
+   introduce un concepto nuevo de Rust, `rust-mentor` recorre el diff con vos
+   antes de pasar a la siguiente.
 6. **Verify** — al cerrar la feature, cada `AC-N` se marca cumplido, o el
    spec queda `Reabierto (parcial)` con el motivo explícito — nunca
    `Verificado` con algún `AC-N` sin tildar. El checklist de "Definition of
-   Done" del spec se revisa entero, no solo los AC.
+   Done" del spec se revisa entero, no solo los AC. Antes de `pr-agent`,
+   `rust-mentor` registra lo aprendido en `docs/rust-aprendizaje.md`.
 
 `specs/[0-9]*.md` se valida automáticamente en cada PR que toca `specs/**`
 con `.github/workflows/spec-lint.yml`: estructura de secciones y que
@@ -102,5 +118,9 @@ un comportamiento documentado sin tocar su contrato está incompleto —
 - Todo cambio de firma o comportamiento de una función/módulo documentado
   actualiza su contrato y, si aplica, `docs/arquitectura.md`, en el mismo
   commit
+- Todo commit de Rust pasa `cargo fmt --check`, `cargo clippy -- -D warnings`
+  y `cargo test`
+- Nada de `unwrap()`/`expect()` en lógica de producción salvo invariantes
+  documentadas; los errores se propagan con `Result` y `?`
 - Bajo consumo es un requisito, no un extra: nada de polling agresivo, ni
   dependencias pesadas sin justificarlas en `docs/decisiones.md`
