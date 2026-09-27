@@ -66,11 +66,46 @@ app oficial: el reproductor no es un dispositivo Spotify Connect (ver
 ¿Por qué dos autorizaciones? El audio usa el Client ID de librespot y la Web
 API el tuyo; ver `docs/decisiones.md`.
 
+## App de escritorio
+
+`spotify-desktop.exe` abre una ventana con una consola propia: se escriben
+los mismos comandos, sin el nombre del programa, y la música sigue mientras
+se escribe.
+
+```powershell
+cargo build --release
+.\scripts\instalar-acceso-directo.ps1   # accesos directos en el escritorio y el menú Inicio
+.\target\release\spotify-desktop.exe   # o doble clic
+```
+
+| Comando | Qué hace |
+|---|---|
+| `play …` | igual que en la CLI (`play <nombre>`, `play list <nombre>`, links, `-s`) |
+| `pause` | pausa / reanudar (Ctrl+Espacio) |
+| `next`, `n` | siguiente tema (Ctrl+→) |
+| `prev`, `p` | anterior o reinicia el tema (Ctrl+←) |
+| `shuffle`, `s` | shuffle sí / no |
+| `queue <tema>`, `a <tema>` | busca un tema y lo encola |
+| `stop` | corta y vacía la cola |
+| `login`, `logout`, `whoami`, `help` | como en la CLI |
+| `clear` / `exit` | limpia la consola / cierra |
+
+Después de una búsqueda, se elige con el número y Enter (Enter solo = el
+primero). ↑/↓ recorren el historial, Tab completa el comando y Esc cancela
+una búsqueda o elección. Un `play` nuevo reemplaza lo que suena.
+
+La app busca el `.env` en la carpeta desde donde arranca (el acceso directo
+arranca en la del repo). Si algo falla al abrir la ventana, se muestra un
+cuadro de error; un panic queda anotado en
+`%APPDATA%\spotify-terminal\desktop-panic.log`.
+
 ## Medir consumo
 
 ```powershell
 # en otra terminal, con play corriendo:
 .\scripts\medir-consumo.ps1 -Minutos 30
+# la app de escritorio:
+.\scripts\medir-consumo.ps1 -Minutos 10 -Proceso spotify-desktop
 ```
 
 ## Desarrollo

@@ -7,6 +7,12 @@ en `CLAUDE.md`.
 
 ## Mapa de módulos y flujo de datos
 
+El crate es una librería (`src/lib.rs`) con los módulos de abajo, y dos
+binarios: la CLI (`src/main.rs` → `spotify-terminal.exe`) y la app de
+escritorio (`src/bin/desktop.rs` → `spotify-desktop.exe`, spec 004).
+
+### CLI
+
 ```
 main ──> ui::cli (parseo de subcomandos → Command)
   │
@@ -25,13 +31,32 @@ main ──> ui::cli (parseo de subcomandos → Command)
   │         │      metadata de álbum/playlist (librespot-metadata)
   │         └──> hilos de librespot: reproductor + salida de audio (rodio/WASAPI)
   │
-  └──> ui::playback::play_queue ──> spotify::player (play/preload/pause/
-                                     restart/stop, eventos del reproductor)
+  └──> ui::playback::play_queue ──> app::queue::Queue (qué suena después)
+                                 ├──> spotify::player (play/preload/pause/
+                                 │    restart/stop, eventos del reproductor)
                                  └──> spotify::web::search (tecla `a`, como
                                       future dentro del loop, sin bloquearlo)
 
 config  <── usado por todos (constantes, rutas, umbrales)
 error   <── usado por todos (AppError con mensajes para el usuario)
+```
+
+### App de escritorio
+
+```
+bin/desktop ──> desktop::run
+                  ├──> desktop::window (winit + softbuffer, dibujo por CPU con
+                  │      egui_software_backend; barra de título propia)
+                  │      └──> desktop::app::DesktopApp (consola: salida,
+                  │             entrada, historial, Tab, barra "sonando")
+                  │                 │ Input (línea, atajos, Esc)
+                  │                 ▼
+                  └──> app::engine (hilo "motor") ──Output──> DesktopApp
+                         ├──> app::shell (línea → ShellCommand; reusa cli)
+                         ├──> app::queue::Queue (misma cola que la CLI)
+                         └──> app::backend::Backend (costura para tests)
+                                └── SpotifyBackend ──> spotify::auth / web /
+                                                       player (como la CLI)
 ```
 
 ## Hilos
@@ -42,6 +67,12 @@ error   <── usado por todos (AppError con mensajes para el usuario)
   carga de un tema (las claves de audio tienen timeout de 1,5 s).
 - **librespot**: el reproductor crea sus propios hilos (decodificación,
   carga de temas, salida de audio).
+- **App de escritorio:** el hilo principal es la ventana (winit + egui);
+  el **motor** (`app::engine`) corre en su hilo con un runtime tokio de un
+  hilo, y los tokens se piden en un hilo de bloqueo (`spawn_blocking`)
+  porque librespot-oauth espera el callback del navegador con una llamada
+  bloqueante. La ventana y el motor se hablan solo por canales; el motor
+  despierta a la ventana con `request_repaint`.
 
 ## Quién posee qué estado
 - **Caches de token:** solo `spotify::auth` los lee y escribe (escritura
@@ -49,21 +80,34 @@ error   <── usado por todos (AppError con mensajes para el usuario)
   `auth::get_valid_token(config, kind)`.
 - **Sesión y reproductor:** `spotify::player::Player` es dueño de la sesión,
   del reproductor de librespot y del hilo de audio; al soltarse los cierra en
-  ese orden. `main` lo crea y resuelve qué reproducir; `ui::playback` lo
-  controla durante `play`.
+  ese orden. En la CLI, `main` lo crea y resuelve qué reproducir y
+  `ui::playback` lo controla durante `play`. En la app de escritorio es del
+  motor (`app::engine`): se abre con el primer `play`, se reutiliza para
+  los siguientes y se suelta con `logout`, si se cae, o al cerrar.
 - **Modo raw de la terminal:** `ui::RawMode` (lo usan `select` y
   `playback`); se restaura al soltarse o ante un panic.
-- **Cola de reproducción:** `ui::playback::Queue` vive mientras dura
-  `play_queue` y es la única dueña de qué suena después: orden de la lista
+- **Cola de reproducción:** `app::queue::Queue` (sin I/O, testeable sola)
+  vive mientras dura `play_queue` (CLI) o hasta el próximo `play`/`stop`
+  (app de escritorio, dentro del motor) y es la única dueña de qué suena
+  después: orden de la lista
   (con o sin shuffle), temas encolados (`up_next`), historial para
   "anterior" (`timeline`) y el `play_request_id` vigente. Es nuestra, no
   de Spotify: la Web API no la ve.
+- **Consola de la app de escritorio:** `desktop::app::DesktopApp` es dueña
+  del texto mostrado (con tope `config::SCROLLBACK_LINES`), la línea de
+  entrada y el historial. No guarda estado de reproducción propio: muestra
+  el último `NowPlaying` que mandó el motor.
 
 ## Reglas estructurales
 - `spotify::web` solo recibe tokens `Web` y `spotify::player` solo `Audio`
   (con el token cruzado, la Web API da 429 y el audio no carga).
 - Nada que use la sesión de librespot corre en el runtime de `main`: pasa por
   `AudioRuntime::run`.
+- `app::*` no depende de egui ni de la terminal: la CLI (`ui`) y la app de
+  escritorio (`desktop`) son dos caras sobre la misma lógica. Solo
+  `desktop` usa egui/winit.
+- La app de escritorio no usa la GPU: nada de OpenGL/DirectX (el driver
+  sumaba ~120 MB, ver `docs/decisiones.md`).
 - Los temas de un álbum o playlist se piden por la sesión de audio
   (`Player::resolve_tracks`), no por la Web API (ver `docs/decisiones.md`).
 - Los errores de las librerías se traducen a `AppError` en el módulo que los
@@ -85,5 +129,11 @@ corregir la tabla.
 | `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
 | `player::Player` (incl. `restart`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
 | `playback::play_queue` (teclas, cola, shuffle), `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
-| `cli::parse`, `cli::Command`, `cli::USAGE` | `src/ui/cli.rs` | doc-comment |
+| `queue::Queue`, `queue::Step`, `queue::Clock`, `queue::on_player_event` (crate) | `src/app/queue.rs` | doc-comment |
+| `shell::parse_line`, `shell::complete`, `shell::ShellCommand` (crate) | `src/app/shell.rs` | doc-comment |
+| `engine::spawn`, `engine::Input`, `engine::Output`, `engine::Engine` (crate) | `src/app/engine.rs` | doc-comment |
+| `backend::Backend`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
+| `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |
+| `config::data_dir` | `src/config.rs` | doc-comment |
+| `cli::parse`, `cli::parse_command`, `cli::Command`, `cli::USAGE` | `src/ui/cli.rs` | doc-comment |
 | `select::choose` | `src/ui/select.rs` | doc-comment |
