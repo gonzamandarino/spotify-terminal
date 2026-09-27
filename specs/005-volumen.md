@@ -101,6 +101,11 @@ poder controlar el volumen de la app desde la propia app.
 
 ## Plan técnico
 
+*(Implementado con dos desvíos: el volumen le llega a la ventana en su
+propio `Output::Volume`, no dentro de `NowPlaying`, porque la barra lo
+muestra también sin nada sonando; y al conectar, el motor vuelve a fijar
+el volumen solo si cambió mientras conectaba.)*
+
 - **Reproductor** (`src/spotify/player.rs`): el `NoOpVolume` se reemplaza
   por el `SoftMixer` de librespot (ya viene en `librespot-playback`, sin
   dependencias nuevas), con la curva logarítmica por defecto
@@ -171,18 +176,18 @@ poder controlar el volumen de la app desde la propia app.
 ## Tareas
 *(desglose del plan, se van tildando)*
 
-- [ ] T1 — `app::volume` con sus tests; constantes en config.
-- [ ] T2 — `SoftMixer` en `Player`: `connect(…, volume)` y `set_volume`;
+- [x] T1 — `app::volume` con sus tests; constantes en config.
+- [x] T2 — `SoftMixer` en `Player`: `connect(…, volume)` y `set_volume`;
       la CLI pasa el volumen cargado (probar a mano que suena igual al
       100 %).
-- [ ] T3 — `shell`: `vol` / `v` / `mute` / `m`, ayuda y Tab, con tests.
-- [ ] T4 — Motor: `Volume` propio, `Input::VolumeUp/Down`, aplicar al
+- [x] T3 — `shell`: `vol` / `v` / `mute` / `m`, ayuda y Tab, con tests.
+- [x] T4 — Motor: `Volume` propio, `Input::VolumeUp/Down`, aplicar al
       conectar, `NowPlaying.volume`, guardado con espera, con tests.
-- [ ] T5 — Ventana: `Ctrl+↑`/`Ctrl+↓` y volumen en la barra.
-- [ ] T6 — CLI: `+` / `=` / `-`, volumen en la línea de estado y guardar
+- [x] T5 — Ventana: `Ctrl+↑`/`Ctrl+↓` y volumen en la barra.
+- [x] T6 — CLI: `+` / `=` / `-`, volumen en la línea de estado y guardar
       al salir.
 - [ ] T7 — Pruebas a mano de todos los AC + medición (AC-10).
-- [ ] T8 — Docs: arquitectura, decisiones, README, changelog.
+- [x] T8 — Docs: arquitectura, decisiones, README, changelog.
 
 ## Definition of Done
 

@@ -2,6 +2,7 @@ use std::process::ExitCode;
 
 use librespot_core::SpotifyUri;
 use spotify_terminal::{
+    app::volume::Volume,
     config::Config,
     error::AppError,
     spotify::{
@@ -99,7 +100,9 @@ async fn play(
         return Err(AppError::NotPremium(user.plan().to_string()));
     }
     let audio_token = auth::get_valid_token(config, TokenKind::Audio).await?;
-    let player = Player::connect(&audio_token).await?;
+    let mut volume = Volume::load(&config.data_dir);
+    let initial = volume;
+    let player = Player::connect(&audio_token, volume).await?;
     let resolved = player.resolve_tracks(target).await?;
     if resolved.skipped > 0 {
         println!(
@@ -107,5 +110,13 @@ async fn play(
             resolved.skipped
         );
     }
-    playback::play_queue(&player, web, &resolved.tracks, shuffle).await
+    let result = playback::play_queue(&player, web, &resolved.tracks, shuffle, &mut volume).await;
+    // Se guarda aunque la reproducción haya terminado con error: el volumen
+    // elegido sigue valiendo. Si no se puede guardar, solo se avisa.
+    if volume != initial {
+        if let Err(e) = volume.save(&config.data_dir) {
+            eprintln!("⚠ No se pudo guardar el volumen: {e}");
+        }
+    }
+    result
 }

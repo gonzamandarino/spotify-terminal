@@ -82,6 +82,23 @@ const WEB_CLIENT_ID_VAR: &str = "SPOTIFY_CLIENT_ID";
 /// (`%APPDATA%` en Windows).
 const APP_DIR_NAME: &str = "spotify-terminal";
 
+// --- Volumen (spec 005) ---
+
+/// Volumen con el que arranca la app si no hay uno guardado, en %.
+pub const VOLUME_DEFAULT: u8 = 100;
+
+/// Cuánto suben / bajan `vol +` / `vol -` y sus atajos, en %.
+pub const VOLUME_STEP: u8 = 5;
+
+/// Archivo (en la carpeta de datos) con el último volumen, en %.
+pub const VOLUME_FILE: &str = "volumen.txt";
+
+/// Espera después del último cambio de volumen antes de guardarlo: con una
+/// tecla apretada, un cambio tras otro no escribe a disco cada vez.
+pub const VOLUME_SAVE_DELAY: Duration = Duration::from_secs(2);
+
+const _: () = assert!(VOLUME_DEFAULT <= 100 && VOLUME_STEP >= 1 && VOLUME_STEP <= 100);
+
 // --- App de escritorio (spec 004) ---
 
 /// Título de la ventana (barra de tareas y barra de título propia).

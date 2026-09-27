@@ -57,6 +57,7 @@ Durante la reproducción:
 | `p` o ← | reinicia el tema; si recién empezó (< 3 s), vuelve al anterior |
 | `s` | shuffle sí / no (el tema actual sigue sonando) |
 | `a` | busca un tema y lo agrega a la cola: suena después del actual |
+| `+` (o `=`) / `-` | sube / baja el volumen de la app un 5 % |
 | `q` | salir |
 
 La cola vive mientras dura `play` y no se ve desde el celular ni desde la
@@ -87,12 +88,19 @@ cargo build --release
 | `shuffle`, `s` | shuffle sí / no |
 | `queue <tema>`, `a <tema>` | busca un tema y lo encola |
 | `stop` | corta y vacía la cola |
+| `vol`, `v` | muestra el volumen de la app |
+| `vol <0-100>`, `vol +`, `vol -` | fija / sube / baja el volumen (Ctrl+↑ / Ctrl+↓) |
+| `mute`, `m` | silencia / vuelve al volumen de antes |
 | `login`, `logout`, `whoami`, `help` | como en la CLI |
 | `clear` / `exit` | limpia la consola / cierra |
 
 Después de una búsqueda, se elige con el número y Enter (Enter solo = el
 primero). ↑/↓ recorren el historial, Tab completa el comando y Esc cancela
 una búsqueda o elección. Un `play` nuevo reemplaza lo que suena.
+
+El volumen es solo el de la app (no toca el de Windows) y se recuerda al
+cerrar, tanto en la ventana como en la CLI
+(`%APPDATA%\spotify-terminal\volumen.txt`).
 
 La app busca el `.env` en la carpeta desde donde arranca (el acceso directo
 arranca en la del repo). Si algo falla al abrir la ventana, se muestra un

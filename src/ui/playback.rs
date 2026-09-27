@@ -1,6 +1,6 @@
 //! Pantalla mínima de reproducción: muestra el tema y el estado, y lee
 //! teclas (espacio = pausa/reanudar, n / p = siguiente / anterior,
-//! s = shuffle, a = encolar, q / Esc / Ctrl+C = salir).
+//! s = shuffle, a = encolar, + / - = volumen, q / Esc / Ctrl+C = salir).
 
 use std::{
     future::Future,
@@ -20,7 +20,10 @@ use super::{
     select::{self, Choice},
 };
 use crate::{
-    app::queue::{Clock, PlayState, Queue, Step, on_player_event, uri_text},
+    app::{
+        queue::{Clock, PlayState, Queue, Step, on_player_event, uri_text},
+        volume::Volume,
+    },
     error::AppError,
     spotify::{
         player::Player,
@@ -40,7 +43,9 @@ use crate::{
 ///   los de la precarga y los de temas salteados con `n`/`p` se ignoran.
 ///   Lo encolado con `a` suena después del tema actual, antes del resto de
 ///   la lista; la búsqueda corre dentro del loop sin frenar los eventos del
-///   reproductor, y si falla se avisa y se sigue.
+///   reproductor, y si falla se avisa y se sigue. `+` (o `=`) y `-`
+///   suben / bajan `volume` un paso y se lo aplican al reproductor (quien
+///   llama decide si guardarlo).
 /// - Errores: con un solo tema y nada más por sonar, `TrackUnavailable` si
 ///   no se puede reproducir; en otro caso el tema no disponible se saltea
 ///   con aviso, salvo que se haya caído la sesión o fallen
@@ -53,6 +58,7 @@ pub async fn play_queue(
     web: &WebClient,
     tracks: &[SpotifyUri],
     shuffle: bool,
+    volume: &mut Volume,
 ) -> Result<(), AppError> {
     let mut rng = rand::rng();
     let mut queue = Queue::new(tracks.to_vec(), shuffle, &mut rng);
@@ -71,7 +77,7 @@ pub async fn play_queue(
     let mut mode = Mode::Normal;
     let mut clock = Clock::default();
     let mut search: Option<SearchFuture<'_>> = None;
-    draw(&mode, state, &queue);
+    draw(&mode, state, &queue, *volume);
 
     loop {
         let step = tokio::select! {
@@ -131,6 +137,16 @@ pub async fn play_queue(
                                 Step::Nothing
                             }
                         },
+                        Action::VolumeUp => {
+                            volume.up();
+                            player.set_volume(*volume);
+                            Step::Nothing
+                        }
+                        Action::VolumeDown => {
+                            volume.down();
+                            player.set_volume(*volume);
+                            Step::Nothing
+                        }
                         Action::Enqueue(hit) => {
                             line(&format!("➕ En cola: {} — {}", hit.name, hit.detail));
                             queue.enqueue(hit.uri);
@@ -181,7 +197,7 @@ pub async fn play_queue(
                 return Err(e);
             }
         }
-        draw(&mode, state, &queue);
+        draw(&mode, state, &queue, *volume);
     }
     line("Fin.");
     Ok(())
@@ -235,6 +251,8 @@ enum Action {
     Next,
     Previous,
     ToggleShuffle,
+    VolumeUp,
+    VolumeDown,
     Enqueue(Hit),
     Quit,
 }
@@ -299,13 +317,16 @@ fn map_normal_key(code: KeyCode) -> Action {
         KeyCode::Char('n') | KeyCode::Right => Action::Next,
         KeyCode::Char('p') | KeyCode::Left => Action::Previous,
         KeyCode::Char('s') => Action::ToggleShuffle,
+        // `=` es la misma tecla que `+` sin Shift en muchos teclados.
+        KeyCode::Char('+' | '=') => Action::VolumeUp,
+        KeyCode::Char('-') => Action::VolumeDown,
         KeyCode::Char('q') | KeyCode::Esc => Action::Quit,
         _ => Action::None,
     }
 }
 
 /// Redibuja la línea de estado según el modo.
-fn draw(mode: &Mode, state: PlayState, queue: &Queue) {
+fn draw(mode: &Mode, state: PlayState, queue: &Queue, volume: Volume) {
     let text = match mode {
         Mode::Normal => {
             let icon = match state {
@@ -314,7 +335,7 @@ fn draw(mode: &Mode, state: PlayState, queue: &Queue) {
                 PlayState::Paused => "⏸ En pausa",
             };
             format!(
-                "{icon}  shuffle: {}  cola: {}   [espacio n p s a q]",
+                "{icon}  shuffle: {}  cola: {}  vol: {volume}   [espacio n p s a + - q]",
                 if queue.shuffled() { "sí" } else { "no" },
                 queue.queued()
             )
@@ -363,6 +384,9 @@ mod tests {
             (KeyCode::Char('p'), Action::Previous),
             (KeyCode::Left, Action::Previous),
             (KeyCode::Char('s'), Action::ToggleShuffle),
+            (KeyCode::Char('+'), Action::VolumeUp),
+            (KeyCode::Char('='), Action::VolumeUp),
+            (KeyCode::Char('-'), Action::VolumeDown),
             (KeyCode::Char('q'), Action::Quit),
             (KeyCode::Esc, Action::Quit),
             (KeyCode::Char('x'), Action::None),

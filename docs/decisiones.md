@@ -195,6 +195,20 @@ entradas viejas — se marcan reemplazadas.
   segundo `login` avisaría que el puerto está ocupado).
 - **Estado:** Vigente (spec 004)
 
+## 2026-09-27 — Volumen por software de librespot, no el de Windows por app
+- **Decisión:** el volumen de la app se aplica con el `SoftMixer` de
+  librespot (escala cada muestra antes de la salida), con su curva
+  logarítmica por defecto.
+- **Alternativa descartada:** el volumen por app de Windows (WASAPI
+  `ISimpleAudioVolume`, el que muestra el mezclador). Necesita llegar a la
+  sesión de audio que abre rodio por dentro, más código específico de
+  Windows y más features de `windows-sys`.
+- **Consecuencias:** sin dependencias nuevas. El mezclador de Windows
+  sigue mostrando la app al 100 %: el volumen de la app se suma por
+  debajo. Con la curva lineal, de 50 % a 100 % casi no se nota el cambio;
+  con la logarítmica cada paso de 5 % suena parecido.
+- **Estado:** Vigente (spec 005)
+
 ## 2026-09-27 — La consola usa Consolas, la fuente de la consola de Windows
 - **Decisión:** la app de escritorio usa Consolas (normal y negrita),
   leída de `%WINDIR%\Fonts` al arrancar. Si no está, la monoespaciada de
