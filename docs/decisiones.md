@@ -344,7 +344,9 @@ entradas viejas — se marcan reemplazadas.
 - **Motivo:** proyecto chico: un instalador (MSI/MSIX) o autoupdate es
   más mantenimiento que valor. Los `.exe` no se firman (el certificado se
   paga todos los años); el LEEME explica cómo pasar SmartScreen.
-- **Estado:** Vigente (spec 008)
+- **Estado:** Vigente (spec 008). El disparo por tag a mano quedó
+  reemplazado como camino normal por "Un Release por spec, publicado al
+  mergear" (el tag a mano sigue andando).
 
 ## 2026-09-27 — Runtime de C estático (`+crt-static`)
 - **Decisión:** `.cargo/config.toml` enlaza el CRT dentro del `.exe` para
@@ -354,3 +356,18 @@ entradas viejas — se marcan reemplazadas.
   Redistributable puede no tener. Cuesta ~200 KB por `.exe`.
   `scripts/verificar-dependencias.ps1` lo chequea en CI.
 - **Estado:** Vigente (spec 008)
+
+## 2026-09-27 — Un Release por spec, publicado al mergear
+- **Decisión:** cada spec que cambia lo que se distribuye cierra con una
+  versión nueva (semver en `0.x`: spec nuevo → minor, corrección →
+  patch). El PR sube `Cargo.toml` / `Cargo.lock` y trae su sección
+  `## [X.Y.Z]` en el changelog (lo exige `version-check.yml`); al
+  mergearlo, `release.yml` crea el tag y el Release solo. El changelog ya
+  no tiene sección "Sin publicar".
+- **Motivo:** que publicar sea parte del flujo spec → docs → código → PR
+  y no un paso que se olvida. La versión se decide en el plan y se revisa
+  en el PR, como el resto del spec; nadie crea tags a mano.
+- **Alternativa descartada:** tag a mano después del merge (se olvida, y
+  el tag puede no coincidir con `Cargo.toml`); versionar con cada merge
+  aunque sea de docs (Releases vacíos).
+- **Estado:** Vigente

@@ -57,6 +57,8 @@ datos, notificaciones a personas reales. Se borra esta sección si no aplica.)*
 - Tests necesarios:
 - Contratos a crear/actualizar (pre/postcondiciones de funciones públicas) y
   si hace falta tocar el doc de arquitectura del proyecto:
+- Versión que publica (minor si es spec nuevo, patch si corrige o reabre
+  uno; "ninguna" si no cambia lo que se distribuye):
 
 ## Tareas
 *(desglose del plan, se van tildando)*
@@ -74,7 +76,10 @@ las rutas de docs si el proyecto las nombra distinto)*
 - [ ] Contratos de funciones públicas y doc de arquitectura actualizados si
       el spec cambió una firma, comportamiento o el mapa de módulos
 - [ ] Decisiones de diseño relevantes documentadas
-- [ ] Changelog actualizado
+- [ ] Changelog actualizado: sección `## [X.Y.Z] - fecha` de la versión del
+      spec
+- [ ] Versión subida en `Cargo.toml` y `Cargo.lock` (si cambia lo que se
+      distribuye); el Release lo publica CI al mergear
 - [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
 - [ ] Sin secretos ni credenciales en el diff
 - [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan

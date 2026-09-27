@@ -1,0 +1,60 @@
+name: Chequeo de versión
+
+# Un PR que cambia lo que se distribuye (src/, Cargo.toml, Cargo.lock,
+# .cargo/, dist/) tiene que subir la versión y traer su sección en el
+# CHANGELOG: al mergearlo, release.yml publica ese Release. Ver "Versiones
+# y releases" en CLAUDE.md. Un PR de solo docs/specs/CI pasa sin más.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Versión nueva y changelog
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if ! git diff --name-only "origin/$BASE...HEAD" | grep -Eq '^(src/|Cargo\.toml$|Cargo\.lock$|\.cargo/|dist/)'; then
+            echo "El PR no cambia lo que se distribuye: no hace falta versión nueva."
+            exit 0
+          fi
+
+          version_of() { sed -n 's/^version = "\(.*\)"$/\1/p' | head -1; }
+          new=$(version_of < Cargo.toml)
+          old=$(git show "origin/$BASE:Cargo.toml" | version_of)
+          echo "Versión en $BASE: $old · en el PR: $new"
+          fail=0
+
+          if [ "$new" = "$old" ] || [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -1)" != "$new" ]; then
+            echo "::error file=Cargo.toml::Subí la versión (está en $old). Spec nuevo → minor, corrección → patch."
+            fail=1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$new" >/dev/null; then
+            echo "::error file=Cargo.toml::v$new ya está publicada."
+            fail=1
+          fi
+          if ! grep -q "^## \[$new\]" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::Falta la sección ## [$new] - fecha con los cambios del spec."
+            fail=1
+          fi
+          # cargo build --locked (en release.yml) falla si Cargo.lock quedó
+          # con la versión vieja.
+          if ! awk -v v="$new" '
+              $0 == "name = \"spotify-terminal\"" { getline; if ($0 == "version = \"" v "\"") ok = 1 }
+              END { exit !ok }
+            ' Cargo.lock; then
+            echo "::error file=Cargo.lock::Cargo.lock no tiene spotify-terminal $new: corré cargo build y commitealo."
+            fail=1
+          fi
+          exit $fail

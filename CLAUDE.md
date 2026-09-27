@@ -55,8 +55,9 @@ y el agente: evita que el agente asuma cosas que después hay que deshacer.
    vos, o asumidas con motivo explícito). No se avanza al plan
    con una ambigüedad relevante sin resolver de alguna de las dos formas.
 3. **Plan** — el agente lee el spec y escribe la sección "Plan técnico": qué
-   archivos toca, qué funciones/estructuras nuevas, qué tests hacen falta.
-   Vos revisás el plan antes de que se escriba código.
+   archivos toca, qué funciones/estructuras nuevas, qué tests hacen falta y
+   la versión que va a publicar (ver "Versiones y releases"). Vos revisás
+   el plan antes de que se escriba código.
 4. **Tasks** — el plan se descompone en una lista de tareas chicas y
    verificables (checklist al final del mismo archivo de spec).
 5. **Implement** — el agente ejecuta las tareas una por una, marcando cada
@@ -65,6 +66,24 @@ y el agente: evita que el agente asuma cosas que después hay que deshacer.
    spec queda `Reabierto (parcial)` con el motivo explícito — nunca
    `Verificado` con algún `AC-N` sin tildar. El checklist de "Definition of
    Done" del spec se revisa entero, no solo los AC.
+7. **Release** — el PR del spec sube la versión en `Cargo.toml` (y
+   `Cargo.lock`) y agrega su sección `## [X.Y.Z] - fecha` al
+   `CHANGELOG.md`. Al mergearlo, `.github/workflows/release.yml` publica
+   solo el Release `vX.Y.Z` con el zip y las notas de esa sección. Nadie
+   crea tags a mano.
+
+### Versiones y releases
+
+- Cada spec que cambia lo que se distribuye (`src/`, `Cargo.toml`,
+  `.cargo/`, `dist/`) cierra con una versión nueva y su Release.
+  `.github/workflows/version-check.yml` hace fallar el PR que cambia esos
+  archivos sin subir la versión o sin su sección en el changelog.
+- Semver, mientras el proyecto está en `0.x`: spec nuevo → sube el minor
+  (`0.2.0` → `0.3.0`); spec que corrige o reabre uno anterior → sube el
+  patch (`0.3.0` → `0.3.1`). Pasar a `1.0.0` lo decidís vos.
+- Un PR que solo toca docs, specs o CI no sube la versión ni publica nada.
+- El changelog no tiene sección "Sin publicar": cada PR de spec escribe
+  directo la de su versión.
 
 `specs/[0-9]*.md` se valida automáticamente en cada PR que toca `specs/**`
 con `.github/workflows/spec-lint.yml`: estructura de secciones y que

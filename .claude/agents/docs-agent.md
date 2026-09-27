@@ -13,5 +13,5 @@ Reglas:
 - `docs/decisiones.md`: una entrada por decisión con fecha, alternativas y motivo. Si una decisión reemplaza a una anterior, marcá la entrada vieja como reemplazada en vez de dejarla como si siguiera vigente.
 - `docs/arquitectura.md`: si el diff agregó, movió o renombró un módulo, cambió una dependencia entre módulos, o el agente de código no actualizó el mapa correspondiente, corregilo — verificá contra el diff real, no contra lo que el spec planeaba hacer.
 - `docs/glosario.md`: si el spec introduce un término de dominio nuevo, agregalo. No agregues términos que ya están.
-- Changelog: agregá una línea por spec verificado, con su número.
+- Changelog: cada spec escribe su sección `## [X.Y.Z] - fecha` (la versión del plan del spec; no hay sección "Sin publicar"), con el número de spec en cada entrada. Esas notas son las que publica el Release al mergear.
 - No borres specs implementados: quedan como historial.

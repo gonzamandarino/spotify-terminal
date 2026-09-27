@@ -46,3 +46,17 @@ El workflow `.github/workflows/spec-lint.yml` corre en cada PR que toca
 `specs/**`. Valida que todo spec tenga las secciones que exige
 `specs/_template.md`, y que un spec en estado `Verificado` no tenga ningún
 criterio de aceptación sin tildar. No es un check requerido por defecto.
+
+## Versión y Release por spec
+`.github/workflows/version-check.yml` corre en cada PR a `main`: si el PR
+cambia lo que se distribuye (`src/`, `Cargo.toml`, `Cargo.lock`, `.cargo/`,
+`dist/`), exige versión nueva en `Cargo.toml` y `Cargo.lock`, que no esté
+publicada y su sección `## [X.Y.Z]` en `CHANGELOG.md`. Conviene marcarlo
+como check requerido (Settings → Branches → Require status checks →
+"Chequeo de versión / version").
+
+Al mergear, `.github/workflows/release.yml` publica el Release `vX.Y.Z` si
+esa versión todavía no tiene tag. El tag lo crea el workflow con
+`GITHUB_TOKEN` (job `release`, único con `contents: write`); no hace falta
+permiso extra ni push de tags a mano. Ver "Versiones y releases" en
+`CLAUDE.md`.

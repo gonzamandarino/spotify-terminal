@@ -169,11 +169,13 @@ no dependen de `vcruntime140.dll`.
 
 ### Publicar una versión
 
-Subí `version` en `Cargo.toml`, actualizá `CHANGELOG.md` y pusheá un tag
-igual: `git tag v0.2.0; git push origin v0.2.0`. El workflow
+Cada spec publica su versión (ver "Versiones y releases" en `CLAUDE.md`):
+el PR sube `version` en `Cargo.toml` (y `Cargo.lock`, con `cargo build`) y
+agrega la sección `## [X.Y.Z] - fecha` al `CHANGELOG.md`; el check
+`version-check` hace fallar el PR si falta algo. Al mergearlo,
 `.github/workflows/release.yml` compila, corre los chequeos, arma el zip y
-lo publica en el Release del tag (falla si el tag no coincide con
-`Cargo.toml`). Para revisar el zip sin publicar: "Run workflow" en la
+publica el Release `vX.Y.Z` con las notas de esa sección. No hace falta
+crear tags a mano. Para revisar el zip sin publicar: "Run workflow" en la
 pestaña Actions.
 
 ### Medir consumo

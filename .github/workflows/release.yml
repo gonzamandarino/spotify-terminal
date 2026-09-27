@@ -1,11 +1,17 @@
 name: Release
 
-# Spec 008: pushear un tag vX.Y.Z (igual a la versión de Cargo.toml) arma
-# el zip para Windows y lo publica en el Release del tag. "Run workflow"
-# (workflow_dispatch) arma el zip y lo deja como artifact, sin publicar.
+# Un Release por spec (ver "Versiones y releases" en CLAUDE.md):
+# - push a main (merge de un PR): si la versión de Cargo.toml todavía no
+#   tiene su tag vX.Y.Z, arma el zip y publica el Release con las notas de
+#   su sección del CHANGELOG. Si ya existe (PR de docs/CI), no hace nada.
+# - push de un tag v* a mano: el tag tiene que coincidir con Cargo.toml
+#   (spec 008, AC-8).
+# - "Run workflow" (workflow_dispatch): arma el zip y lo deja como
+#   artifact, sin publicar.
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -13,10 +19,62 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: windows-latest
+  check:
+    runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.decide.outputs.version }}
+      build: ${{ steps.decide.outputs.build }}
+      publish: ${{ steps.decide.outputs.publish }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Qué hacer con esta versión
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="v$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          tag_exists=false
+          if gh api "repos/${{ github.repository }}/git/ref/tags/$version" >/dev/null 2>&1; then
+            tag_exists=true
+          fi
+          build=true
+          publish=false
+          case "${{ github.event_name }}:${{ github.ref_type }}" in
+            push:tag)
+              if [ "${{ github.ref_name }}" != "$version" ]; then
+                echo "::error::El tag ${{ github.ref_name }} no coincide con la versión de Cargo.toml ($version)."
+                exit 1
+              fi
+              publish=true
+              ;;
+            push:branch)
+              if [ "$tag_exists" = true ]; then
+                echo "$version ya está publicada: este merge no cambia lo que se distribuye."
+                build=false
+              else
+                publish=true
+              fi
+              ;;
+            *)
+              version="$version-$(echo "${{ github.sha }}" | cut -c1-7)"
+              ;;
+          esac
+          if [ "$publish" = true ] && ! grep -q "^## \[${version#v}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md no tiene la sección ## [${version#v}]."
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "build=$build"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -27,22 +85,6 @@ jobs:
           rustup component add rustfmt clippy
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-
-      - name: Versión (el tag tiene que coincidir con Cargo.toml)
-        id: version
-        shell: pwsh
-        run: |
-          $meta = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
-          $cargo = "v" + ($meta.packages | Where-Object name -eq "spotify-terminal").version
-          if ($env:GITHUB_REF_TYPE -eq "tag") {
-            if ($env:GITHUB_REF_NAME -ne $cargo) {
-              throw "El tag $env:GITHUB_REF_NAME no coincide con la versión de Cargo.toml ($cargo)."
-            }
-            $version = $cargo
-          } else {
-            $version = "$cargo-$($env:GITHUB_SHA.Substring(0, 7))"
-          }
-          "version=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
 
       - name: Formato
         run: cargo fmt --check
@@ -63,33 +105,43 @@ jobs:
       - name: Armar el zip
         id: zip
         shell: pwsh
-        run: ./scripts/armar-zip.ps1 -Version ${{ steps.version.outputs.version }}
+        run: ./scripts/armar-zip.ps1 -Version ${{ needs.check.outputs.version }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: spotify-terminal-${{ steps.version.outputs.version }}-windows-x64
+          name: spotify-terminal-${{ needs.check.outputs.version }}-windows-x64
           path: ${{ steps.zip.outputs.zip }}
           if-no-files-found: error
 
   release:
-    needs: build
-    if: github.ref_type == 'tag'
+    needs: [check, build]
+    if: needs.check.outputs.publish == 'true'
     runs-on: ubuntu-latest
-    # Solo este job puede escribir en el repo (crear el Release).
+    # Solo este job puede escribir en el repo (crear el tag y el Release).
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: spotify-terminal-${{ needs.build.outputs.version }}-windows-x64
+          name: spotify-terminal-${{ needs.check.outputs.version }}-windows-x64
 
       - name: Publicar el Release
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
-          gh release create "$TAG" "spotify-terminal-$TAG-windows-x64.zip" \
-            --title "$TAG" \
-            --notes "Bajá el zip, descomprimilo y abrí spotify-desktop.exe. Instrucciones en el LEEME.txt del zip; cambios en CHANGELOG.md." \
-            --generate-notes
+          set -euo pipefail
+          # Notas: la sección de esta versión en el CHANGELOG.
+          awk -v v="${VERSION#v}" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notas.md
+          printf '\n---\nBajá el zip, descomprimilo y abrí spotify-desktop.exe. Instrucciones en el LEEME.txt del zip.\n' >> notas.md
+          # Con --target, gh crea el tag sobre este commit si no existe.
+          gh release create "$VERSION" "spotify-terminal-$VERSION-windows-x64.zip" \
+            --target "${{ github.sha }}" \
+            --title "$VERSION" \
+            --notes-file notas.md
