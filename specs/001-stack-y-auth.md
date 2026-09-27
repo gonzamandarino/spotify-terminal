@@ -218,7 +218,8 @@ pero sirven para comparar consumo y enfoques.
 - **AC-7 (versión original, ya reemplazada):** binario corrido desde una
   carpeta sin `.env` y sin la variable → mensaje con instrucciones, `exit=1`. Cubierto también por los tests
   `client_id_ausente_es_error` y `client_id_vacio_o_con_espacios_es_error`.
-- **T2 — spike (2026-09-26), `examples/spike_librespot.rs`:**
+- **T2 — spike (2026-09-26), `examples/spike_librespot.rs`** (borrado en la
+  revisión de código, queda en el historial de git):
   - Con **nuestro** Client ID: el login OAuth y `Session::connect` funcionan
     (el AP autentica al usuario), pero al cargar audio `login5` responde
     `FaultyRequest(INVALID_CREDENTIALS)` → el tema queda `Unavailable`. El
@@ -278,4 +279,27 @@ pero sirven para comparar consumo y enfoques.
   (`TimeToPreloadNextTrack`) para que no haya silencio entre temas. Un tema
   no disponible dentro de una lista se saltea con aviso.
   `scripts/medir-consumo.ps1` probado contra otro proceso (1 min, OK).
+- **Revisión de código (2026-09-26):** un agente de revisión encontró 5
+  bugs y varios riesgos; se arreglaron todos los de severidad alta y media:
+  - sin dispositivo de audio, el comando terminaba con exit 0 (panic de
+    rodio en el hilo de librespot) → chequeo con `cpal` antes de conectar y
+    canal de eventos cerrado = `PlayerStopped`.
+  - la cola no filtraba por `play_request_id`: un `EndOfTrack` repetido
+    salteaba temas, y una precarga fallida podía cortar el tema actual →
+    `playback::Queue`, máquina de estados con tests.
+  - sesión caída a mitad de lista → se recorría toda la cola como "no
+    disponible" → corta con `Network` (sesión inválida o
+    `MAX_CONSECUTIVE_UNAVAILABLE` seguidos).
+  - Web API sin timeout → `WebClient` con `HTTP_TIMEOUT`.
+  - la sesión de audio corre en su propio hilo (ver `docs/decisiones.md`).
+  - además: `Token` no muestra los tokens en `Debug`, test que fija el texto
+    de error de `oauth2`, constantes a `config.rs`, teclado con
+    `EventStream`, terminal restaurada ante panic, aviso de elementos
+    omitidos en playlists, spike y sus tokens en texto plano borrados.
+  - pendientes menores, sin arreglar: el cache no guarda con qué Client ID
+    se emitió (si cambia `SPOTIFY_CLIENT_ID`, se usa el token viejo hasta
+    que vence); permisos del cache en Unix (solo se soporta Windows); sin
+    reconexión automática de la sesión.
+  - 37 tests; `whoami` y `play` de un álbum inexistente probados con el
+    binario release.
 

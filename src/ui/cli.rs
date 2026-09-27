@@ -1,7 +1,10 @@
 //! Subcomandos de línea. Parseo a mano: son pocos y no justifican `clap`.
 
-use crate::error::AppError;
+use librespot_core::SpotifyUri;
 
+use crate::{config, error::AppError};
+
+/// Texto de ayuda (`help` y errores de uso).
 pub const USAGE: &str = "\
 Uso: spotify-terminal <comando>
 
@@ -14,14 +17,14 @@ Comandos:
                 link de open.spotify.com o ID de tema.
                 Espacio = pausa/reanudar, q = salir";
 
+/// Subcomando pedido, ya validado.
 #[derive(Debug, PartialEq)]
 pub enum Command {
     Login,
     Logout,
     Whoami,
-    /// URI normalizada de lo que hay que reproducir
-    /// (`spotify:{track|album|playlist}:<ID>`).
-    Play(String),
+    /// Tema, álbum o playlist a reproducir.
+    Play(SpotifyUri),
     Help,
 }
 
@@ -53,10 +56,10 @@ pub fn parse(args: &[String]) -> Result<Command, AppError> {
 /// Tipos que acepta `play`, tal como aparecen en URIs y links.
 const PLAYABLE_KINDS: [&str; 3] = ["track", "album", "playlist"];
 
-/// Normaliza lo que se pide reproducir a `spotify:<tipo>:<ID>`. Acepta la
-/// URI, un link de `open.spotify.com/<tipo>/<ID>` (con o sin `?si=...` o
-/// prefijo de idioma) o el ID solo, que se toma como tema.
-fn parse_playable(input: &str) -> Result<String, AppError> {
+/// Interpreta lo que se pide reproducir. Acepta la URI
+/// (`spotify:<tipo>:<ID>`), un link de `open.spotify.com/<tipo>/<ID>` (con o
+/// sin `?si=...` o prefijo de idioma) o el ID solo, que se toma como tema.
+fn parse_playable(input: &str) -> Result<SpotifyUri, AppError> {
     let (kind, id) = if let Some(rest) = input.strip_prefix("spotify:") {
         rest.split_once(':').unwrap_or_default()
     } else if let Some((_, path)) = input.split_once("open.spotify.com/") {
@@ -72,15 +75,13 @@ fn parse_playable(input: &str) -> Result<String, AppError> {
         ("track", input)
     };
 
-    // Los IDs de Spotify son 22 caracteres base62.
-    let valid_id = id.len() == 22 && id.chars().all(|c| c.is_ascii_alphanumeric());
-    if PLAYABLE_KINDS.contains(&kind) && valid_id {
-        Ok(format!("spotify:{kind}:{id}"))
-    } else {
-        Err(usage_error(&format!(
-            "no reconozco qué reproducir: {input}"
-        )))
+    let valid_id =
+        id.len() == config::SPOTIFY_ID_LEN && id.chars().all(|c| c.is_ascii_alphanumeric());
+    let unrecognized = || usage_error(&format!("no reconozco qué reproducir: {input}"));
+    if !(PLAYABLE_KINDS.contains(&kind) && valid_id) {
+        return Err(unrecognized());
     }
+    SpotifyUri::from_uri(&format!("spotify:{kind}:{id}")).map_err(|_| unrecognized())
 }
 
 fn usage_error(message: &str) -> AppError {
@@ -92,6 +93,10 @@ mod tests {
     use super::*;
 
     const ID: &str = "4uLU6hMCjMI75M1A2tKUQC";
+
+    fn uri(text: &str) -> SpotifyUri {
+        SpotifyUri::from_uri(text).unwrap()
+    }
 
     fn args(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
@@ -106,7 +111,7 @@ mod tests {
         assert_eq!(parse(&args(&["whoami"])).unwrap(), Command::Whoami);
         assert_eq!(
             parse(&args(&["play", ID])).unwrap(),
-            Command::Play(format!("spotify:track:{ID}"))
+            Command::Play(uri(&format!("spotify:track:{ID}")))
         );
     }
 
@@ -127,28 +132,30 @@ mod tests {
 
     #[test]
     fn tema_en_todos_los_formatos() {
-        let uri = format!("spotify:track:{ID}");
+        let text = format!("spotify:track:{ID}");
+        let expected = uri(&text);
         for input in [
-            uri.clone(),
+            text,
             ID.to_string(),
             format!("https://open.spotify.com/track/{ID}"),
             format!("https://open.spotify.com/track/{ID}?si=abc123"),
             format!("https://open.spotify.com/intl-es/track/{ID}?si=abc"),
         ] {
-            assert_eq!(parse_playable(&input).unwrap(), uri, "{input}");
+            assert_eq!(parse_playable(&input).unwrap(), expected, "{input}");
         }
     }
 
     #[test]
     fn album_y_playlist() {
         for kind in ["album", "playlist"] {
-            let uri = format!("spotify:{kind}:{ID}");
+            let text = format!("spotify:{kind}:{ID}");
+            let expected = uri(&text);
             for input in [
-                uri.clone(),
+                text,
                 format!("https://open.spotify.com/{kind}/{ID}?si=x"),
                 format!("https://open.spotify.com/intl-es/{kind}/{ID}"),
             ] {
-                assert_eq!(parse_playable(&input).unwrap(), uri, "{input}");
+                assert_eq!(parse_playable(&input).unwrap(), expected, "{input}");
             }
         }
     }

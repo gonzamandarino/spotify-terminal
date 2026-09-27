@@ -65,3 +65,28 @@ entradas viejas — se marcan reemplazadas.
   token Web; queda para cuando haga falta paginar o mostrar más datos
   (spec de playlists).
 - **Estado:** Vigente (spec 001, T7)
+
+## 2026-09-26 — La sesión de audio corre en un hilo propio
+- **Decisión:** la `Session` de librespot se crea y atiende en un hilo con
+  su propio runtime tokio de un solo hilo (`player::AudioRuntime`), no en
+  el runtime de `main`.
+- **Motivo:** librespot lanza las tareas de la sesión en el runtime de quien
+  la crea, y los pedidos de clave de audio tienen timeout de 1,5 s.
+  Cualquier bloqueo de `main` (login, disco, render de la futura TUI)
+  podía hacer fallar la carga de un tema. Gana la reproducción.
+- **Costo:** un hilo más (stack chico, sin trabajo cuando no hay I/O).
+- **Estado:** Vigente (spec 001, revisión de código)
+
+## 2026-09-26 — Dependencias chicas agregadas en la revisión de código
+- **`crossterm` feature `event-stream`** + **`futures-util`** (sin
+  features): las teclas se leen como `Stream` dentro del `select!`. Reemplaza
+  un hilo lector propio que quedaba vivo y se comía la próxima tecla.
+- **`cpal`**: ver si hay dispositivo de salida antes de abrir la sesión
+  (si no hay, rodio hace panic dentro de librespot).
+- **`oauth2`** (solo dev): test que fija el texto de error del que depende
+  la detección de "refresh token rechazado".
+- Las tres ya venían como dependencias de librespot: no se compila nada
+  nuevo.
+- Se quitó `env_logger` (solo lo usaba el spike, que se borró).
+- **Estado:** Vigente (spec 001)
+

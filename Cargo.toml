@@ -8,9 +8,14 @@ publish = false
 
 # Las crates se agregan en la tarea que las empieza a usar (ver spec 001).
 [dependencies]
-crossterm = "0.29.0"
+# Ya la trae librespot (salida de audio); se usa para ver si hay dispositivo.
+cpal = "0.16.0"
+# event-stream: teclas como Stream async, sin hilo lector propio.
+crossterm = { version = "0.29.0", features = ["event-stream"] }
 directories = "6.0.0"
 dotenvy = "0.15.7"
+# Ya la trae librespot; solo por `StreamExt::next` sobre las teclas.
+futures-util = { version = "0.3.34", default-features = false }
 librespot-core = "0.8.0"
 librespot-metadata = "0.8.0"
 librespot-oauth = "0.8.0"
@@ -29,4 +34,5 @@ lto = true
 codegen-units = 1
 
 [dev-dependencies]
-env_logger = "0.11.11"
+# Solo para el test que fija el texto de error de oauth2 (auth.rs).
+oauth2 = { version = "5.0.0", default-features = false }

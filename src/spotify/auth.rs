@@ -9,7 +9,7 @@
 //! se escriben de forma atómica: nunca queda un archivo a medio escribir.
 
 use std::{
-    fs, io,
+    fmt, fs, io,
     path::{Path, PathBuf},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -30,6 +30,7 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
+    /// Todos los tipos, en el orden en que `login` los autoriza.
     pub const ALL: [TokenKind; 2] = [TokenKind::Audio, TokenKind::Web];
 
     fn client_id(self, config: &Config) -> &str {
@@ -48,8 +49,8 @@ impl TokenKind {
 
     fn cache_path(self, config: &Config) -> PathBuf {
         let file = match self {
-            TokenKind::Audio => "token-audio.json",
-            TokenKind::Web => "token-web.json",
+            TokenKind::Audio => config::AUDIO_TOKEN_FILE,
+            TokenKind::Web => config::WEB_TOKEN_FILE,
         };
         config.data_dir.join(file)
     }
@@ -65,18 +66,37 @@ impl TokenKind {
 
 /// Token de Spotify tal como se guarda en el cache.
 ///
-/// Invariante: `refresh_token` no está vacío (si Spotify no manda uno nuevo
-/// al renovar, se conserva el anterior).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Invariante: un token leído del cache tiene `refresh_token` no vacío (si
+/// Spotify no manda uno nuevo al renovar, se conserva el anterior; un cache
+/// sin refresh token se trata como "sin sesión").
+///
+/// `Debug` no muestra los tokens, para que un `{:?}` no los filtre.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Token {
-    pub access_token: String,
+    access_token: String,
     refresh_token: String,
     /// Vencimiento del access token, en segundos desde UNIX_EPOCH.
     expires_at: u64,
     scopes: Vec<String>,
 }
 
+impl fmt::Debug for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Token")
+            .field("access_token", &"<oculto>")
+            .field("refresh_token", &"<oculto>")
+            .field("expires_at", &self.expires_at)
+            .field("scopes", &self.scopes)
+            .finish()
+    }
+}
+
 impl Token {
+    /// Access token para mandar a Spotify. No debe imprimirse ni loguearse.
+    pub fn access_token(&self) -> &str {
+        &self.access_token
+    }
+
     /// Convierte el token de `librespot-oauth`. Si `previous_refresh` es
     /// `Some` y el token nuevo no trae refresh token, se conserva el anterior.
     fn from_oauth(token: OAuthToken, previous_refresh: Option<&str>) -> Token {
@@ -142,12 +162,12 @@ pub async fn get_valid_token(config: &Config, kind: TokenKind) -> Result<Token, 
                 Err(e) => return Err(AppError::Network(e.to_string())),
             }
         } else {
-            println!("Hacen falta permisos nuevos ({}).", kind.label());
+            eprintln!("Hacen falta permisos nuevos ({}).", kind.label());
         }
     }
 
-    println!(
-        "Abriendo el navegador para autorizar el acceso de {}...
+    eprintln!(
+        "Abriendo el navegador para autorizar el acceso de {}...\n\
          (Si cerraste el navegador sin terminar, cortá con Ctrl+C.)",
         kind.label()
     );
@@ -208,31 +228,36 @@ fn oauth_client(config: &Config, kind: TokenKind) -> Result<OAuthClient, AppErro
     .map_err(|e| AppError::Login(e.to_string()))
 }
 
-/// Lee el cache. Un cache inexistente o ilegible se trata como "sin sesión"
-/// (se vuelve a loguear), no como error.
+/// Lee el cache. Un cache inexistente, ilegible o sin refresh token se trata
+/// como "sin sesión" (se vuelve a loguear), no como error.
 fn read_cache(path: &Path) -> Option<Token> {
     let contents = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&contents).ok()
+    let token: Token = serde_json::from_str(&contents).ok()?;
+    (!token.refresh_token.is_empty()).then_some(token)
 }
 
 /// Escribe el cache de forma atómica: primero a un temporal y después
-/// `rename`, que reemplaza el archivo anterior de una sola vez.
+/// `rename`, que reemplaza el archivo anterior de una sola vez. El temporal
+/// lleva el PID para que dos procesos a la vez no se pisen.
 fn write_cache(path: &Path, token: &Token) -> Result<(), AppError> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }
     let json = serde_json::to_string(token).map_err(io::Error::other)?;
-    let tmp = path.with_extension("json.tmp");
+    let tmp = temp_path(path);
     fs::write(&tmp, json)?;
     fs::rename(&tmp, path)?;
     Ok(())
 }
 
+fn temp_path(path: &Path) -> PathBuf {
+    path.with_extension(format!("{}.tmp", std::process::id()))
+}
+
 fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs())
 }
 
 #[cfg(test)]
@@ -305,7 +330,7 @@ mod tests {
         let t = token(123, &["streaming"]);
         write_cache(&path, &t).unwrap();
         assert_eq!(read_cache(&path), Some(t));
-        assert!(!path.with_extension("json.tmp").exists());
+        assert!(!temp_path(&path).exists());
     }
 
     #[test]
@@ -316,6 +341,43 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(&path, "{ no es json").unwrap();
         assert_eq!(read_cache(&path), None);
+    }
+
+    #[test]
+    fn cache_sin_refresh_token_es_sin_sesion() {
+        let path = temp_dir("sin-refresh").join("token.json");
+        let mut t = token(123, &[]);
+        t.refresh_token.clear();
+        write_cache(&path, &t).unwrap();
+        assert_eq!(read_cache(&path), None);
+    }
+
+    #[test]
+    fn debug_no_muestra_los_tokens() {
+        let text = format!("{:?}", token(1, &[]));
+        assert!(
+            !text.contains("acceso") && !text.contains("refresco"),
+            "{text}"
+        );
+    }
+
+    /// Si `oauth2` cambia cómo muestra un rechazo del servidor, este test
+    /// falla en vez de que un refresh token revocado pase a verse como
+    /// "sin red" en silencio.
+    #[test]
+    fn prefijo_de_rechazo_coincide_con_oauth2() {
+        use oauth2::{
+            RequestTokenError,
+            basic::{BasicErrorResponse, BasicErrorResponseType},
+        };
+        let error: RequestTokenError<io::Error, BasicErrorResponse> =
+            RequestTokenError::ServerResponse(BasicErrorResponse::new(
+                BasicErrorResponseType::InvalidGrant,
+                None,
+                None,
+            ));
+        // Así lo convierte librespot-oauth (`ExchangeCode { e: e.to_string() }`).
+        assert!(refresh_was_rejected(&exchange_error(&error.to_string())));
     }
 
     #[test]

@@ -7,21 +7,22 @@ use std::process::ExitCode;
 
 use config::Config;
 use error::AppError;
-use librespot_core::SpotifyUri;
 use spotify::{
     auth::{self, TokenKind},
     player::Player,
-    web,
+    web::WebClient,
 };
 use ui::{
     cli::{self, Command},
     playback,
 };
 
-// Un solo hilo alcanza: la red es async y librespot reproduce en su propio
-// hilo. Menos hilos = menos memoria.
+// Un solo hilo para main: acá solo corren el login, la Web API y la UI. La
+// sesión de audio tiene su propio hilo (`spotify::player`) y librespot los
+// suyos, así que un bloqueo acá no corta la música.
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {
+    playback::restore_terminal_on_panic();
     // Todo error llega hasta acá como `AppError` y se muestra con su mensaje
     // para el usuario; nada de stack traces ni `panic!`.
     match run().await {
@@ -54,24 +55,28 @@ async fn run() -> Result<(), AppError> {
             }
         }
         Command::Whoami => {
-            let token = auth::get_valid_token(&config, TokenKind::Web).await?;
-            let user = web::current_user(&token).await?;
+            let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
+            let user = web.current_user().await?;
             println!("{} ({}), plan: {}", user.name(), user.id, user.plan());
         }
-        Command::Play(uri) => {
-            let web_token = auth::get_valid_token(&config, TokenKind::Web).await?;
+        Command::Play(target) => {
+            let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
             // Chequeo barato antes de abrir la sesión de audio: sin Premium
             // librespot no reproduce y el error sería menos claro.
-            let user = web::current_user(&web_token).await?;
+            let user = web.current_user().await?;
             if !user.is_premium() {
                 return Err(AppError::NotPremium(user.plan().to_string()));
             }
-            let target = SpotifyUri::from_uri(&uri)
-                .map_err(|e| AppError::Usage(format!("no reconozco {uri}: {e}")))?;
             let audio_token = auth::get_valid_token(&config, TokenKind::Audio).await?;
             let player = Player::connect(&audio_token).await?;
-            let tracks = player.resolve_tracks(&target).await?;
-            playback::play_queue(&player, &tracks).await?;
+            let resolved = player.resolve_tracks(&target).await?;
+            if resolved.skipped > 0 {
+                println!(
+                    "⚠ Se omiten {} elementos (archivos locales o que Spotify no devolvió).",
+                    resolved.skipped
+                );
+            }
+            playback::play_queue(&player, &resolved.tracks).await?;
         }
     }
     Ok(())

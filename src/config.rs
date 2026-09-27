@@ -4,6 +4,8 @@
 
 use std::{path::PathBuf, time::Duration};
 
+use librespot_playback::config::Bitrate;
+
 use crate::error::AppError;
 
 /// Client ID para la sesión de audio (el de librespot). Con uno propio,
@@ -34,6 +36,28 @@ pub const TOKEN_REFRESH_MARGIN: Duration = Duration::from_secs(60);
 /// Página que ve el usuario en el navegador al terminar el login.
 pub const LOGIN_DONE_HTML: &str =
     "<!doctype html><html><body><h1>Listo. Volvé a la terminal.</h1></body></html>";
+
+/// Tiempo máximo de un pedido a la Web API. Sin esto, una red colgada deja
+/// al cliente esperando para siempre.
+pub const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Plan de cuenta que permite reproducir (campo `product` de `GET /me`).
+pub const PREMIUM_PLAN: &str = "premium";
+
+/// Largo de un ID de Spotify (base62).
+pub const SPOTIFY_ID_LEN: usize = 22;
+
+/// Calidad del audio. 160 kbps es el default de librespot: menos red y RAM
+/// que 320, y sin diferencia audible con auriculares comunes.
+pub const AUDIO_BITRATE: Bitrate = Bitrate::Bitrate160;
+
+/// Temas seguidos que pueden fallar al cargar antes de cortar la lista:
+/// más que eso casi seguro es la conexión, no los temas.
+pub const MAX_CONSECUTIVE_UNAVAILABLE: u32 = 3;
+
+/// Archivos de cache de token dentro de `Config::data_dir`.
+pub const AUDIO_TOKEN_FILE: &str = "token-audio.json";
+pub const WEB_TOKEN_FILE: &str = "token-web.json";
 
 /// Variable de entorno (o clave de `.env`) con el Client ID propio.
 const WEB_CLIENT_ID_VAR: &str = "SPOTIFY_CLIENT_ID";
