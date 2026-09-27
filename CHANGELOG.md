@@ -11,3 +11,4 @@
 - Mensajes de error con instrucciones (sin Premium, sin red, login
   cancelado, sesión rechazada, límite de pedidos) y código de salida 1.
 - `scripts/medir-consumo.ps1`: RAM y CPU del proceso durante N minutos.
+- Consumo medido en 30 min de reproducción: ~19 MB de RAM, 0,07 % de CPU.

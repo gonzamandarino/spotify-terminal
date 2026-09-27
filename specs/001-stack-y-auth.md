@@ -1,7 +1,7 @@
 # 001 - Stack, reproductor de audio y login con Spotify
 
 ## Estado
-`En implementación`
+Verificado
 
 ## Contexto
 Es la base de todo el proyecto: sin lenguaje elegido, sin forma de emitir
@@ -78,14 +78,14 @@ pero sirven para comparar consumo y enfoques.
       lo renueva solo y sigue funcionando sin intervención.
 - [x] **AC-4** — Dado un URI de tema, el audio suena por esta PC; pausa y
       reanudación funcionan desde la terminal.
-- [ ] **AC-5** — Reproducción continua de 30 minutos (varios temas
+- [x] **AC-5** — Reproducción continua de 30 minutos (varios temas
       seguidos por `play` de un álbum o playlist) sin cortes ni saltos
       audibles. Este criterio tiene prioridad sobre AC-6.
-- [ ] **AC-6** — Consumo medido durante AC-5: RAM (working set) ≤ 60 MB y
+- [x] **AC-6** — Consumo medido durante AC-5: RAM (working set) ≤ 60 MB y
       CPU < 2 % promedio. Si para cumplir AC-5 hace falta más RAM, se
       acepta con el valor real y el motivo registrados en
       `docs/decisiones.md` (en ese caso el AC se tilda con esa nota).
-- [ ] **AC-7** — Sin `SPOTIFY_CLIENT_ID`, o si Spotify rechaza el login o
+- [x] **AC-7** — Sin `SPOTIFY_CLIENT_ID`, o si Spotify rechaza el login o
       la sesión (sin Premium, sin red, login cancelado), el cliente sale con
       código distinto de 0 y un mensaje que indica qué hacer.
 - [x] **AC-8** — El comando `logout` borra el cache de token; la siguiente
@@ -182,26 +182,26 @@ pero sirven para comparar consumo y enfoques.
 - [x] T4 — `web.rs`: `current_user` + subcomando `whoami` (AC-2)
 - [x] T5 — `player.rs` + subcomando `play` con pausa/reanudar por teclado
       (AC-4)
-- [ ] T6 — Mensajes de error de usuario (sin Premium, sin red, login
+- [x] T6 — Mensajes de error de usuario (sin Premium, sin red, login
       cancelado) (AC-7)
-- [ ] T7 — `scripts/medir-consumo.ps1` + medición de 30 min (AC-5, AC-6),
+- [x] T7 — `scripts/medir-consumo.ps1` + medición de 30 min (AC-5, AC-6),
       ajustando buffers si hay cortes
-- [ ] T8 — `README.md`, `docs/arquitectura.md`, changelog, verificación de
+- [x] T8 — `README.md`, `docs/arquitectura.md`, changelog, verificación de
       `git status` (AC-9)
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y doc de arquitectura actualizados si
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y doc de arquitectura actualizados si
       el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas (lenguaje, reproductor,
+- [x] Decisiones de diseño relevantes documentadas (lenguaje, reproductor,
       flujo OAuth, client ID de la sesión de audio) en `docs/decisiones.md`
-- [ ] Changelog actualizado
-- [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Changelog actualizado
+- [x] Sin constantes/umbrales hardcodeados fuera de su lugar de config
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
 *(al cerrar: qué se probó y resultado — por AC cuando no sea obvio)*
@@ -302,4 +302,23 @@ pero sirven para comparar consumo y enfoques.
     reconexión automática de la sesión.
   - 37 tests; `whoami` y `play` de un álbum inexistente probados con el
     binario release.
+- **Cierre (2026-09-26), pruebas manuales hechas por vos con el binario
+  release, después de los arreglos de la revisión:**
+  - **AC-4 (de nuevo):** tema con pausa, reanudar y `q` → OK.
+  - **AC-5:** álbum/playlist 30 min seguidos (22:45:30–23:15:30) sin
+    cortes ni saltos audibles, incluido el paso entre temas.
+  - **AC-6:** `scripts/medir-consumo.ps1 -Minutos 30`, 360 muestras cada
+    5 s: working set promedio 18,1 MB / máximo 19,0 MB (objetivo ≤ 60),
+    memoria privada 7,9 / 10,1 MB, CPU promedio 0,07 % / máximo 0,21 %
+    (objetivo < 2 %).
+  - **AC-7:** sin red → `whoami` y `play` dan "no se pudo conectar con
+    Spotify… Revisá la conexión", `exit=1`, sin abrir el navegador; login
+    cancelado en el navegador → "no se autorizó el acceso…", `exit=1`; sin
+    `SPOTIFY_CLIENT_ID` → verificado en T1. "Sin Premium" no se puede
+    probar con esta cuenta: lo cubren el chequeo de `User::is_premium`
+    antes de abrir la sesión de audio y el test `user_sin_nombre_ni_plan`.
+  - **AC-9:** `git status --ignored` → solo `.env` ignorado; los caches viven
+    en `%APPDATA%\spotify-terminal\`.
+  - **DoD:** `fmt --check`, `clippy -D warnings` y 37 tests OK; sin secretos
+    en `git diff main...HEAD`.
 
