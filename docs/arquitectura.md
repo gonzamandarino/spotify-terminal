@@ -10,12 +10,15 @@ en `CLAUDE.md`.
 ```
 main ──> ui::cli (parseo de subcomandos → Command)
   │
+  ├──> ui::select (lista numerada de resultados de búsqueda → índice elegido)
+  │
   ├──> spotify::auth ──> librespot-oauth ──> accounts.spotify.com
   │         │   TokenKind::Audio (Client ID librespot)
   │         │   TokenKind::Web   (Client ID propio, .env)
   │         └──> caches %APPDATA%\spotify-terminal\token-{audio,web}.json
   │
   ├──> spotify::web::WebClient (token Web) ──> api.spotify.com/v1
+  │         (/me, /search)
   │
   ├──> spotify::player (token Audio): connect + resolve_tracks
   │         ├──> hilo "sesion-audio" (runtime propio): Session de librespot,
@@ -46,6 +49,8 @@ error   <── usado por todos (AppError con mensajes para el usuario)
   del reproductor de librespot y del hilo de audio; al soltarse los cierra en
   ese orden. `main` lo crea y resuelve qué reproducir; `ui::playback` lo
   controla durante `play`.
+- **Modo raw de la terminal:** `ui::RawMode` (lo usan `select` y
+  `playback`); se restaura al soltarse o ante un panic.
 - **Cola de reproducción:** `ui::playback::Queue` (lista de temas, cuál
   suena y el `play_request_id` vigente) vive mientras dura `play_queue`.
 
@@ -72,7 +77,8 @@ corregir la tabla.
 | `Config::load`, constantes | `src/config.rs` | doc-comment |
 | `AppError` (una variante por caso) | `src/error.rs` | doc-comment |
 | `auth::get_valid_token`, `auth::logout`, `auth::Token`, `auth::TokenKind` | `src/spotify/auth.rs` | doc-comment |
-| `web::WebClient`, `web::User` | `src/spotify/web.rs` | doc-comment |
+| `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
 | `player::Player`, `player::Resolved` | `src/spotify/player.rs` | doc-comment |
 | `playback::play_queue`, `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
 | `cli::parse`, `cli::Command`, `cli::USAGE` | `src/ui/cli.rs` | doc-comment |
+| `select::choose` | `src/ui/select.rs` | doc-comment |

@@ -90,3 +90,18 @@ entradas viejas — se marcan reemplazadas.
 - Se quitó `env_logger` (solo lo usaba el spike, que se borró).
 - **Estado:** Vigente (spec 001)
 
+
+## 2026-09-26 — Búsqueda: un pedido a `/search`, playlists con `limit` 10
+- **Decisión:** `play <texto>` y `play list <texto>` hacen un solo
+  `GET /search` con `market=from_token`. Temas: `limit=5`. Playlists:
+  `limit=10` (el máximo en modo desarrollo) y se muestran las 5 primeras
+  que no vienen `null`.
+- **Motivo:** el spike (spec 002, T1) mostró que Spotify manda `null` en
+  lugar de las playlists editoriales/algorítmicas (las apps en modo
+  desarrollo no las ven): con `limit=5` a veces quedaban 1 o 2 resultados.
+  Pedir 10 sigue siendo un solo pedido.
+- **Limitación aceptada:** las playlists de Spotify ("Today's Top Hits",
+  "This Is…", "Discover Weekly") no aparecen en la búsqueda. Se pueden
+  reproducir igual con su link, porque la lista de temas va por la sesión
+  de audio.
+- **Estado:** Vigente (spec 002)

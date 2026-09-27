@@ -12,6 +12,7 @@ use librespot_core::SpotifyUri;
 use librespot_metadata::audio::UniqueFields;
 use librespot_playback::player::PlayerEvent;
 
+use super::RawMode;
 use crate::{config, error::AppError, spotify::player::Player};
 
 /// Reproduce `tracks` en orden y atiende el teclado hasta que termina el
@@ -302,23 +303,6 @@ fn line(text: &str) {
     let mut out = io::stdout().lock();
     let _ = write!(out, "\r\x1b[2K{text}\r\n");
     let _ = out.flush();
-}
-
-/// Modo raw de la terminal (teclas sin Enter) mientras vive el valor; al
-/// soltarse (`Drop`) vuelve al modo normal, aunque se salga por un error.
-struct RawMode;
-
-impl RawMode {
-    fn enable() -> Result<RawMode, AppError> {
-        terminal::enable_raw_mode().map_err(AppError::Terminal)?;
-        Ok(RawMode)
-    }
-}
-
-impl Drop for RawMode {
-    fn drop(&mut self) {
-        let _ = terminal::disable_raw_mode();
-    }
 }
 
 #[cfg(test)]

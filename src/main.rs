@@ -7,6 +7,7 @@ use std::process::ExitCode;
 
 use config::Config;
 use error::AppError;
+use librespot_core::SpotifyUri;
 use spotify::{
     auth::{self, TokenKind},
     player::Player,
@@ -14,7 +15,7 @@ use spotify::{
 };
 use ui::{
     cli::{self, Command},
-    playback,
+    playback, select,
 };
 
 // Un solo hilo para main: acá solo corren el login, la Web API y la UI. La
@@ -61,23 +62,43 @@ async fn run() -> Result<(), AppError> {
         }
         Command::Play(target) => {
             let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
-            // Chequeo barato antes de abrir la sesión de audio: sin Premium
-            // librespot no reproduce y el error sería menos claro.
-            let user = web.current_user().await?;
-            if !user.is_premium() {
-                return Err(AppError::NotPremium(user.plan().to_string()));
+            play(&config, &web, &target).await?;
+        }
+        Command::Search { kind, query } => {
+            let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
+            let hits = web.search(kind, &query).await?;
+            if hits.is_empty() {
+                return Err(AppError::NoResults {
+                    kind: kind.plural(),
+                    query,
+                });
             }
-            let audio_token = auth::get_valid_token(&config, TokenKind::Audio).await?;
-            let player = Player::connect(&audio_token).await?;
-            let resolved = player.resolve_tracks(&target).await?;
-            if resolved.skipped > 0 {
-                println!(
-                    "⚠ Se omiten {} elementos (archivos locales o que Spotify no devolvió).",
-                    resolved.skipped
-                );
+            // Premium y la sesión de audio recién después de elegir:
+            // cancelar no cuesta nada.
+            if let Some(i) = select::choose(&hits).await? {
+                play(&config, &web, &hits[i].uri).await?;
             }
-            playback::play_queue(&player, &resolved.tracks).await?;
         }
     }
     Ok(())
+}
+
+/// Reproduce un tema, álbum o playlist con los controles de `playback`.
+async fn play(config: &Config, web: &WebClient, target: &SpotifyUri) -> Result<(), AppError> {
+    // Chequeo barato antes de abrir la sesión de audio: sin Premium
+    // librespot no reproduce y el error sería menos claro.
+    let user = web.current_user().await?;
+    if !user.is_premium() {
+        return Err(AppError::NotPremium(user.plan().to_string()));
+    }
+    let audio_token = auth::get_valid_token(config, TokenKind::Audio).await?;
+    let player = Player::connect(&audio_token).await?;
+    let resolved = player.resolve_tracks(target).await?;
+    if resolved.skipped > 0 {
+        println!(
+            "⚠ Se omiten {} elementos (archivos locales o que Spotify no devolvió).",
+            resolved.skipped
+        );
+    }
+    playback::play_queue(&player, &resolved.tracks).await
 }
