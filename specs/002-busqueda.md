@@ -1,7 +1,7 @@
 # 002 - Buscar y reproducir por nombre (temas y playlists)
 
 ## Estado
-En verificación
+Verificado
 
 ## Contexto
 Hoy `play` solo acepta URI, link de `open.spotify.com` o ID. Para escuchar
@@ -82,10 +82,10 @@ scopes extra.
 - [x] **AC-2** — `play list <nombre>` y `play playlist <nombre>` muestran
       como máximo 5 playlists numeradas con nombre, dueño y cantidad de
       temas.
-- [ ] **AC-3** — Elegir un número válido (o Enter = 1) reproduce ese tema o
+- [x] **AC-3** — Elegir un número válido (o Enter = 1) reproduce ese tema o
       esa playlist entera; pausa, reanudar y `q` funcionan igual que en
       spec 001.
-- [ ] **AC-4** — En la lista, `q`/Esc sale con código 0 sin abrir la sesión
+- [x] **AC-4** — En la lista, `q`/Esc sale con código 0 sin abrir la sesión
       de audio; una tecla fuera de rango se ignora (no elige nada ni sale).
 - [x] **AC-5** — Una búsqueda sin resultados informa "no encontré…" con el
       texto buscado y sale con código ≠ 0.
@@ -94,10 +94,10 @@ scopes extra.
       pasando).
 - [x] **AC-7** — `play`, `play list` o `play playlist` sin texto →
       error de uso con código ≠ 0.
-- [ ] **AC-8** — Errores de red, 401 y 429 durante la búsqueda dan los
+- [x] **AC-8** — Errores de red, 401 y 429 durante la búsqueda dan los
       mismos mensajes con instrucciones que el resto de la Web API
       (spec 001, AC-7), sin stack trace.
-- [ ] **AC-9** — Consumo: una búsqueda es un solo pedido HTTP (sin polling ni
+- [x] **AC-9** — Consumo: una búsqueda es un solo pedido HTTP (sin polling ni
       "búsqueda mientras escribís"); con la reproducción en marcha, el
       consumo sigue dentro de lo medido en spec 001 (RAM ≤ 60 MB, CPU < 2 %).
 
@@ -162,12 +162,12 @@ scopes extra.
       `search_playlists` con tests de deserialización (AC-8)
 - [x] T3 — `cli::parse` con `Command::Search` y tests de parseo (AC-6, AC-7)
 - [x] T4 — `ui::select` + integración en `main` (AC-1 a AC-5)
-- [ ] T5 — Prueba manual completa + medición de consumo (AC-9)
+- [x] T5 — Prueba manual completa + medición de consumo (AC-9)
 - [x] T6 — README, changelog, `docs/arquitectura.md`
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
 - [x] Tests corren y pasan
 - [x] Contratos de funciones públicas y doc de arquitectura actualizados si
@@ -225,8 +225,11 @@ scopes extra.
   - **AC-7:** `play list` → "falta el nombre de la playlist" + uso,
     `exit=1`; `play` y `play "  "` cubiertos por tests.
   - 48 tests; `fmt --check` y `clippy --all-targets -D warnings` OK.
-- **Pendiente (lo tenés que probar vos, necesita teclado y audio):** AC-3
-  (elegir y que suene; tema y playlist), AC-4 (`q`/Esc en la lista → exit 0;
-  tecla fuera de rango se ignora), AC-8 (sin red: mensaje de conexión) y AC-9
-  (`scripts/medir-consumo.ps1` con una búsqueda + reproducción).
-
+- **Cierre (2026-09-26), pruebas manuales hechas por vos con el binario
+  release:** AC-3 (tema y playlist elegidos suenan; pausa, reanudar y `q`
+  OK), AC-4 (`q`/Esc en la lista → exit 0, tecla fuera de rango ignorada),
+  AC-8 (sin red → mensaje de conexión, exit 1) y AC-9 (consumo con
+  `scripts/medir-consumo.ps1` dentro de lo de spec 001) → todo OK.
+- **Limitación conocida:** sin una terminal interactiva la pantalla de
+  elección queda esperando una tecla en vez de fallar (igual que la de
+  reproducción en spec 001).
