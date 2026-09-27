@@ -34,14 +34,23 @@ entradas viejas — se marcan reemplazadas.
   Se mantienen las reglas de calidad de Rust (`fmt`, `clippy`, sin `unwrap`).
 - **Estado:** Vigente
 
-## 2026-09-26 — La sesión de audio usa el Client ID de librespot
+## 2026-09-26 — La sesión de audio usa el Client ID de librespot (Web API: ver abajo)
 - **Decisión:** la sesión de `librespot` se autentica con un token emitido
   para el Client ID de librespot (`65b708073fc0480ea92a077233ca87bd`).
 - **Evidencia:** spike T2 del spec 001 — con nuestro Client ID, `login5`
   rechaza el token (`INVALID_CREDENTIALS`) y ningún tema carga.
-- **Web API:** usa ese mismo token — un solo login (opción elegida por vos).
-  Alternativa descartada: token propio para la Web API (dos logins la
-  primera vez, código de tokens duplicado). Contra asumido: si Spotify
-  restringe ese Client ID, se cae todo junto (el audio ya dependía de él).
-  Ya no se usa `.env` ni `SPOTIFY_CLIENT_ID`.
+- **Web API:** se eligió primero usar ese mismo token (un solo login).
+  **Reemplazado** por la entrada "Dos tokens" de abajo.
 - **Estado:** Vigente
+
+## 2026-09-26 — Dos tokens: audio (librespot) y Web API (Client ID propio)
+- **Decisión:** el token de audio usa el Client ID de librespot; el de la Web
+  API usa el Client ID propio (`SPOTIFY_CLIENT_ID` en `.env`).
+- **Evidencia:** T4 del spec 001 — con el Client ID de librespot, `GET /me`
+  dio 429 permanente (6 intentos en 5 min respetando `Retry-After`); con el
+  propio, 200. El Client ID de librespot lo comparten todos sus usuarios y su
+  cuota de Web API está agotada.
+- **Alternativa descartada:** usar solo APIs internas de librespot (sin Web
+  API): no oficial, sin búsqueda documentada, likes/edición inciertos.
+- **Costo:** la primera vez se autoriza dos veces; después, nunca.
+- **Estado:** Vigente (reemplaza el "un solo login" de la entrada anterior)

@@ -1,4 +1,6 @@
-//! Integración con Spotify: login/tokens (`auth`), y en próximas tareas
-//! reproductor (`player`) y Web API (`web`).
+//! Integración con Spotify: login/tokens (`auth`), reproductor (`player`) y
+//! Web API (`web`).
 
 pub mod auth;
+pub mod player;
+pub mod web;

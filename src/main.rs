@@ -7,8 +7,16 @@ use std::process::ExitCode;
 
 use config::Config;
 use error::AppError;
-use spotify::auth;
-use ui::cli::{self, Command};
+use librespot_core::SpotifyUri;
+use spotify::{
+    auth::{self, TokenKind},
+    player::Player,
+    web,
+};
+use ui::{
+    cli::{self, Command},
+    playback,
+};
 
 // Un solo hilo alcanza: la red es async y librespot reproduce en su propio
 // hilo. Menos hilos = menos memoria.
@@ -32,11 +40,11 @@ async fn run() -> Result<(), AppError> {
     match cli::parse(&args)? {
         Command::Help => println!("{}", cli::USAGE),
         Command::Login => {
-            auth::get_valid_token(&config).await?;
-            println!(
-                "Sesión lista (guardada en {}).",
-                config.token_cache_path().display()
-            );
+            for kind in TokenKind::ALL {
+                auth::get_valid_token(&config, kind).await?;
+                println!("Acceso de {} listo.", kind.label());
+            }
+            println!("Sesión guardada en {}.", config.data_dir.display());
         }
         Command::Logout => {
             if auth::logout(&config)? {
@@ -44,6 +52,25 @@ async fn run() -> Result<(), AppError> {
             } else {
                 println!("No había una sesión guardada.");
             }
+        }
+        Command::Whoami => {
+            let token = auth::get_valid_token(&config, TokenKind::Web).await?;
+            let user = web::current_user(&token).await?;
+            println!("{} ({}), plan: {}", user.name(), user.id, user.plan());
+        }
+        Command::Play(uri) => {
+            let web_token = auth::get_valid_token(&config, TokenKind::Web).await?;
+            // Chequeo barato antes de abrir la sesión de audio: sin Premium
+            // librespot no reproduce y el error sería menos claro.
+            let user = web::current_user(&web_token).await?;
+            if !user.is_premium() {
+                return Err(AppError::NotPremium(user.plan().to_string()));
+            }
+            let track = SpotifyUri::from_uri(&uri)
+                .map_err(|e| AppError::Usage(format!("tema inválido ({uri}): {e}")))?;
+            let audio_token = auth::get_valid_token(&config, TokenKind::Audio).await?;
+            let player = Player::connect(&audio_token).await?;
+            playback::play_track(&player, track).await?;
         }
     }
     Ok(())

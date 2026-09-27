@@ -1,12 +1,16 @@
-//! Login OAuth (PKCE) y cache del token.
+//! Login OAuth (PKCE) y caches de token.
 //!
-//! Único módulo que lee o escribe el cache de token (`Config::token_cache_path`).
-//! El cache vive fuera del repo y se escribe de forma atómica: nunca queda un
-//! archivo a medio escribir si el proceso se corta.
+//! Hay dos tokens (ver `docs/decisiones.md`):
+//! - **Audio** — Client ID de librespot, solo para la sesión de reproducción.
+//! - **Web** — Client ID propio, para la Web API (con el de librespot la Web
+//!   API responde 429 permanente).
+//!
+//! Único módulo que lee o escribe los caches de token. Viven fuera del repo y
+//! se escriben de forma atómica: nunca queda un archivo a medio escribir.
 
 use std::{
     fs, io,
-    path::Path,
+    path::{Path, PathBuf},
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -17,6 +21,47 @@ use crate::{
     config::{self, Config},
     error::AppError,
 };
+
+/// Para qué se usa el token. Define Client ID, scopes y archivo de cache.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TokenKind {
+    Audio,
+    Web,
+}
+
+impl TokenKind {
+    pub const ALL: [TokenKind; 2] = [TokenKind::Audio, TokenKind::Web];
+
+    fn client_id(self, config: &Config) -> &str {
+        match self {
+            TokenKind::Audio => config::AUDIO_CLIENT_ID,
+            TokenKind::Web => &config.web_client_id,
+        }
+    }
+
+    fn scopes(self) -> &'static [&'static str] {
+        match self {
+            TokenKind::Audio => config::AUDIO_SCOPES,
+            TokenKind::Web => config::WEB_SCOPES,
+        }
+    }
+
+    fn cache_path(self, config: &Config) -> PathBuf {
+        let file = match self {
+            TokenKind::Audio => "token-audio.json",
+            TokenKind::Web => "token-web.json",
+        };
+        config.data_dir.join(file)
+    }
+
+    /// Nombre para mostrar al usuario.
+    pub fn label(self) -> &'static str {
+        match self {
+            TokenKind::Audio => "audio",
+            TokenKind::Web => "Web API",
+        }
+    }
+}
 
 /// Token de Spotify tal como se guarda en el cache.
 ///
@@ -61,20 +106,20 @@ impl Token {
     }
 }
 
-/// Devuelve un token válido, haciendo lo mínimo necesario: usa el cache, lo
-/// renueva si está por vencer, o abre el login en el navegador.
+/// Devuelve un token válido del tipo pedido, haciendo lo mínimo necesario:
+/// usa el cache, lo renueva si está por vencer, o abre el login en el
+/// navegador.
 ///
 /// - Pre: ninguna (el cache puede no existir o estar corrupto).
-/// - Post: el token devuelto no vence en los próximos
-///   `TOKEN_REFRESH_MARGIN`, tiene todos los `SCOPES`, y quedó guardado en el
-///   cache.
+/// - Post: el token no vence en los próximos `TOKEN_REFRESH_MARGIN`, tiene
+///   todos los scopes de `kind`, y quedó guardado en su cache.
 /// - No debe: imprimir ni loguear el access token ni el refresh token.
-pub async fn get_valid_token(config: &Config) -> Result<Token, AppError> {
-    let cache_path = config.token_cache_path();
-    let client = oauth_client()?;
+pub async fn get_valid_token(config: &Config, kind: TokenKind) -> Result<Token, AppError> {
+    let cache_path = kind.cache_path(config);
+    let client = oauth_client(config, kind)?;
 
     if let Some(cached) = read_cache(&cache_path) {
-        if cached.has_scopes(config::SCOPES) {
+        if cached.has_scopes(kind.scopes()) {
             if !cached.needs_refresh(unix_now()) {
                 return Ok(cached);
             }
@@ -84,14 +129,20 @@ pub async fn get_valid_token(config: &Config) -> Result<Token, AppError> {
                     write_cache(&cache_path, &token)?;
                     return Ok(token);
                 }
-                Err(e) => eprintln!("No se pudo renovar la sesión ({e}). Hay que iniciar sesión."),
+                Err(e) => eprintln!(
+                    "No se pudo renovar la sesión de {} ({e}). Hay que iniciar sesión.",
+                    kind.label()
+                ),
             }
         } else {
-            println!("La app necesita permisos nuevos. Hay que iniciar sesión de nuevo.");
+            println!("Hacen falta permisos nuevos ({}).", kind.label());
         }
     }
 
-    println!("Abriendo el navegador para iniciar sesión en Spotify...");
+    println!(
+        "Abriendo el navegador para autorizar el acceso de {}...",
+        kind.label()
+    );
     let fresh = client
         .get_access_token_async()
         .await
@@ -101,22 +152,26 @@ pub async fn get_valid_token(config: &Config) -> Result<Token, AppError> {
     Ok(token)
 }
 
-/// Borra el token guardado.
+/// Borra los tokens guardados (audio y Web API).
 ///
-/// - Post: el cache no existe. Devuelve `true` si había una sesión guardada.
+/// - Post: no queda ningún cache. Devuelve `true` si había alguna sesión.
 pub fn logout(config: &Config) -> Result<bool, AppError> {
-    match fs::remove_file(config.token_cache_path()) {
-        Ok(()) => Ok(true),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
-        Err(e) => Err(e.into()),
+    let mut removed = false;
+    for kind in TokenKind::ALL {
+        match fs::remove_file(kind.cache_path(config)) {
+            Ok(()) => removed = true,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
     }
+    Ok(removed)
 }
 
-fn oauth_client() -> Result<OAuthClient, AppError> {
+fn oauth_client(config: &Config, kind: TokenKind) -> Result<OAuthClient, AppError> {
     OAuthClientBuilder::new(
-        config::CLIENT_ID,
+        kind.client_id(config),
         config::REDIRECT_URI,
-        config::SCOPES.to_vec(),
+        kind.scopes().to_vec(),
     )
     .open_in_browser()
     .with_custom_message(config::LOGIN_DONE_HTML)
@@ -235,13 +290,32 @@ mod tests {
     }
 
     #[test]
-    fn logout_borra_el_cache_y_es_idempotente() {
+    fn logout_borra_ambos_caches_y_es_idempotente() {
         let config = Config {
+            web_client_id: "id".into(),
             data_dir: temp_dir("logout"),
         };
-        write_cache(&config.token_cache_path(), &token(1, &[])).unwrap();
+        for kind in TokenKind::ALL {
+            write_cache(&kind.cache_path(&config), &token(1, &[])).unwrap();
+        }
         assert!(logout(&config).unwrap());
-        assert!(!config.token_cache_path().exists());
+        for kind in TokenKind::ALL {
+            assert!(!kind.cache_path(&config).exists());
+        }
         assert!(!logout(&config).unwrap());
+    }
+
+    #[test]
+    fn cada_tipo_de_token_tiene_su_client_id_y_cache() {
+        let config = Config {
+            web_client_id: "propio".into(),
+            data_dir: PathBuf::from("datos"),
+        };
+        assert_eq!(TokenKind::Audio.client_id(&config), config::AUDIO_CLIENT_ID);
+        assert_eq!(TokenKind::Web.client_id(&config), "propio");
+        assert_ne!(
+            TokenKind::Audio.cache_path(&config),
+            TokenKind::Web.cache_path(&config)
+        );
     }
 }

@@ -33,13 +33,15 @@ pero sirven para comparar consumo y enfoques.
   interacción (asumido).
 - **¿Qué plataforma?** → Asumido: Windows 10 primero (máquina de
   desarrollo). Linux/macOS no se prueban en este spec.
-- **¿Credenciales de la app de Spotify?** → ~~Client ID propio en `.env`~~.
-  Reemplazado tras T2: **un solo login con el Client ID de librespot** para
-  audio y Web API (respuesta de vos, opción 1). El Client ID es una
-  constante en `config.rs`; no hace falta `.env` ni app en el Dashboard.
+- **¿Credenciales de la app de Spotify?** → **Dos tokens** (respuesta de
+  vos, opción 2, tras T2 y T4): el de audio con el Client ID de librespot
+  (constante en `config.rs`) y el de la Web API con el Client ID propio
+  (`SPOTIFY_CLIENT_ID` en `.env`, redirect `http://127.0.0.1:8898/login`).
+  Historia: primero se eligió un solo login con el Client ID de librespot
+  (opción 1), pero en T4 la Web API respondió 429 permanente con ese ID.
   OAuth Authorization Code + PKCE vía `librespot-oauth`, sin client secret.
-  Si más adelante un spec necesita un scope nuevo, el cliente detecta que el
-  token cacheado no lo tiene y pide login de nuevo.
+  Si un spec necesita un scope nuevo, el cliente detecta que el token
+  cacheado no lo tiene y pide login de nuevo.
 - **¿Qué UI tiene este spec?** → Asumido: comandos de línea mínimos
   (`login`, `logout`, `whoami`, `play <uri>`) y, durante `play`, teclas
   simples (espacio = pausa/reanudar, `q` = salir). La TUI real es otro spec
@@ -62,15 +64,15 @@ pero sirven para comparar consumo y enfoques.
    y permite reproducir un tema dado (por URI o ID de Spotify), pausarlo y
    reanudarlo, con el audio saliendo por esta PC.
 4. Existe un comando para cerrar sesión que borra el token guardado.
-5. Si el login o la sesión fallan (cuenta sin Premium, sin red, login
-   cancelado), el cliente sale con un mensaje claro que dice qué hacer, sin
-   stack trace.
+5. Si falta el `Client ID` o el login/la sesión fallan (cuenta sin
+   Premium, sin red, login cancelado), el cliente sale con un mensaje claro
+   que dice qué hacer, sin stack trace.
 
 ## Criterios de aceptación
 
 - [x] **AC-1** — Con cache de token vacío, el cliente completa el login
       OAuth PKCE y crea el archivo de cache de token fuera del repo.
-- [ ] **AC-2** — Con cache válido, una segunda ejecución no pide login y
+- [x] **AC-2** — Con cache válido, una segunda ejecución no pide login y
       muestra el nombre del usuario.
 - [x] **AC-3** — Con access token vencido y refresh token válido, el cliente
       lo renueva solo y sigue funcionando sin intervención.
@@ -83,10 +85,9 @@ pero sirven para comparar consumo y enfoques.
       CPU < 2 % promedio. Si para cumplir AC-5 hace falta más RAM, se
       acepta con el valor real y el motivo registrados en
       `docs/decisiones.md` (en ese caso el AC se tilda con esa nota).
-- [ ] **AC-7** — Si Spotify rechaza el login o la sesión (sin Premium, sin
-      red, login cancelado), el cliente sale con código distinto de 0 y un
-      mensaje que indica qué hacer. *(Redefinido tras T2: ya no hay Client
-      ID que configurar.)*
+- [ ] **AC-7** — Sin `SPOTIFY_CLIENT_ID`, o si Spotify rechaza el login o
+      la sesión (sin Premium, sin red, login cancelado), el cliente sale con
+      código distinto de 0 y un mensaje que indica qué hacer.
 - [x] **AC-8** — El comando `logout` borra el cache de token; la siguiente
       ejecución vuelve a pedir login.
 - [x] **AC-9** — Ni `.env` ni el cache de token aparecen en `git status`
@@ -178,7 +179,7 @@ pero sirven para comparar consumo y enfoques.
       `docs/decisiones.md`
 - [x] T3 — `auth.rs`: login PKCE + callback local + cache atómico + refresh
       + logout, con tests (AC-1, AC-3, AC-8)
-- [ ] T4 — `web.rs`: `current_user` + subcomando `whoami` (AC-2)
+- [x] T4 — `web.rs`: `current_user` + subcomando `whoami` (AC-2)
 - [ ] T5 — `player.rs` + subcomando `play` con pausa/reanudar por teclado
       (AC-4)
 - [ ] T6 — Mensajes de error de usuario (sin Premium, sin red, login
@@ -241,3 +242,13 @@ pero sirven para comparar consumo y enfoques.
     sesión guardada"; `login` siguiente vuelve a pasar por el navegador.
   - **AC-9:** `git status --ignored` después del login: `.env` ignorado (ya no
     se usa, se puede borrar), el cache vive fuera del repo.
+- **T4 (2026-09-26):** `src/spotify/web.rs` (`GET /me`) + `whoami`.
+  - Con el token del Client ID de librespot, `/me` devolvió **429 Too Many
+    Requests** 6 veces seguidas en 5 minutos respetando `Retry-After`
+    (56–59 s): la cuota de ese Client ID compartido está agotada. Con un
+    token del Client ID propio, el mismo pedido dio 200. → Se pasó a dos
+    tokens (opción 2): `auth::TokenKind::{Audio, Web}`, caches
+    `token-audio.json` y `token-web.json`; `login` autoriza ambos, `logout`
+    borra ambos. Vuelve `.env.example`.
+  - **AC-2:** después de `login`, `whoami` → "Gonza Mandarino (…), plan:
+    premium" sin abrir el navegador. 16 tests OK, `fmt`/`clippy` OK.
