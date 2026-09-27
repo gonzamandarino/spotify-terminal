@@ -263,6 +263,42 @@ pub(crate) struct WindowSettings {
     pub(crate) geometry: Option<Geometry>,
 }
 
+/// Qué se dibuja en el panel de la derecha (spec 010).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum VizMode {
+    /// Sin panel.
+    #[default]
+    None,
+    Wave,
+    Bars,
+    Vinyl,
+}
+
+impl VizMode {
+    pub(crate) const ALL: [VizMode; 4] =
+        [VizMode::None, VizMode::Wave, VizMode::Bars, VizMode::Vinyl];
+
+    /// Como se escribe en `ajustes.json`.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            VizMode::None => "ninguna",
+            VizMode::Wave => "onda",
+            VizMode::Bars => "barras",
+            VizMode::Vinyl => "vinilo",
+        }
+    }
+
+    /// Como se ve en el menú.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            VizMode::None => "Ninguna",
+            VizMode::Wave => "Onda",
+            VizMode::Bars => "Barras",
+            VizMode::Vinyl => "Vinilo con la tapa del disco",
+        }
+    }
+}
+
 /// Todos los ajustes.
 ///
 /// Invariante (la cumplen `default()` y `from_json`, y la mantienen
@@ -277,6 +313,7 @@ pub(crate) struct Settings {
     pub(crate) playback: PlaybackSettings,
     pub(crate) console: ConsoleSettings,
     pub(crate) window: WindowSettings,
+    pub(crate) visualization: VizMode,
 }
 
 impl Default for Settings {
@@ -320,6 +357,7 @@ impl Default for Settings {
                 remember_geometry: true,
                 geometry: None,
             },
+            visualization: VizMode::None,
         }
     }
 }
@@ -334,10 +372,11 @@ pub(crate) enum Section {
     Playback,
     Console,
     Window,
+    Visualization,
 }
 
 impl Section {
-    const ALL: [Section; 7] = [
+    const ALL: [Section; 8] = [
         Section::Colors,
         Section::Font,
         Section::WindowKeys,
@@ -345,6 +384,7 @@ impl Section {
         Section::Playback,
         Section::Console,
         Section::Window,
+        Section::Visualization,
     ];
 
     fn key(self) -> &'static str {
@@ -356,6 +396,7 @@ impl Section {
             Section::Playback => "reproduccion",
             Section::Console => "consola",
             Section::Window => "ventana",
+            Section::Visualization => "visualizacion",
         }
     }
 }
@@ -458,6 +499,7 @@ impl Settings {
             Section::Playback => self.playback = defaults.playback,
             Section::Console => self.console = defaults.console,
             Section::Window => self.window = defaults.window,
+            Section::Visualization => self.visualization = defaults.visualization,
         }
     }
 
@@ -864,6 +906,22 @@ fn fields() -> Vec<Field> {
             Ok(())
         },
     ));
+    fields.push(field(
+        Section::Visualization,
+        "modo",
+        |s| json!(s.visualization.key()),
+        |s, v| {
+            let text = v.as_str().map(str::trim).unwrap_or_default();
+            s.visualization = VizMode::ALL
+                .into_iter()
+                .find(|m| m.key().eq_ignore_ascii_case(text))
+                .ok_or_else(|| {
+                    let known: Vec<&str> = VizMode::ALL.iter().map(|m| m.key()).collect();
+                    format!("tiene que ser uno de: {}", known.join(", "))
+                })?;
+            Ok(())
+        },
+    ));
     fields
 }
 
@@ -1156,6 +1214,26 @@ mod tests {
         );
         assert_eq!(warnings.len(), 1, "{warnings:#?}");
         assert!(warnings[0].contains("atajos_ventana.stop"), "{warnings:#?}");
+    }
+
+    #[test]
+    fn visualizacion_valida_o_de_fabrica() {
+        let (s, warnings) = load_json(r#"{"visualizacion": {"modo": "Barras"}}"#);
+        assert_eq!(s.visualization, VizMode::Bars);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(s.to_json(), json!({"visualizacion": {"modo": "barras"}}));
+        for bad in [r#""espiral""#, "3", "null"] {
+            let (s, warnings) = load_json(&format!(r#"{{"visualizacion": {{"modo": {bad}}}}}"#));
+            assert_eq!(s.visualization, VizMode::None, "{bad}");
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(warnings[0].contains("visualizacion.modo"), "{warnings:?}");
+        }
+        let mut s = Settings {
+            visualization: VizMode::Vinyl,
+            ..Settings::default()
+        };
+        s.restore(Section::Visualization);
+        assert_eq!(s.visualization, VizMode::None);
     }
 
     #[test]

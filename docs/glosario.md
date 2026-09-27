@@ -8,6 +8,9 @@ concepto nuevo — no antes, no de antemano especulando.
   desde la barra de menús (spec 007): tema, fuente, atajos, reproducción,
   consola y ventana. Se guardan en `ajustes.json`; los valores de
   `config.rs` son los de fábrica.
+- **Visualización** — lo que se dibuja de la canción en el panel derecho
+  de la app de escritorio (spec 010): onda, barras (espectro) o vinilo
+  con la tapa del disco. Se elige en Personalización → Visualización.
 - **Tamaño de letra** — el del texto de la consola, la línea de entrada
   y la barra "sonando" (spec 009). Los menús, diálogos y la barra de
   título tienen letra fija.

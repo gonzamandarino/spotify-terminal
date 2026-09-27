@@ -28,7 +28,15 @@ use librespot_playback::{
 };
 use tokio::{runtime, sync::oneshot};
 
-use crate::{app::volume::Volume, config, error::AppError, spotify::auth::Token};
+use crate::{
+    app::volume::Volume,
+    config,
+    error::AppError,
+    spotify::{
+        auth::Token,
+        tap::{AudioTap, TapSink},
+    },
+};
 
 /// Reproductor conectado a Spotify y a la salida de audio por defecto.
 ///
@@ -66,7 +74,9 @@ impl Player {
     ///   Client ID la sesión conecta pero no carga audio: spike T2).
     /// - Post: reproductor listo, sin nada cargado, con `volume` y calidad
     ///   `bitrate` (fija mientras viva: para otra, otro `connect`); la
-    ///   sesión corre en su propio hilo.
+    ///   sesión corre en su propio hilo. Con `tap`, cada paquete que sale
+    ///   al audio se copia ahí sin demorarlo (`TapSink`, spec 010); sin
+    ///   `tap`, la salida es la de siempre.
     /// - Errores: sin dispositivo de salida → `NoAudioOutput` (se chequea
     ///   antes de conectar); Spotify rechaza el token → `SessionRejected`;
     ///   no se llega al servidor → `Network`.
@@ -75,6 +85,7 @@ impl Player {
         token: &Token,
         volume: Volume,
         bitrate: Bitrate,
+        tap: Option<AudioTap>,
     ) -> Result<Player, AppError> {
         // Sin esto, rodio hace panic en el hilo del reproductor al abrir la
         // salida y el error llega tarde y confuso.
@@ -102,11 +113,18 @@ impl Player {
             .map_err(|e| AppError::Internal(format!("control de volumen: {e}")))?;
         // Arranca en 50 %: se fija antes de que pueda sonar nada.
         mixer.set_volume(volume.output());
+        let tap_volume = mixer.get_soft_volume();
         let inner = player::Player::new(
             player_config,
             session.clone(),
             mixer.get_soft_volume(),
-            move || backend(None, AudioFormat::default()),
+            move || {
+                let sink = backend(None, AudioFormat::default());
+                match tap {
+                    Some(tap) => Box::new(TapSink::new(sink, tap, tap_volume)),
+                    None => sink,
+                }
+            },
         );
         Ok(Player {
             inner,

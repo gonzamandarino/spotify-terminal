@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0] - 2026-09-27
+
+### Agregado (spec 010 — visualización)
+- Personalización → Visualización en la app de escritorio: un panel a la
+  derecha de la consola con la **onda** de lo que suena, **barras** del
+  espectro o un **vinilo** girando con la tapa del disco del tema. Se
+  anima a 15 cuadros por segundo solo mientras suena; en pausa o sin
+  música no gasta CPU. Viene apagada (Ninguna).
+- El panel se oculta solo si la ventana es muy angosta para la consola.
+
 ## [0.1.1] - 2026-09-27
 
 ### Cambiado (spec 009 — Personalización y tamaño de letra)

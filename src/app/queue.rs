@@ -8,7 +8,7 @@ use std::{
 };
 
 use librespot_core::SpotifyUri;
-use librespot_metadata::audio::UniqueFields;
+use librespot_metadata::audio::{UniqueFields, item::CoverImage};
 use librespot_playback::player::PlayerEvent;
 use rand::{Rng, seq::SliceRandom};
 
@@ -343,6 +343,18 @@ pub(crate) struct TrackInfo {
     /// Artistas separados por coma; vacío si no es un tema (episodio).
     pub(crate) artists: String,
     pub(crate) duration: Duration,
+    /// URL de la tapa del disco (o del podcast) de lado más cercano a
+    /// `config::viz::COVER_SIZE`; `None` si no tiene (spec 010).
+    pub(crate) cover: Option<String>,
+}
+
+/// La tapa de lado más cercano a `config::viz::COVER_SIZE`.
+pub(crate) fn pick_cover(covers: &[CoverImage]) -> Option<String> {
+    let target = i64::from(config::viz::COVER_SIZE);
+    covers
+        .iter()
+        .min_by_key(|c| (i64::from(c.width.max(c.height)) - target).abs())
+        .map(|c| c.url.clone())
 }
 
 /// Actualiza la cola, el estado y el reloj con un evento del reproductor.
@@ -376,6 +388,7 @@ pub(crate) fn on_player_event(
                 name: audio_item.name,
                 artists,
                 duration: Duration::from_millis(audio_item.duration_ms.into()),
+                cover: pick_cover(&audio_item.covers),
             };
             return (Step::Nothing, Some(info));
         }
@@ -436,6 +449,25 @@ pub(crate) fn uri_text(uri: &SpotifyUri) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn la_tapa_mas_cercana_a_300() {
+        use librespot_metadata::image::ImageSize;
+        let cover = |width: i32, url: &str| CoverImage {
+            url: url.into(),
+            size: ImageSize::DEFAULT,
+            width,
+            height: width,
+        };
+        assert_eq!(pick_cover(&[]), None);
+        let covers = [
+            cover(64, "chica"),
+            cover(640, "grande"),
+            cover(300, "media"),
+        ];
+        assert_eq!(pick_cover(&covers).as_deref(), Some("media"));
+        assert_eq!(pick_cover(&covers[..2]).as_deref(), Some("chica"));
+    }
     use rand::{SeedableRng, rngs::StdRng};
 
     use super::*;

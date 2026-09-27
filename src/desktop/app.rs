@@ -30,6 +30,7 @@ use super::{
     menu::{self, Command, Menus},
     settings::{self, Geometry, Palette, Settings, Target, WindowAction},
     theme::{Theme, bold, color, installed_fonts, mono},
+    viz::{Track, Visualizer},
     window::Content,
 };
 use crate::{
@@ -44,10 +45,13 @@ use crate::{
         layout::{CONSOLE_MARGIN_BOTTOM, CONSOLE_MARGIN_TOP, MENU_HEIGHT, TITLE_HEIGHT},
         theme::FONT_SIZE,
     },
+    spotify::tap::AudioTap,
 };
 
 /// Espacio entre renglones de la consola.
 const CONSOLE_ROW_GAP: f32 = 4.0;
+/// Margen interno del panel de visualización.
+const VIZ_MARGIN: i8 = 12;
 /// Ancho del borde de la ventana que sirve para cambiarle el tamaño.
 const GRIP: f32 = 5.0;
 
@@ -74,6 +78,8 @@ pub(super) struct Startup {
     pub(super) hotkeys: Option<Hotkeys>,
     /// Con los ajustes ya aplicados.
     pub(super) theme: Theme,
+    /// Lo que suena, para la visualización (spec 010).
+    pub(super) tap: AudioTap,
 }
 
 pub(super) struct DesktopApp {
@@ -107,6 +113,8 @@ pub(super) struct DesktopApp {
     /// nada: no se pisa.
     keep_file: bool,
     started: bool,
+    /// Visualización del panel derecho (spec 010).
+    viz: Visualizer,
 }
 
 impl DesktopApp {
@@ -122,6 +130,7 @@ impl DesktopApp {
             data_dir,
             hotkeys,
             theme,
+            tap,
         } = startup;
         let keep_file = !settings_warnings.is_empty();
         let mut app = DesktopApp {
@@ -147,6 +156,7 @@ impl DesktopApp {
             save_at: None,
             keep_file,
             started: false,
+            viz: Visualizer::new(tap),
         };
         app.push(ConsoleLine::Out(
             LineKind::Track,
@@ -219,7 +229,22 @@ impl DesktopApp {
                 Output::Volume(volume) => self.volume = Some(volume),
                 Output::Clear => self.lines.clear(),
                 Output::Exit => ctx.send_viewport_cmd(ViewportCommand::Close),
+                Output::Cover { url, cover } => {
+                    // Tamaños de una tapa (≤ COVER_SIZE): entran en usize.
+                    let size = [cover.width as usize, cover.height as usize];
+                    let image = egui::ColorImage::from_rgba_unmultiplied(size, &cover.rgba);
+                    self.viz.set_cover(ctx, url, image);
+                }
             }
+        }
+    }
+
+    /// Lleva el modo de los ajustes a la visualización y le dice al motor
+    /// si hacen falta las tapas.
+    fn sync_viz(&mut self) {
+        if self.viz.mode() != self.settings.visualization {
+            self.viz.set_mode(self.settings.visualization);
+            self.send(Input::Covers(self.viz.wants_covers()));
         }
     }
 
@@ -227,8 +252,6 @@ impl DesktopApp {
         self.settings.appearance.palette
     }
 
-    /// Fuente del título y del tema que suena: negrita si así está en los
-    /// ajustes.
     /// `base` (un tamaño pensado para la letra por defecto) llevado al
     /// tamaño de letra de los ajustes: texto de la consola, la entrada y
     /// "sonando" (spec 009).
@@ -236,6 +259,8 @@ impl DesktopApp {
         base * layout::scale(self.settings.appearance.font_size)
     }
 
+    /// Fuente del título y del tema que suena: negrita si así está en los
+    /// ajustes.
     fn strong(&self, size: f32) -> FontId {
         if self.settings.appearance.bold_titles {
             bold(size)
@@ -494,6 +519,11 @@ impl DesktopApp {
         }
         if self.settings.playback != before.playback {
             self.send(Input::Playback(self.settings.playback));
+        }
+        if self.settings.visualization != before.visualization {
+            // Se aplica al dibujar el panel (`sync_viz`), en el próximo
+            // frame si el cambio vino después de dibujarlo.
+            ctx.request_repaint();
         }
         while self.lines.len() > self.settings.console.scrollback {
             self.lines.pop_front();
@@ -1027,6 +1057,30 @@ impl Content for DesktopApp {
             .exact_size(bars.input)
             .frame(Frame::new().inner_margin(Margin::symmetric(14, 0)))
             .show_inside(ui, |ui| self.input_row(ui));
+        self.sync_viz();
+        if let Some(width) = self.viz.panel_width(rect.width()) {
+            Panel::right("visualizacion")
+                .exact_size(width)
+                .resizable(false)
+                .frame(
+                    Frame::new()
+                        .fill(color(p.background))
+                        .inner_margin(Margin::same(VIZ_MARGIN))
+                        .stroke(Stroke::new(1.0_f32, color(p.border))),
+                )
+                .show_inside(ui, |ui| {
+                    let track = self
+                        .now
+                        .as_ref()
+                        .map_or(Track::Nothing, |now| Track::Loaded {
+                            state: now.state,
+                            cover: now.cover.as_deref(),
+                        });
+                    if self.viz.show(ui, ui.max_rect(), track, &p) {
+                        ctx.request_repaint_after(Duration::from_millis(1000 / config::viz::FPS));
+                    }
+                });
+        }
         CentralPanel::default()
             .frame(Frame::new().inner_margin(Margin {
                 left: 14,
@@ -1235,6 +1289,7 @@ mod tests {
             data_dir: None,
             hotkeys: None,
             theme: Theme::default(),
+            tap: AudioTap::new(config::viz::TAP_CAPACITY),
         };
         (DesktopApp::new(tx, out_rx, startup), rx)
     }

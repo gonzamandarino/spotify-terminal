@@ -171,6 +171,8 @@ async fn play(
         &audio_token,
         volume,
         spotify_terminal::config::AUDIO_BITRATE,
+        // La CLI no dibuja lo que suena: sin copia (spec 010, AC-12).
+        None,
     )
     .await?;
     let resolved = player.resolve_tracks(target).await?;

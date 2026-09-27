@@ -404,3 +404,46 @@ entradas viejas — se marcan reemplazadas.
 - **Alternativa descartada:** seguir con el zoom y agrandar la ventana
   mínima (la UI seguiría creciendo en vez de la letra).
 - **Estado:** Vigente (spec 009)
+
+## 2026-09-27 — Visualización: 15 fps y solo mientras suena
+- **Decisión:** la visualización (onda, barras, vinilo) se redibuja a
+  `config::viz::FPS` = 15 cuadros por segundo y solo con música sonando y
+  la ventana visible. En pausa, stop o sin visualización no pide cuadros.
+  Ninguna es el default. Las muestras se copian solo con Onda o Barras.
+- **Motivo:** el costo es redibujar la ventana por CPU. Medido con un
+  prototipo en 920×580 (spec 010): 30 fps = 16–18 % de un núcleo; 15 fps
+  = 7–9 %; quieto = 0 %.
+- **Alternativa descartada:** 30 fps (el doble de CPU sin verse mucho
+  mejor); fps elegibles desde el menú (pedido tuyo: fijo en config).
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-27 — Muestras para dibujar: copia que nunca frena el audio
+- **Decisión:** la salida de audio de librespot se envuelve en `TapSink`,
+  que pasa cada paquete tal cual y copia sus muestras (mono, sin el
+  volumen) a `AudioTap` con `try_lock`: si la ventana lo está leyendo, se
+  saltea esa copia. El volumen se saca dividiendo por el factor que aplicó
+  librespot, así la forma no cambia con el volumen.
+- **Motivo:** la reproducción gana siempre; perder un paquete del dibujo
+  no se nota, esperar en el hilo de audio sí.
+- **Alternativa descartada:** un canal con cada paquete (reserva memoria
+  por paquete en el hilo de audio y se acumula si la ventana no lee).
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-27 — FFT propia y JPEG de `image` para las tapas
+- **Decisión:** la FFT de las barras es radix-2 escrita a mano (~60
+  líneas, con test contra una DFT). Las tapas (JPEG de `i.scdn.co`) se
+  decodifican con `image`, que ya estaba en el árbol por el portapapeles
+  de `egui-winit`, sumándole el formato `jpeg` (`zune-jpeg`, Rust puro).
+  Se bajan una vez por tema, de ~300 px, en el motor.
+- **Motivo:** una FFT de 1024 puntos 15 veces por segundo no justifica
+  `rustfft`; para JPEG no hay alternativa sin dependencia y esta es la
+  más chica (no suma otra crate de imágenes).
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-27 — La tapa se recorta en círculo en el vinilo
+- **Decisión:** en Vinilo la tapa del disco es la etiqueta del centro,
+  recortada en círculo y girando (~10 rpm, `config::viz::VINYL_RPM`).
+- **Consecuencias:** las guías de marca de Spotify piden no recortar ni
+  alterar las tapas. Para un cliente personal se acepta; si el proyecto
+  se distribuyera más allá, revisar.
+- **Estado:** Vigente (spec 010)

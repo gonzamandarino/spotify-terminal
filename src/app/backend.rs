@@ -12,7 +12,9 @@ use crate::{
     setup::{self, Applied, ClientId},
     spotify::{
         auth::{self, Token, TokenKind},
+        cover::{self, Cover},
         player::{Player, Resolved},
+        tap::AudioTap,
         web::{Hit, SearchKind, User, WebClient},
     },
 };
@@ -106,10 +108,17 @@ pub(crate) trait Backend {
 
     /// Temas de un tema, álbum o playlist (ver [`Player::resolve_tracks`]).
     async fn resolve(&self, player: &Self::Player, uri: &SpotifyUri) -> Result<Resolved, AppError>;
+
+    /// Tapa de un disco, decodificada (ver [`cover::fetch`], spec 010).
+    async fn cover(&self, url: &str) -> Result<Cover, AppError>;
 }
 
 /// El `Backend` de verdad: tokens de `auth`, Web API y librespot.
-pub(crate) struct SpotifyBackend;
+pub(crate) struct SpotifyBackend {
+    /// Adónde copiar lo que suena para dibujarlo (app de escritorio con
+    /// visualización, spec 010); `None` = no se copia.
+    pub(crate) tap: Option<AudioTap>,
+}
 
 impl SpotifyBackend {
     /// Token vigente de `kind`. `auth::get_valid_token` puede quedarse
@@ -169,10 +178,20 @@ impl Backend for SpotifyBackend {
         if !user.is_premium() {
             return Err(AppError::NotPremium(user.plan().to_string()));
         }
-        Player::connect(&Self::token(TokenKind::Audio).await?, volume, bitrate).await
+        Player::connect(
+            &Self::token(TokenKind::Audio).await?,
+            volume,
+            bitrate,
+            self.tap.clone(),
+        )
+        .await
     }
 
     async fn resolve(&self, player: &Player, uri: &SpotifyUri) -> Result<Resolved, AppError> {
         player.resolve_tracks(uri).await
+    }
+
+    async fn cover(&self, url: &str) -> Result<Cover, AppError> {
+        cover::fetch(url).await
     }
 }

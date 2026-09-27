@@ -67,11 +67,15 @@ bin/desktop ──> desktop::run
                   │               ├──> desktop::layout (altos de
                   │               │      "sonando" y la entrada según
                   │               │      el tamaño de letra)
+                  │               ├──> desktop::viz (panel derecho: onda,
+                  │               │      barras con viz::spectrum, vinilo;
+                  │               │      lee spotify::tap::AudioTap y
+                  │               │      recibe las tapas del motor)
                   │               ├──> desktop::settings::save (diferido)
                   │               └──> desktop::hotkeys::replace (al
                   │                      cambiar un atajo global)
                   │                 │ Input (línea, atajos, Esc,
-                  │                 │ Playback, Shortcuts)
+                  │                 │ Playback, Shortcuts, Covers)
                   │                 ▼
                   ├──> desktop::hotkeys (hilo "atajos": RegisterHotKey)
                   │                 │ Input::Global (con la app minimizada)
@@ -82,9 +86,16 @@ bin/desktop ──> desktop::run
                          ├──> app::volume::Volume (mismo volumen que la CLI)
                          └──> app::backend::Backend (costura para tests)
                                 └── SpotifyBackend ──> spotify::auth / web /
-                                                       player (como la CLI)
+                                                       player (como la CLI,
+                                                       con AudioTap) / cover
                                                        y setup (Client ID)
 ```
+
+Visualización (spec 010): el hilo de audio de librespot escribe cada
+paquete en `spotify::tap::AudioTap` (a través de `TapSink`, sin esperar
+nunca) y la ventana lo lee al dibujar. Las tapas las baja y decodifica el
+motor (`spotify::cover`, aparte de su tarea de fondo) y llegan a la
+ventana como `Output::Cover`.
 
 ## Hilos
 - **main** (runtime `current_thread`): login, Web API, UI y teclado
@@ -100,6 +111,11 @@ bin/desktop ──> desktop::run
   porque librespot-oauth espera el callback del navegador con una llamada
   bloqueante. La ventana y el motor se hablan solo por canales; el motor
   despierta a la ventana con `request_repaint`.
+- **Visualización (spec 010):** el hilo de salida de audio de librespot
+  copia cada paquete a `AudioTap` con `try_lock` (si la ventana lo tiene
+  tomado, se saltea la copia, nunca el audio); la ventana lo lee al
+  dibujar el panel, a lo sumo `config::viz::FPS` veces por segundo y solo
+  mientras suena.
 - **atajos** (`desktop::hotkeys`, solo Windows): registra los atajos
   globales y duerme en `GetMessageW` hasta que se aprieta uno; entonces
   manda un `Input::Global` al motor por el mismo canal que la ventana. Se
@@ -202,6 +218,9 @@ corregir la tabla.
 | `auth::get_valid_token`, `auth::logout`, `auth::Token`, `auth::TokenKind` | `src/spotify/auth.rs` | doc-comment |
 | `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
 | `player::Player` (incl. `restart`, `set_volume`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
+| `tap::AudioTap` (`push`, `snapshot`, `set_enabled`), `tap::TapSink` | `src/spotify/tap.rs` | doc-comment |
+| `cover::fetch`, `cover::Cover` | `src/spotify/cover.rs` | doc-comment |
+| `viz::Visualizer` (`show`, `set_mode`, `set_cover`, `panel_width`), `viz::Track`, `spectrum::Spectrum::bands` | `src/desktop/viz/` | doc-comment |
 | `playback::play_queue` (teclas, cola, shuffle), `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
 | `queue::Queue`, `queue::Step`, `queue::Clock`, `queue::on_player_event` (crate) | `src/app/queue.rs` | doc-comment |
 | `volume::Volume` (`load`, `save`, `output`) | `src/app/volume.rs` | doc-comment |

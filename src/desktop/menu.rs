@@ -1,7 +1,7 @@
 //! Barra de menús de la app de escritorio (spec 007), en un renglón bajo
 //! la barra de título: Personalización (con los submenús Tema, Fuente,
-//! Atajos, Consola y Ventana, spec 009), Reproducción y Ajustes, más los
-//! diálogos de colores y de atajos.
+//! Atajos, Consola y Ventana, spec 009; Visualización, spec 010),
+//! Reproducción y Ajustes, más los diálogos de colores y de atajos.
 //!
 //! Edita los `Settings` que le pasa la ventana y devuelve lo que no es un
 //! ajuste (`Command`). No aplica nada por su cuenta: la ventana compara los
@@ -19,8 +19,8 @@ use egui::{
 use super::{
     combo::Combo,
     settings::{
-        self, ColorSlot, ComboCheck, Section, Settings, Target, WindowAction, bitrate_from_kbps,
-        bitrate_kbps,
+        self, ColorSlot, ComboCheck, Section, Settings, Target, VizMode, WindowAction,
+        bitrate_from_kbps, bitrate_kbps,
     },
     theme::color,
 };
@@ -43,7 +43,14 @@ pub(super) enum Command {
 const TITLES: [&str; 3] = ["Personalización", "Reproducción", "Ajustes"];
 
 /// Submenús de Personalización, en orden.
-const SUBMENUS: [&str; 5] = ["Tema", "Fuente", "Atajos", "Consola", "Ventana"];
+const SUBMENUS: [&str; 6] = [
+    "Tema",
+    "Fuente",
+    "Atajos",
+    "Consola",
+    "Ventana",
+    "Visualización",
+];
 
 /// Ancho mínimo de un menú desplegado.
 const MENU_MIN_WIDTH: f32 = 260.0;
@@ -243,7 +250,8 @@ impl Menus {
                     1 => font_menu(ui, settings, fonts, &mut sub_first),
                     2 => self.keys_menu(ui, settings, &mut sub_first),
                     3 => self.console_menu(ui, settings, commands, &mut sub_first),
-                    _ => window_menu(ui, settings, commands, &mut sub_first),
+                    4 => window_menu(ui, settings, commands, &mut sub_first),
+                    _ => viz_menu(ui, settings, &mut sub_first),
                 }
             });
             let response = if index == 0 {
@@ -659,6 +667,25 @@ fn window_menu(
     }
 }
 
+/// Visualización (spec 010): qué se dibuja en el panel de la derecha.
+fn viz_menu(
+    ui: &mut Ui,
+    settings: &mut Settings,
+    first: &mut impl FnMut(egui::Response) -> egui::Response,
+) {
+    for (i, mode) in VizMode::ALL.into_iter().enumerate() {
+        let response = ui.add(Button::selectable(
+            settings.visualization == mode,
+            mode.label(),
+        ));
+        let response = if i == 0 { first(response) } else { response };
+        if response.clicked() {
+            settings.visualization = mode;
+            ui.close();
+        }
+    }
+}
+
 fn settings_menu(
     ui: &mut Ui,
     commands: &mut Vec<Command>,
@@ -810,7 +837,17 @@ mod tests {
     #[test]
     fn personalizacion_junta_los_menus_de_antes() {
         assert_eq!(TITLES[0], "Personalización");
-        assert_eq!(SUBMENUS, ["Tema", "Fuente", "Atajos", "Consola", "Ventana"]);
+        assert_eq!(
+            SUBMENUS,
+            [
+                "Tema",
+                "Fuente",
+                "Atajos",
+                "Consola",
+                "Ventana",
+                "Visualización"
+            ]
+        );
         for sub in SUBMENUS {
             assert!(!TITLES.contains(&sub), "{sub} sigue en la barra");
         }

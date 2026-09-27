@@ -245,6 +245,56 @@ pub mod theme {
     pub const FONT_SIZE: f32 = 14.0;
 }
 
+// --- Visualización (spec 010) ---
+
+/// Visualización de la canción en la app de escritorio (spec 010).
+pub mod viz {
+    use std::time::Duration;
+
+    /// Cuadros por segundo mientras suena. Solo se anima sonando: en pausa,
+    /// sin música o minimizada no se redibuja (spec 010, AC-7).
+    pub const FPS: u64 = 15;
+    /// Ancho del panel, a la derecha de la consola, en puntos.
+    pub const PANEL_WIDTH: f32 = 280.0;
+    /// Si con el panel la consola quedaría más angosta que esto, el panel
+    /// no se muestra.
+    pub const MIN_CONSOLE_WIDTH: f32 = 360.0;
+    /// Muestras (mono) que se analizan por cuadro: ~23 ms a 44,1 kHz.
+    /// Potencia de 2 (FFT radix-2).
+    pub const FFT_SIZE: usize = 1024;
+    /// Puntos de la onda (se toman salteados de las `FFT_SIZE` muestras).
+    pub const WAVE_POINTS: usize = 256;
+    /// Barras del espectro y su rango de frecuencias (escala logarítmica).
+    pub const BARS: usize = 32;
+    pub const BAR_MIN_HZ: f32 = 40.0;
+    pub const BAR_MAX_HZ: f32 = 16_000.0;
+    /// Cuánto baja una barra por segundo (fracción del alto total) cuando
+    /// su valor nuevo es menor: caída suave en vez de parpadeo.
+    pub const BAR_FALL_PER_SEC: f32 = 1.8;
+    /// Nivel (dB relativos al máximo) que queda en cero: lo más bajo que
+    /// se ve de una barra.
+    pub const BAR_FLOOR_DB: f32 = -60.0;
+    /// Vueltas por minuto del vinilo (no 33⅓: a 15 fps saltaría 13° por
+    /// cuadro).
+    pub const VINYL_RPM: f32 = 10.0;
+    /// Lado aproximado de la tapa que se pide a Spotify, en px.
+    pub const COVER_SIZE: u32 = 300;
+    /// Tope de la descarga de una tapa.
+    pub const COVER_MAX_BYTES: usize = 2 * 1024 * 1024;
+    /// Cuánto se atrasa el dibujo respecto de las muestras que entran a
+    /// la salida de audio (que las toca después de su buffer). Medido en
+    /// spec 010, T6.
+    pub const LATENCY: Duration = Duration::ZERO;
+    /// Tope de `LATENCY`: el buffer de muestras guarda esto de más.
+    pub const LATENCY_MAX: Duration = Duration::from_millis(500);
+    /// Muestras que guarda el buffer: lo analizado más el atraso.
+    pub const TAP_CAPACITY: usize = FFT_SIZE
+        + (LATENCY_MAX.as_millis() as usize) * (librespot_playback::SAMPLE_RATE as usize) / 1000;
+
+    const _: () = assert!(FFT_SIZE.is_power_of_two() && WAVE_POINTS <= FFT_SIZE);
+    const _: () = assert!(LATENCY.as_millis() <= LATENCY_MAX.as_millis());
+}
+
 // --- Ajustes (spec 007) ---
 //
 // Los valores de arriba (colores, fuente, atajos, volumen, consola) son los

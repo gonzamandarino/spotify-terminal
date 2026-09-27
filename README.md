@@ -123,6 +123,7 @@ subrayada; en Personalización, → abre un submenú y ← vuelve):
 | Personalización → Atajos | los de la ventana y los globales: clic y apretá la combinación nueva |
 | Personalización → Consola | símbolo del prompt, líneas guardadas, historial, hora en cada línea |
 | Personalización → Ventana | siempre visible, recordar tamaño y posición |
+| Personalización → Visualización | panel a la derecha de la consola con la onda, las barras (espectro) o un vinilo girando con la tapa del disco; se anima solo mientras suena |
 | Reproducción | paso de volumen, cuándo "anterior" reinicia el tema, calidad de audio (desde el próximo `play`) |
 | Ajustes | abrir / recargar `ajustes.json`, restaurar todo |
 

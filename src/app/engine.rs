@@ -38,7 +38,9 @@ use crate::{
     error::AppError,
     setup,
     spotify::{
+        cover::Cover,
         player::Resolved,
+        tap::AudioTap,
         web::{Hit, SearchKind, User},
     },
     ui::{cli::Command, select},
@@ -72,6 +74,10 @@ pub(crate) enum Input {
     /// Ajustes de reproducción nuevos (spec 007). Rigen desde el próximo
     /// uso; la calidad, desde el próximo `play`.
     Playback(PlaybackSettings),
+    /// Si la ventana quiere las tapas de los discos (visualización Vinilo,
+    /// spec 010). Con `true`, manda la del tema que suena y la de cada
+    /// tema nuevo; con `false`, deja de bajarlas.
+    Covers(bool),
 }
 
 /// Lo que puede hacer un atajo global.
@@ -165,6 +171,9 @@ pub(crate) struct NowPlaying {
     pub(crate) state: PlayState,
     pub(crate) shuffle: bool,
     pub(crate) queued: usize,
+    /// URL de la tapa del disco (spec 010); llega con `Output::Cover` si
+    /// la ventana las pidió.
+    pub(crate) cover: Option<String>,
 }
 
 /// Qué espera la línea de entrada.
@@ -192,6 +201,12 @@ pub(crate) enum Output {
     Clear,
     /// `exit`: la ventana tiene que cerrarse.
     Exit,
+    /// La tapa de `url`, que es la del tema que sonaba al terminar de
+    /// bajarla (solo con `Input::Covers(true)`).
+    Cover {
+        url: String,
+        cover: Cover,
+    },
 }
 
 /// Salida del motor: cada mensaje despierta a la ventana con `wake` para
@@ -230,10 +245,14 @@ pub(crate) struct EngineHandle {
 /// - Post: el motor atiende `inputs` hasta `exit` o hasta que se suelta el
 ///   emisor (la ventana se cerró); en los dos casos corta el audio y suelta
 ///   el reproductor antes de terminar el hilo. `wake` se llama después de
-///   cada `Output`, desde el hilo del motor.
+///   cada `Output`, desde el hilo del motor. Con `tap`, lo que suena se
+///   copia ahí (spec 010).
 /// - Errores: `Internal` si el hilo no arranca. Si no arranca el runtime,
 ///   el error llega como `Output::Line` y el hilo termina.
-pub(crate) fn spawn(wake: impl Fn() + Send + 'static) -> Result<EngineHandle, AppError> {
+pub(crate) fn spawn(
+    wake: impl Fn() + Send + 'static,
+    tap: Option<AudioTap>,
+) -> Result<EngineHandle, AppError> {
     let (in_tx, in_rx) = mpsc::unbounded_channel();
     let (out_tx, out_rx) = std_mpsc::channel();
     let thread = thread::Builder::new()
@@ -258,7 +277,8 @@ pub(crate) fn spawn(wake: impl Fn() + Send + 'static) -> Result<EngineHandle, Ap
             // se guarda.
             let volume_dir = config::data_dir().ok();
             let volume = volume_dir.as_deref().map(Volume::load).unwrap_or_default();
-            runtime.block_on(Engine::new(SpotifyBackend, out, volume, volume_dir).run(in_rx));
+            let backend = SpotifyBackend { tap };
+            runtime.block_on(Engine::new(backend, out, volume, volume_dir).run(in_rx));
             // Un login esperando al navegador no tiene que trabar el cierre.
             runtime.shutdown_background();
         })
@@ -312,7 +332,11 @@ struct Playing {
     title: String,
     artists: String,
     duration: Duration,
+    cover: Option<String>,
 }
+
+/// Descarga de una tapa: su URL y cómo terminó.
+type CoverTask = Pin<Box<dyn Future<Output = (String, Result<Cover, AppError>)>>>;
 
 /// Estado del motor.
 ///
@@ -353,6 +377,12 @@ pub(crate) struct Engine<B: Backend> {
     playback: PlaybackSettings,
     /// Calidad con la que se abrió `player`.
     player_bitrate: Bitrate,
+    /// La ventana quiere las tapas (spec 010).
+    covers: bool,
+    /// Tapa bajándose; corre aparte de `task` (no ocupa al motor).
+    cover_task: Option<CoverTask>,
+    /// Última tapa pedida (bajándose o ya mandada): no se pide de nuevo.
+    cover_asked: Option<String>,
 }
 
 impl<B: Backend + 'static> Engine<B> {
@@ -378,6 +408,9 @@ impl<B: Backend + 'static> Engine<B> {
             global_shortcuts: Vec::new(),
             playback: PlaybackSettings::default(),
             player_bitrate: config::AUDIO_BITRATE,
+            covers: false,
+            cover_task: None,
+            cover_asked: None,
         }
     }
 
@@ -401,6 +434,10 @@ impl<B: Backend + 'static> Engine<B> {
                     self.on_done(done);
                 }
                 () = save_due(self.save_at) => self.save_volume(),
+                (url, result) = finish_cover(&mut self.cover_task) => {
+                    self.cover_task = None;
+                    self.on_cover(url, result);
+                }
             }
             self.publish();
         }
@@ -504,6 +541,15 @@ impl<B: Backend + 'static> Engine<B> {
                 self.global_shortcuts = global;
             }
             Input::Playback(playback) => self.playback = playback,
+            Input::Covers(on) => {
+                self.covers = on;
+                if on {
+                    self.fetch_cover();
+                } else {
+                    self.cover_task = None;
+                    self.cover_asked = None;
+                }
+            }
         }
         Flow::Continue
     }
@@ -858,7 +904,37 @@ impl<B: Backend + 'static> Engine<B> {
             title: String::new(),
             artists: String::new(),
             duration: Duration::ZERO,
+            cover: None,
         });
+    }
+
+    /// Si la ventana quiere tapas, empieza a bajar la del tema que suena
+    /// (una sola vez por URL). Una descarga anterior se abandona.
+    fn fetch_cover(&mut self) {
+        let Some(url) = self.playing.as_ref().and_then(|p| p.cover.clone()) else {
+            return;
+        };
+        if !self.covers || self.cover_asked.as_ref() == Some(&url) {
+            return;
+        }
+        self.cover_asked = Some(url.clone());
+        let backend = self.backend.clone();
+        self.cover_task = Some(Box::pin(async move {
+            let result = backend.cover(&url).await;
+            (url, result)
+        }));
+    }
+
+    /// Terminó de bajarse una tapa: se manda solo si sigue sonando ese
+    /// tema y la ventana las sigue queriendo. Un error no se avisa (spec
+    /// 010: el vinilo gira sin tapa).
+    fn on_cover(&mut self, url: String, result: Result<Cover, AppError>) {
+        let current = self.playing.as_ref().and_then(|p| p.cover.as_deref());
+        if let (true, Some(current), Ok(cover)) = (self.covers, current, result) {
+            if current == url {
+                self.out.send(Output::Cover { url, cover });
+            }
+        }
     }
 
     fn stop_playing(&mut self) {
@@ -937,7 +1013,9 @@ impl<B: Backend + 'static> Engine<B> {
             playing.title = track.name;
             playing.artists = track.artists;
             playing.duration = track.duration;
+            playing.cover = track.cover;
             self.out.line(LineKind::Track, text);
+            self.fetch_cover();
         }
         self.apply(step);
     }
@@ -1037,6 +1115,7 @@ impl<B: Backend + 'static> Engine<B> {
             state: p.state,
             shuffle: p.queue.shuffled(),
             queued: p.queue.queued(),
+            cover: p.cover.clone(),
         });
         if now != self.shown {
             self.shown.clone_from(&now);
@@ -1089,6 +1168,14 @@ async fn save_due(at: Option<Instant>) {
 fn volume_text(volume: Volume) -> String {
     let icon = if volume.muted() { "🔇" } else { "🔊" };
     format!("{icon} Volumen: {volume}")
+}
+
+/// Espera la descarga de tapa en curso; sin descarga, no termina nunca.
+async fn finish_cover(task: &mut Option<CoverTask>) -> (String, Result<Cover, AppError>) {
+    match task.as_mut() {
+        Some(task) => task.await,
+        None => std::future::pending().await,
+    }
 }
 
 /// Espera la tarea en curso; sin tarea, no termina nunca.
@@ -1214,6 +1301,17 @@ mod tests {
             };
             Ok(Resolved { tracks, skipped: 0 })
         }
+        async fn cover(&self, url: &str) -> Result<Cover, AppError> {
+            self.log.borrow_mut().push(format!("cover {url}"));
+            if url.contains("falla") {
+                return Err(AppError::Network("sin red".into()));
+            }
+            Ok(Cover {
+                width: 1,
+                height: 1,
+                rgba: vec![1, 2, 3, 255],
+            })
+        }
     }
 
     /// ID sin los ceros de relleno.
@@ -1300,6 +1398,93 @@ mod tests {
         fn take_log(&self) -> Vec<String> {
             self.log.borrow_mut().drain(..).collect()
         }
+    }
+
+    impl Harness {
+        /// Suena un tema cuya tapa es `url` (como si hubiera llegado su
+        /// `TrackChanged`).
+        async fn playing_with_cover(&mut self, url: &str) {
+            if self.engine.playing.is_none() {
+                self.type_line(&format!("play {}", album("a"))).await;
+                self.confirm(1);
+            }
+            if let Some(playing) = self.engine.playing.as_mut() {
+                playing.cover = Some(url.into());
+            }
+            self.engine.fetch_cover();
+            self.engine.publish();
+        }
+
+        /// Termina la descarga de tapa en curso, si hay.
+        async fn finish_cover(&mut self) {
+            if let Some(task) = self.engine.cover_task.take() {
+                let (url, result) = task.await;
+                self.engine.on_cover(url, result);
+            }
+        }
+
+        fn covers_sent(&self) -> Vec<String> {
+            self.outputs()
+                .into_iter()
+                .filter_map(|o| match o {
+                    Output::Cover { url, .. } => Some(url),
+                    _ => None,
+                })
+                .collect()
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn tapas_solo_si_la_ventana_las_pide() {
+        let mut h = harness(true);
+        h.playing_with_cover("t1").await;
+        h.finish_cover().await;
+        assert!(h.covers_sent().is_empty());
+        assert!(!h.take_log().iter().any(|l| l.starts_with("cover")));
+        // Al pedirlas llega la del tema que suena, una sola vez.
+        h.engine.on_input(Input::Covers(true));
+        h.finish_cover().await;
+        assert_eq!(h.covers_sent(), ["t1"]);
+        h.playing_with_cover("t1").await;
+        h.finish_cover().await;
+        assert!(h.covers_sent().is_empty());
+        // Tema nuevo, tapa nueva.
+        h.playing_with_cover("t2").await;
+        h.finish_cover().await;
+        assert_eq!(h.covers_sent(), ["t2"]);
+        let covers: Vec<String> = h
+            .take_log()
+            .into_iter()
+            .filter(|l| l.starts_with("cover"))
+            .collect();
+        assert_eq!(covers, ["cover t1", "cover t2"]);
+        // Sin pedirlas, no se bajan más.
+        h.engine.on_input(Input::Covers(false));
+        h.playing_with_cover("t3").await;
+        assert!(h.engine.cover_task.is_none());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn una_tapa_que_llega_tarde_o_falla_no_se_manda() {
+        let mut h = harness(true);
+        h.engine.on_input(Input::Covers(true));
+        h.playing_with_cover("t1").await;
+        // Cambia el tema antes de que termine la descarga de t1.
+        let late = h.engine.cover_task.take().expect("bajando t1");
+        h.playing_with_cover("t2").await;
+        let (url, result) = late.await;
+        h.engine.on_cover(url, result);
+        h.finish_cover().await;
+        assert_eq!(h.covers_sent(), ["t2"]);
+        // Un error no se avisa en la consola.
+        h.playing_with_cover("falla").await;
+        h.finish_cover().await;
+        let out = h.outputs();
+        assert!(!out.iter().any(|o| matches!(o, Output::Cover { .. })));
+        assert!(
+            !out.iter()
+                .any(|o| matches!(o, Output::Line(LineKind::Error | LineKind::Warn, _)))
+        );
     }
 
     fn has_line(outputs: &[Output], kind: LineKind, text: &str) -> bool {

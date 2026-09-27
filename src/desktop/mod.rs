@@ -10,11 +10,12 @@ mod layout;
 mod menu;
 pub(crate) mod settings;
 mod theme;
+mod viz;
 mod window;
 
 use std::{fs::OpenOptions, io::Write};
 
-use crate::{app::engine, config, error::AppError};
+use crate::{app::engine, config, error::AppError, spotify::tap::AudioTap};
 
 /// Abre la ventana y la atiende hasta que se cierra.
 ///
@@ -39,11 +40,14 @@ pub fn run() -> Result<(), AppError> {
         .into_iter()
         .collect();
     let wake = ctx.clone();
+    // Lo que suena, para la visualización (spec 010); apagado hasta que
+    // se elige una.
+    let tap = AudioTap::new(config::viz::TAP_CAPACITY);
     let engine::EngineHandle {
         inputs,
         outputs,
         thread,
-    } = engine::spawn(move || wake.request_repaint())?;
+    } = engine::spawn(move || wake.request_repaint(), Some(tap.clone()))?;
 
     let hotkeys = match hotkeys::spawn(hotkeys::from_settings(&settings), inputs.clone()) {
         Ok(hotkeys) => {
@@ -73,6 +77,7 @@ pub fn run() -> Result<(), AppError> {
             data_dir,
             hotkeys,
             theme,
+            tap,
         },
     );
     let result = window::run(ctx.clone(), start, &mut console);
