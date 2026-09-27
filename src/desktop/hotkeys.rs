@@ -9,86 +9,24 @@
 
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::combo::Combo;
 use crate::{
     app::engine::{GlobalAction, Input},
     config,
     error::AppError,
 };
 
-/// Tecla de un atajo global (sin los modificadores).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Key {
-    /// Letra A-Z o dígito 0-9, en mayúscula.
-    Char(char),
-    Enter,
-    Left,
-    Right,
-    Up,
-    Down,
-}
-
-impl Key {
-    /// Virtual-key code de Windows. Letras y dígitos son su código ASCII
-    /// en mayúscula.
-    pub(crate) fn vk(self) -> u32 {
-        match self {
-            Key::Char(c) => u32::from(c.to_ascii_uppercase()),
-            Key::Enter => 0x0D,
-            Key::Left => 0x25,
-            Key::Up => 0x26,
-            Key::Right => 0x27,
-            Key::Down => 0x28,
-        }
-    }
-
-    fn name(self) -> String {
-        match self {
-            Key::Char(c) => c.to_ascii_uppercase().to_string(),
-            Key::Enter => "Enter".into(),
-            Key::Left => "←".into(),
-            Key::Right => "→".into(),
-            Key::Up => "↑".into(),
-            Key::Down => "↓".into(),
-        }
-    }
-}
-
-/// Modificadores de los atajos globales.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Modifiers {
-    pub(crate) ctrl: bool,
-    pub(crate) alt: bool,
-    pub(crate) shift: bool,
-}
-
 /// Un atajo global: combinación + acción.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Shortcut {
-    pub(crate) modifiers: Modifiers,
-    pub(crate) key: Key,
+    pub(crate) combo: Combo,
     pub(crate) action: GlobalAction,
 }
 
 impl Shortcut {
-    /// "Ctrl+Alt+→".
-    pub(crate) fn combo(&self) -> String {
-        let mut text = String::new();
-        for (on, name) in [
-            (self.modifiers.ctrl, "Ctrl+"),
-            (self.modifiers.alt, "Alt+"),
-            (self.modifiers.shift, "Shift+"),
-        ] {
-            if on {
-                text.push_str(name);
-            }
-        }
-        text.push_str(&self.key.name());
-        text
-    }
-
     /// "Ctrl+Alt+→  siguiente", para `help`.
     pub(crate) fn describe(&self) -> String {
-        format!("{:<16} {}", self.combo(), self.action.describe())
+        format!("{:<16} {}", self.combo.to_string(), self.action.describe())
     }
 
     /// Mantener apretado repite la acción: solo el volumen (como Ctrl+↑ en
@@ -101,15 +39,11 @@ impl Shortcut {
     }
 }
 
-/// Atajos de `config::GLOBAL_SHORTCUTS`, con los modificadores de config.
+/// Atajos de `config::GLOBAL_SHORTCUTS`.
 pub(crate) fn configured() -> Vec<Shortcut> {
     config::GLOBAL_SHORTCUTS
         .iter()
-        .map(|&(key, action)| Shortcut {
-            modifiers: config::GLOBAL_SHORTCUT_MODIFIERS,
-            key,
-            action,
-        })
+        .map(|&(combo, action)| Shortcut { combo, action })
         .collect()
 }
 
@@ -125,7 +59,7 @@ impl Failed {
     pub(crate) fn warning(&self) -> String {
         format!(
             "⚠ {} {}: sin atajo global para {}.",
-            self.shortcut.combo(),
+            self.shortcut.combo,
             self.reason,
             self.shortcut.action.describe()
         )
@@ -295,9 +229,9 @@ mod win {
     pub(super) fn register(id: i32, shortcut: &Shortcut) -> io::Result<()> {
         let mut modifiers = 0;
         for (on, flag) in [
-            (shortcut.modifiers.ctrl, MOD_CONTROL),
-            (shortcut.modifiers.alt, MOD_ALT),
-            (shortcut.modifiers.shift, MOD_SHIFT),
+            (shortcut.combo.ctrl, MOD_CONTROL),
+            (shortcut.combo.alt, MOD_ALT),
+            (shortcut.combo.shift, MOD_SHIFT),
             (!shortcut.repeats(), MOD_NOREPEAT),
         ] {
             if on {
@@ -305,7 +239,7 @@ mod win {
             }
         }
         // SAFETY: sin ventana (0) = los mensajes van a la cola del hilo.
-        if unsafe { RegisterHotKey(0, id, modifiers, shortcut.key.vk()) } == 0 {
+        if unsafe { RegisterHotKey(0, id, modifiers, shortcut.combo.key.vk()) } == 0 {
             return Err(io::Error::last_os_error());
         }
         Ok(())
@@ -329,28 +263,18 @@ mod win {
 mod tests {
     use super::*;
 
-    fn shortcut(key: Key, action: GlobalAction) -> Shortcut {
+    fn shortcut(combo: &str, action: GlobalAction) -> Shortcut {
         Shortcut {
-            modifiers: Modifiers {
-                ctrl: true,
-                alt: true,
-                shift: false,
-            },
-            key,
+            combo: combo.parse().unwrap(),
             action,
         }
     }
 
     #[test]
     fn nombres_de_las_combinaciones() {
-        let next = shortcut(Key::Right, GlobalAction::Next);
-        assert_eq!(next.combo(), "Ctrl+Alt+→");
+        let next = shortcut("Ctrl+Alt+→", GlobalAction::Next);
         assert!(next.describe().starts_with("Ctrl+Alt+→ "));
         assert!(next.describe().ends_with(" siguiente"));
-        assert_eq!(
-            shortcut(Key::Char('p'), GlobalAction::TogglePause).combo(),
-            "Ctrl+Alt+P"
-        );
         let failed = Failed {
             shortcut: next,
             reason: "ya lo usa otra app".into(),
@@ -362,20 +286,12 @@ mod tests {
     }
 
     #[test]
-    fn teclas_virtuales() {
-        assert_eq!(Key::Char('p').vk(), 0x50);
-        assert_eq!(Key::Enter.vk(), 0x0D);
-        assert_eq!(Key::Right.vk(), 0x27);
-        assert_eq!(Key::Down.vk(), 0x28);
-    }
-
-    #[test]
     fn config_sin_combinaciones_repetidas_y_solo_volumen_repite() {
         let all = configured();
         assert!(!all.is_empty());
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
-                assert_ne!(a.key, b.key, "{} repetida", a.combo());
+                assert_ne!(a.combo, b.combo, "{} repetida", a.combo);
             }
             assert_eq!(
                 a.repeats(),
@@ -388,15 +304,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn combinacion_tomada_falla_y_al_soltarla_queda_libre() {
-        let rare = Shortcut {
-            modifiers: Modifiers {
-                ctrl: true,
-                alt: true,
-                shift: true,
-            },
-            key: Key::Char('Q'),
-            action: GlobalAction::Stop,
-        };
+        let rare = shortcut("Ctrl+Alt+Shift+Q", GlobalAction::Stop);
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let first = spawn(vec![rare], tx.clone()).unwrap();
         assert_eq!(first.active.len(), 1, "{:?}", first.failed);

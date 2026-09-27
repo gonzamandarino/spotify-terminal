@@ -4,6 +4,7 @@
 //! 006) en el suyo, y el audio en los de `spotify::player`.
 
 mod app;
+pub(crate) mod combo;
 pub(crate) mod hotkeys;
 mod theme;
 mod window;

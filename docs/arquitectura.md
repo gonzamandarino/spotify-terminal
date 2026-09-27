@@ -152,7 +152,8 @@ corregir la tabla.
 | `shell::parse_line`, `shell::complete`, `shell::ShellCommand`, `shell::VolumeCommand` (crate) | `src/app/shell.rs` | doc-comment |
 | `engine::spawn`, `engine::Input`, `engine::Output`, `engine::Engine` (crate) | `src/app/engine.rs` | doc-comment |
 | `backend::Backend`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
-| `hotkeys::spawn`, `hotkeys::Hotkeys`, `hotkeys::Shortcut`, `hotkeys::Key` (crate) | `src/desktop/hotkeys.rs` | doc-comment |
+| `hotkeys::spawn`, `hotkeys::Hotkeys`, `hotkeys::Shortcut` (crate) | `src/desktop/hotkeys.rs` | doc-comment |
+| `combo::Combo`, `combo::Key` (crate; `Combo::from_str` con contrato) | `src/desktop/combo.rs` | doc-comment |
 | `engine::GlobalAction` (crate) | `src/app/engine.rs` | doc-comment |
 | `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |
 | `config::data_dir` | `src/config.rs` | doc-comment |

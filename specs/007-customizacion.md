@@ -270,7 +270,7 @@ están.
 
 ## Tareas
 
-- [ ] **T1** — `combo.rs`: `Combo` con parseo / texto / virtual-key /
+- [x] **T1** — `combo.rs`: `Combo` con parseo / texto / virtual-key /
       `egui::Key`, y `hotkeys` migrado a `Combo` sin cambiar
       comportamiento. Tests.
 - [ ] **T2** — `settings.rs` + defaults / rangos / presets / catálogo en

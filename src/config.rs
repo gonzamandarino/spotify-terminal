@@ -6,7 +6,11 @@ use std::{path::PathBuf, time::Duration};
 
 use librespot_playback::config::Bitrate;
 
-use crate::{app::engine::GlobalAction, desktop::hotkeys, error::AppError};
+use crate::{
+    app::engine::GlobalAction,
+    desktop::combo::{Combo, Key},
+    error::AppError,
+};
 
 /// Client ID para la sesión de audio (el de librespot). Con uno propio,
 /// `login5` rechaza el token al cargar audio (spike T2, spec 001).
@@ -101,24 +105,22 @@ const _: () = assert!(VOLUME_DEFAULT <= 100 && VOLUME_STEP >= 1 && VOLUME_STEP <
 
 // --- Atajos globales (spec 006) ---
 
-/// Modificadores de todos los atajos globales. `Ctrl+Shift` se descartó:
-/// tapa la selección de texto de las demás apps.
-pub(crate) const GLOBAL_SHORTCUT_MODIFIERS: hotkeys::Modifiers = hotkeys::Modifiers {
-    ctrl: true,
-    alt: true,
-    shift: false,
-};
+/// `Ctrl+Alt+tecla`: los atajos globales usan esos modificadores.
+/// `Ctrl+Shift` se descartó: tapa la selección de texto de las demás apps.
+const fn ctrl_alt(key: Key) -> Combo {
+    Combo::new(true, true, false, key)
+}
 
-/// Atajos globales de la app de escritorio: tecla (con
-/// `GLOBAL_SHORTCUT_MODIFIERS`) → acción. `Ctrl+Alt+Espacio` no se usa: ya
-/// la registra otra app en la PC de desarrollo.
-pub(crate) const GLOBAL_SHORTCUTS: &[(hotkeys::Key, GlobalAction)] = &[
-    (hotkeys::Key::Char('P'), GlobalAction::TogglePause),
-    (hotkeys::Key::Right, GlobalAction::Next),
-    (hotkeys::Key::Left, GlobalAction::Prev),
-    (hotkeys::Key::Enter, GlobalAction::Stop),
-    (hotkeys::Key::Up, GlobalAction::VolumeUp),
-    (hotkeys::Key::Down, GlobalAction::VolumeDown),
+/// Atajos globales de la app de escritorio: combinación → acción.
+/// `Ctrl+Alt+Espacio` no se usa: ya la registra otra app en la PC de
+/// desarrollo.
+pub(crate) const GLOBAL_SHORTCUTS: &[(Combo, GlobalAction)] = &[
+    (ctrl_alt(Key::Char('P')), GlobalAction::TogglePause),
+    (ctrl_alt(Key::Right), GlobalAction::Next),
+    (ctrl_alt(Key::Left), GlobalAction::Prev),
+    (ctrl_alt(Key::Enter), GlobalAction::Stop),
+    (ctrl_alt(Key::Up), GlobalAction::VolumeUp),
+    (ctrl_alt(Key::Down), GlobalAction::VolumeDown),
 ];
 
 // --- App de escritorio (spec 004) ---
