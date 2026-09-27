@@ -1,0 +1,5 @@
+# Runtime de C/C++ enlazado dentro del .exe (spec 008): así los binarios no
+# dependen de vcruntime140.dll y andan en una PC sin las Build Tools ni el
+# Visual C++ Redistributable. Ver docs/decisiones.md.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
