@@ -44,9 +44,15 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 
-# Cuadro de error nativo de la app de escritorio. Misma versión que winit.
+# Cuadro de error nativo y atajos globales (RegisterHotKey) de la app de
+# escritorio. Misma versión que winit.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52.0", features = ["Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.52.0", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 # Ícono del .exe (build.rs).
 [target.'cfg(windows)'.build-dependencies]

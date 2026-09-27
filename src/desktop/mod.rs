@@ -1,19 +1,27 @@
 //! App de escritorio: una ventana propia con la consola (spec 004). La
 //! ventana (`window`) y la consola (`app`) corren en el hilo principal; el
-//! motor (`app::engine`) en el suyo, y el audio en los de `spotify::player`.
+//! motor (`app::engine`) en el suyo, los atajos globales (`hotkeys`, spec
+//! 006) en el suyo, y el audio en los de `spotify::player`.
 
 mod app;
+pub(crate) mod hotkeys;
 mod theme;
 mod window;
 
 use std::{fs::OpenOptions, io::Write};
 
-use crate::{app::engine, config, error::AppError};
+use crate::{
+    app::engine::{self, Input},
+    config,
+    error::AppError,
+};
 
 /// Abre la ventana y la atiende hasta que se cierra.
 ///
 /// - Post: al volver, el motor terminó y el audio está cortado (el
-///   reproductor se suelta en el hilo del motor antes de que este termine).
+///   reproductor se suelta en el hilo del motor antes de que este termine),
+///   y los atajos globales están liberados. Si un atajo global no se pudo
+///   registrar, la consola arranca con un aviso y la app sigue sin él.
 ///   Un panic se anota en `config::PANIC_LOG_FILE`, en la carpeta de datos,
 ///   porque la app no tiene consola donde mostrarlo.
 /// - Errores: `Internal` si no arranca el motor o no se puede abrir la
@@ -30,10 +38,26 @@ pub fn run() -> Result<(), AppError> {
         thread,
     } = engine::spawn(move || wake.request_repaint())?;
 
-    let mut console = app::DesktopApp::new(inputs, outputs);
+    let mut warnings = Vec::new();
+    let hotkeys = match hotkeys::spawn(hotkeys::configured(), inputs.clone()) {
+        Ok(hotkeys) => {
+            warnings.extend(hotkeys.failed.iter().map(hotkeys::Failed::warning));
+            let active = hotkeys.active.iter().map(hotkeys::Shortcut::describe);
+            // Si el motor ya no está, la consola lo avisa al primer comando.
+            let _ = inputs.send(Input::GlobalShortcuts(active.collect()));
+            Some(hotkeys)
+        }
+        Err(e) => {
+            warnings.push(format!("⚠ Sin atajos globales: {e}"));
+            None
+        }
+    };
+
+    let mut console = app::DesktopApp::new(inputs, outputs, warnings);
     let result = window::run(ctx, &mut console);
-    // Sin la consola se suelta el emisor de comandos: el motor corta el
-    // audio y termina.
+    // Primero se sueltan los atajos (su hilo también manda comandos) y
+    // después la consola: sin emisores, el motor corta el audio y termina.
+    drop(hotkeys);
     drop(console);
     if thread.join().is_err() {
         return Err(AppError::Internal("el motor terminó con un panic".into()));

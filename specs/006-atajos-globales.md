@@ -124,6 +124,12 @@ Windows.
 
 ## Plan técnico
 
+*(Implementado con un desvío: en vez de `Input::Stop` y un campo `quiet`
+en los controles, un solo `Input::Global(GlobalAction)` para todos los
+atajos globales. El motor lo atiende sin escribir en la consola, y sin
+nada sonando no hace nada salvo el volumen. La tecla de pausa quedó en
+`Ctrl+Alt+P`: ver "Preguntas / Supuestos".)*
+
 - **Mecanismo:** `RegisterHotKey` de Windows (user32). Cuando se aprieta
   una combinación registrada, Windows le manda un mensaje `WM_HOTKEY` a la
   app, que estaba dormida esperando mensajes: no hay polling ni hook de
@@ -196,15 +202,15 @@ Windows.
 ## Tareas
 *(desglose del plan, se van tildando)*
 
-- [ ] T1 — `hotkeys::Action`/`Key`, config y tests de nombres y mapeo.
-- [ ] T2 — Hilo "atajos": registrar, loop de `GetMessageW`, soltar al
+- [x] T1 — `hotkeys::Action`/`Key`, config y tests de nombres y mapeo.
+- [x] T2 — Hilo "atajos": registrar, loop de `GetMessageW`, soltar al
       cerrar; test real de registro doble y liberación.
-- [ ] T3 — Motor: `Input::Stop`, controles silenciosos,
+- [x] T3 — Motor: `Input::Stop`, controles silenciosos,
       `Input::GlobalShortcuts` y sección en `help`, con tests.
-- [ ] T4 — `desktop::run`: arrancar el hilo, avisos de las que fallaron y
+- [x] T4 — `desktop::run`: arrancar el hilo, avisos de las que fallaron y
       cierre ordenado.
 - [ ] T5 — Pruebas a mano de todos los AC + medición (AC-10).
-- [ ] T6 — Docs: arquitectura, decisiones, README, changelog.
+- [x] T6 — Docs: arquitectura, decisiones, README, changelog.
 
 ## Definition of Done
 

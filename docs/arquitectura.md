@@ -53,6 +53,9 @@ bin/desktop ──> desktop::run
                   │             entrada, historial, Tab, barra "sonando")
                   │                 │ Input (línea, atajos, Esc)
                   │                 ▼
+                  ├──> desktop::hotkeys (hilo "atajos": RegisterHotKey)
+                  │                 │ Input::Global (con la app minimizada)
+                  │                 ▼
                   └──> app::engine (hilo "motor") ──Output──> DesktopApp
                          ├──> app::shell (línea → ShellCommand; reusa cli)
                          ├──> app::queue::Queue (misma cola que la CLI)
@@ -76,6 +79,11 @@ bin/desktop ──> desktop::run
   porque librespot-oauth espera el callback del navegador con una llamada
   bloqueante. La ventana y el motor se hablan solo por canales; el motor
   despierta a la ventana con `request_repaint`.
+- **atajos** (`desktop::hotkeys`, solo Windows): registra los atajos
+  globales y duerme en `GetMessageW` hasta que se aprieta uno; entonces
+  manda un `Input::Global` al motor por el mismo canal que la ventana. Se
+  cierra (y los libera) antes de esperar al motor, porque también es
+  emisor de ese canal.
 
 ## Quién posee qué estado
 - **Caches de token:** solo `spotify::auth` los lee y escribe (escritura
@@ -144,6 +152,8 @@ corregir la tabla.
 | `shell::parse_line`, `shell::complete`, `shell::ShellCommand`, `shell::VolumeCommand` (crate) | `src/app/shell.rs` | doc-comment |
 | `engine::spawn`, `engine::Input`, `engine::Output`, `engine::Engine` (crate) | `src/app/engine.rs` | doc-comment |
 | `backend::Backend`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
+| `hotkeys::spawn`, `hotkeys::Hotkeys`, `hotkeys::Shortcut`, `hotkeys::Key` (crate) | `src/desktop/hotkeys.rs` | doc-comment |
+| `engine::GlobalAction` (crate) | `src/app/engine.rs` | doc-comment |
 | `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |
 | `config::data_dir` | `src/config.rs` | doc-comment |
 | `cli::parse`, `cli::parse_command`, `cli::Command`, `cli::USAGE` | `src/ui/cli.rs` | doc-comment |

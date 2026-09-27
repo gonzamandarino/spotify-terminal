@@ -55,6 +55,42 @@ pub(crate) enum Input {
     VolumeDown,
     /// Esc: cancela la elección de un resultado o la tarea en curso.
     Cancel,
+    /// Un atajo global (spec 006), con la ventana enfocada o no. No
+    /// escribe en la consola; sin nada sonando, los controles no hacen
+    /// nada.
+    Global(GlobalAction),
+    /// Atajos globales activos ("Ctrl+Alt+→  siguiente"), para `help`.
+    GlobalShortcuts(Vec<String>),
+}
+
+/// Lo que puede hacer un atajo global.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GlobalAction {
+    /// Como `pause`.
+    TogglePause,
+    /// Como `next`.
+    Next,
+    /// Como `prev`.
+    Prev,
+    /// Como `stop`.
+    Stop,
+    /// Como `vol +` / `vol -`.
+    VolumeUp,
+    VolumeDown,
+}
+
+impl GlobalAction {
+    /// Para `help` y los avisos: "pausa / reanudar", "siguiente"...
+    pub(crate) fn describe(self) -> &'static str {
+        match self {
+            GlobalAction::TogglePause => "pausa / reanudar",
+            GlobalAction::Next => "siguiente",
+            GlobalAction::Prev => "anterior",
+            GlobalAction::Stop => "stop",
+            GlobalAction::VolumeUp => "subir volumen",
+            GlobalAction::VolumeDown => "bajar volumen",
+        }
+    }
 }
 
 /// Tipo de línea, para elegir el color.
@@ -259,6 +295,8 @@ pub(crate) struct Engine<B: Backend> {
     volume_dir: Option<PathBuf>,
     save_at: Option<Instant>,
     shown_volume: Option<Volume>,
+    /// Atajos globales activos, para `help`. Vacío = sin sección.
+    global_shortcuts: Vec<String>,
 }
 
 impl<B: Backend + 'static> Engine<B> {
@@ -279,6 +317,7 @@ impl<B: Backend + 'static> Engine<B> {
             volume_dir,
             save_at: None,
             shown_volume: None,
+            global_shortcuts: Vec::new(),
         }
     }
 
@@ -323,8 +362,41 @@ impl<B: Backend + 'static> Engine<B> {
                     self.out.line(LineKind::Dim, "Cancelado.");
                 }
             }
+            Input::Global(action) => self.global(action),
+            Input::GlobalShortcuts(list) => self.global_shortcuts = list,
         }
         Flow::Continue
+    }
+
+    /// Atajo global: lo mismo que el comando, sin escribir en la consola.
+    fn global(&mut self, action: GlobalAction) {
+        match action {
+            GlobalAction::VolumeUp => self.change_volume(Volume::up, false),
+            GlobalAction::VolumeDown => self.change_volume(Volume::down, false),
+            // Sin nada sonando no hay nada que hacer, y tampoco que avisar:
+            // la consola puede estar minimizada.
+            _ if self.playing.is_none() => {}
+            GlobalAction::TogglePause => self.control(Control::Pause),
+            GlobalAction::Next => self.control(Control::Next),
+            GlobalAction::Prev => self.control(Control::Prev),
+            GlobalAction::Stop => self.stop_playing(),
+        }
+    }
+
+    /// Ayuda de `help`, con los atajos globales activos si hay.
+    fn help(&self) -> String {
+        if self.global_shortcuts.is_empty() {
+            return shell::HELP.to_string();
+        }
+        let mut text = format!(
+            "{}\n\nAtajos globales (andan con la app minimizada):",
+            shell::HELP
+        );
+        for line in &self.global_shortcuts {
+            text.push_str("\n  ");
+            text.push_str(line);
+        }
+        text
     }
 
     fn on_line(&mut self, text: &str) -> Flow {
@@ -370,7 +442,7 @@ impl<B: Backend + 'static> Engine<B> {
         match command {
             ShellCommand::Empty => {}
             ShellCommand::Help | ShellCommand::Cli(Command::Help) => {
-                self.out.line(LineKind::Normal, shell::HELP);
+                self.out.line(LineKind::Normal, self.help());
             }
             ShellCommand::Pause => self.control(Control::Pause),
             ShellCommand::Next => self.control(Control::Next),
@@ -1363,5 +1435,72 @@ mod tests {
         h.engine.run(rx).await;
         assert_eq!(Volume::load(&dir), volume_at(20));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn atajos_globales_con_algo_sonando_no_escriben() {
+        let mut h = harness(true);
+        h.type_line(&format!("play {}", album("a"))).await;
+        h.confirm(1);
+        h.take_log();
+        h.outputs();
+        for action in [
+            GlobalAction::TogglePause,
+            GlobalAction::Next,
+            GlobalAction::Prev,
+            GlobalAction::VolumeDown,
+            GlobalAction::Stop,
+        ] {
+            h.engine.on_input(Input::Global(action));
+        }
+        h.engine.publish();
+        assert_eq!(
+            h.take_log(),
+            ["pause", "play ax1", "play ax0", "volume 95 %", "stop"]
+        );
+        let outputs = h.outputs();
+        assert!(!outputs.iter().any(|o| matches!(o, Output::Line(..))));
+        // Stop vacía la barra, como el comando.
+        assert!(outputs.contains(&Output::NowPlaying(None)));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn atajos_globales_sin_nada_sonando_no_hacen_nada() {
+        let mut h = harness(true);
+        h.outputs();
+        for action in [
+            GlobalAction::TogglePause,
+            GlobalAction::Next,
+            GlobalAction::Prev,
+            GlobalAction::Stop,
+        ] {
+            h.engine.on_input(Input::Global(action));
+        }
+        assert!(h.take_log().is_empty());
+        assert!(h.outputs().is_empty());
+        // El volumen sí cambia, para cuando suene.
+        h.engine.on_input(Input::Global(GlobalAction::VolumeUp));
+        assert_eq!(h.engine.volume, volume_at(100));
+        h.engine.on_input(Input::Global(GlobalAction::VolumeDown));
+        assert_eq!(h.engine.volume, volume_at(95));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn help_lista_los_atajos_globales_activos() {
+        let mut h = harness(true);
+        h.type_line("help").await;
+        assert!(!has_line(&h.outputs(), LineKind::Normal, "Atajos globales"));
+        h.engine.on_input(Input::GlobalShortcuts(vec![
+            "Ctrl+Alt+P  pausa / reanudar".into(),
+            "Ctrl+Alt+→  siguiente".into(),
+        ]));
+        h.type_line("help").await;
+        let outputs = h.outputs();
+        assert!(has_line(&outputs, LineKind::Normal, "Atajos globales"));
+        assert!(has_line(
+            &outputs,
+            LineKind::Normal,
+            "Ctrl+Alt+→  siguiente"
+        ));
     }
 }

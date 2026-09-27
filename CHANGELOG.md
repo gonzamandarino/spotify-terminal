@@ -2,6 +2,15 @@
 
 ## [Sin publicar]
 
+### Agregado (spec 006 — atajos globales)
+- Atajos que andan con la app de escritorio minimizada o en segundo
+  plano: Ctrl+Alt+P pausa / reanudar, Ctrl+Alt+→ / ← siguiente /
+  anterior, Ctrl+Alt+Enter stop, Ctrl+Alt+↑ / ↓ volumen.
+- Si una combinación ya la usa otra app, la consola lo avisa al abrir y
+  el resto sigue andando. `help` lista los atajos globales activos.
+- Sin polling ni hook de teclado: Windows avisa solo cuando se aprieta
+  uno de los atajos.
+
 ### Agregado (spec 005 — volumen)
 - Volumen propio de la app, sin tocar el de Windows ni el de otras apps.
   En la ventana: `vol`/`v` (ver), `vol <0-100>`, `vol +`/`vol -`,
