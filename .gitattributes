@@ -1,3 +1,8 @@
 # Hooks y scripts de shell siempre en LF (CRLF rompe sh en Windows)
 .githooks/* text eol=lf
 *.sh text eol=lf
+
+# Lo que va en el zip de Windows (spec 008): .cmd en CRLF (cmd.exe lo pide)
+# y el LEEME en CRLF para el Bloc de notas.
+*.cmd text eol=crlf
+dist/LEEME.txt text eol=crlf
