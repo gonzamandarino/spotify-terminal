@@ -273,15 +273,6 @@ pub(crate) fn spawn(wake: impl Fn() + Send + 'static) -> Result<EngineHandle, Ap
 const NOTHING_PLAYING: &str = "⚠ No suena nada. Probá con `play <nombre>`.";
 const NOTHING_TO_SHUFFLE: &str = "⚠ Hay un solo tema: no hay nada que mezclar.";
 
-/// Por qué se está pidiendo el Client ID.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Asking {
-    /// No había ninguno al abrir la app: al guardarlo se sigue con el login.
-    FirstRun,
-    /// `setup`: al guardarlo se avisa si hay que volver a hacer login.
-    Setup,
-}
-
 /// Para qué se buscó.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Purpose {
@@ -334,7 +325,7 @@ struct Playing {
 /// - `volume` es el del reproductor, si hay uno: se le aplica en cada
 ///   cambio y al conectar. Existe aunque no haya reproductor.
 /// - `save_at` es `Some` si hay un cambio de volumen sin guardar.
-/// - `asking` y `choosing` no son `Some` a la vez: pedir el Client ID
+/// - Con `asking`, `choosing` es `None`: pedir el Client ID
 ///   cancela la elección.
 pub(crate) struct Engine<B: Backend> {
     backend: Rc<B>,
@@ -342,8 +333,8 @@ pub(crate) struct Engine<B: Backend> {
     events: Option<PlayerEventChannel>,
     playing: Option<Playing>,
     choosing: Option<(Vec<Hit>, Purpose)>,
-    /// `Some` mientras se espera un Client ID: cada línea se toma como tal.
-    asking: Option<Asking>,
+    /// Se espera un Client ID: cada línea se toma como tal.
+    asking: bool,
     task: Option<Task<B::Player>>,
     busy: &'static str,
     rng: StdRng,
@@ -372,7 +363,7 @@ impl<B: Backend + 'static> Engine<B> {
             events: None,
             playing: None,
             choosing: None,
-            asking: None,
+            asking: false,
             task: None,
             busy: "",
             rng: StdRng::from_rng(&mut rand::rng()),
@@ -430,22 +421,25 @@ impl<B: Backend + 'static> Engine<B> {
                     ),
                 );
             }
-            self.ask_client_id(Asking::FirstRun);
+            self.ask_client_id();
         }
     }
 
-    /// Muestra la guía y pasa a esperar un Client ID.
-    fn ask_client_id(&mut self, asking: Asking) {
+    /// Muestra la guía y pasa a esperar un Client ID (al abrir sin Client
+    /// ID, o con `setup`).
+    fn ask_client_id(&mut self) {
         self.choosing = None;
-        self.asking = Some(asking);
+        self.asking = true;
         self.out.line(LineKind::Normal, config::setup_guide());
         self.out
             .line(LineKind::Dim, "Pegá el Client ID y Enter (Esc cancela).");
     }
 
     /// Una línea mientras se espera el Client ID: se valida y se guarda.
-    /// Solo Esc sale de este modo (un comando mal tipeado no lo corta).
-    fn on_client_id(&mut self, asking: Asking, text: &str) {
+    /// Solo Esc sale de este modo (un comando mal tipeado no lo corta). Al
+    /// guardarlo sigue directo con el login, salvo que `.env` / la variable
+    /// de entorno lo tapen.
+    fn on_client_id(&mut self, text: &str) {
         let id = match setup::validate(text) {
             Ok(id) => id,
             Err(reason) => {
@@ -458,12 +452,13 @@ impl<B: Backend + 'static> Engine<B> {
         };
         match self.backend.set_client_id(&id) {
             Ok(applied) => {
-                self.asking = None;
+                self.asking = false;
                 self.out.line(LineKind::Ok, "✔ Client ID guardado.");
-                if asking == Asking::FirstRun && !applied.overridden_by_env {
-                    self.login();
-                } else if let Some(notice) = applied.notice("login") {
+                if let Some(notice) = applied.notice() {
                     self.out.line(LineKind::Warn, notice);
+                }
+                if !applied.overridden_by_env {
+                    self.login();
                 }
             }
             Err(e) => self.out.error(&e),
@@ -492,7 +487,7 @@ impl<B: Backend + 'static> Engine<B> {
             Input::VolumeUp => self.volume_step(true, false),
             Input::VolumeDown => self.volume_step(false, false),
             Input::Cancel => {
-                if self.asking.take().is_some() {
+                if std::mem::take(&mut self.asking) {
                     self.out.line(
                         LineKind::Dim,
                         "Configuración cancelada: el Client ID no cambió.",
@@ -552,8 +547,8 @@ impl<B: Backend + 'static> Engine<B> {
     }
 
     fn on_line(&mut self, text: &str) -> Flow {
-        if let Some(asking) = self.asking {
-            self.on_client_id(asking, text);
+        if self.asking {
+            self.on_client_id(text);
             return Flow::Continue;
         }
         if let Some((hits, purpose)) = self.choosing.take() {
@@ -635,7 +630,7 @@ impl<B: Backend + 'static> Engine<B> {
                 return Flow::Exit;
             }
             ShellCommand::Cli(Command::Login) => self.login(),
-            ShellCommand::Cli(Command::Setup) => self.ask_client_id(Asking::Setup),
+            ShellCommand::Cli(Command::Setup) => self.ask_client_id(),
             ShellCommand::Cli(Command::Version) => {
                 self.out.line(
                     LineKind::Normal,
@@ -1048,7 +1043,7 @@ impl<B: Backend + 'static> Engine<B> {
             self.out.send(Output::NowPlaying(now));
         }
         let prompt = match (&self.choosing, &self.task) {
-            _ if self.asking.is_some() => Prompt::ClientId,
+            _ if self.asking => Prompt::ClientId,
             (Some((hits, _)), _) => Prompt::Choose(hits.len()),
             (None, Some(_)) => Prompt::Busy(self.busy),
             (None, None) => Prompt::Ready,
@@ -1820,13 +1815,29 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn setup_con_cambio_avisa_que_hay_que_hacer_login() {
+    async fn setup_guarda_y_sigue_con_el_login() {
         let mut h = harness(true);
         h.type_line("setup").await;
         assert_eq!(h.engine.shown_prompt, Prompt::ClientId);
         h.type_line(CLIENT_ID).await;
+        assert_eq!(
+            h.take_log(),
+            [format!("client-id {CLIENT_ID}"), "login".into()]
+        );
+        assert_eq!(h.engine.shown_prompt, Prompt::Ready);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn setup_tapado_por_env_avisa_y_no_hace_login() {
+        let mut h = harness(true);
+        Rc::get_mut(&mut h.engine.backend).unwrap().applied = setup::Applied {
+            changed: false,
+            overridden_by_env: true,
+        };
+        h.type_line("setup").await;
+        h.type_line(CLIENT_ID).await;
         assert_eq!(h.take_log(), [format!("client-id {CLIENT_ID}")]);
-        assert!(has_line(&h.outputs(), LineKind::Warn, "Hacé `login`"));
+        assert!(has_line(&h.outputs(), LineKind::Warn, "tiene prioridad"));
     }
 
     #[tokio::test(flavor = "current_thread")]

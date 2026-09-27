@@ -61,13 +61,13 @@ te muestra estos mismos pasos y te pide el Client ID:
   5. Aceptá los términos y tocá "Save".
   6. En la app recién creada, copiá el "Client ID" (32 letras y números)
      y pegalo en spotify-terminal.
-
-Después se abre el navegador dos veces para que autorices el acceso (una
-para el audio y otra para buscar y ver tu cuenta). Listo: desde ahí ya no
-te pide nada más.
+  7. Se inicia sesión: el navegador se abre dos veces (una para el audio
+     y otra para buscar y ver tu cuenta) y en las dos tocás "Aceptar".
+     Listo: desde ahí ya no te pide nada más.
 
 Para cambiar el Client ID más adelante: escribí "setup" en la consola de
-la app (o "spotify-terminal setup" en una terminal).
+la app (o "spotify-terminal setup" en una terminal). Al guardarlo se
+inicia sesión de nuevo con el Client ID nuevo.
 
 Si algo sale mal, el mensaje te dice qué hacer. Los casos comunes:
 - "Spotify no reconoce el Client ID": lo copiaste mal; usá "setup".

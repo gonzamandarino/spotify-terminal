@@ -12,7 +12,7 @@
   particular (`.env` y la variable de entorno siguen andando y tienen
   prioridad).
 - Comando `setup` (CLI y app de escritorio) para cambiar el Client ID;
-  si cambia, pide volver a hacer `login`.
+  al guardarlo sigue directo con el login.
 - `spotify-terminal --version` y `version` en la app de escritorio.
 - Mensajes claros para un Client ID que Spotify no reconoce (se detecta
   antes de abrir el navegador) y para una cuenta no habilitada en la app

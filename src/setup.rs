@@ -88,31 +88,23 @@ pub fn save(dir: &Path, id: &ClientId) -> io::Result<()> {
 /// Resultado de [`apply`], para armar el aviso al usuario.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Applied {
-    /// Cambió el Client ID en uso: se borró el token de la Web API y hay
-    /// que volver a hacer login.
+    /// Cambió el Client ID en uso: se borró el token de la Web API (el
+    /// login que sigue pide autorizar de nuevo).
     pub changed: bool,
     /// `SPOTIFY_CLIENT_ID` (variable de entorno o `.env`) tiene prioridad y
-    /// tapa al recién guardado.
+    /// tapa al recién guardado: no tiene sentido seguir con el login.
     pub overridden_by_env: bool,
 }
 
 impl Applied {
     /// Aviso para el usuario después de guardar, o `None` si no hay nada
-    /// que avisar. `login` es cómo se llama el comando en quien lo muestra.
-    pub fn notice(&self, login: &str) -> Option<String> {
-        if self.overridden_by_env {
-            Some(
-                "⚠ Se guardó, pero SPOTIFY_CLIENT_ID (variable de entorno o .env) \
-                 tiene prioridad: mientras exista se sigue usando ese."
-                    .into(),
-            )
-        } else if self.changed {
-            Some(format!(
-                "Cambió el Client ID: la sesión anterior se borró. Hacé `{login}` de nuevo."
-            ))
-        } else {
-            None
-        }
+    /// que avisar. Quien llama sigue con el login salvo con
+    /// `overridden_by_env`.
+    pub fn notice(&self) -> Option<&'static str> {
+        self.overridden_by_env.then_some(
+            "⚠ Se guardó, pero SPOTIFY_CLIENT_ID (variable de entorno o .env) \
+             tiene prioridad: mientras exista se sigue usando ese.",
+        )
     }
 }
 
@@ -261,7 +253,7 @@ mod tests {
         write_tokens(&dir);
         save(&dir, &id(ID)).unwrap();
         let applied = apply_in(&dir, None, &id(ID)).unwrap();
-        assert_eq!(applied.notice("login"), None);
+        assert_eq!(applied.notice(), None);
         assert!(dir.join(config::WEB_TOKEN_FILE).exists());
     }
 

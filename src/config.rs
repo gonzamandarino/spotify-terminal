@@ -134,7 +134,9 @@ pub fn setup_guide() -> String {
          4. En \"Which API/SDKs are you planning to use?\" marcá \"Web API\".\n\
          5. Aceptá los términos y tocá \"Save\".\n\
          6. En la app recién creada, copiá el \"Client ID\" (32 letras y \
-         números) y pegalo acá."
+         números) y pegalo acá.\n\
+         7. Se inicia sesión: el navegador se abre dos veces (una para el \
+         audio y otra para la Web API) y en las dos tocás \"Aceptar\"."
     )
 }
 

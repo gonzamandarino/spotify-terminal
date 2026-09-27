@@ -136,6 +136,11 @@ Agregados al escribir el plan (a confirmar al revisarlo):
   tag, el workflow acepta `workflow_dispatch`, que arma el zip y lo deja
   como artifact de la corrida, sin crear Release. Sirve para revisar el
   contenido del zip y AC-10 antes del primer tag.
+- **¿`setup` sigue con el login o solo avisa?** → Respondido por vos
+  (2026-09-27, en revisión del PR): al guardar el Client ID, `setup` sigue
+  directo con el login, igual que la primera vez, y la guía lo anuncia como
+  paso 7. Excepción: si la variable de entorno / `.env` tapa al guardado,
+  solo avisa (el login usaría el otro Client ID). Cambia AC-5.
 
 ## Qué debe pasar (no cómo)
 
@@ -175,9 +180,11 @@ funcionando igual.
       `client-id.txt`. Con `.env` presente, el comportamiento es idéntico al
       de hoy (tests de resolución con las tres fuentes).
 - [ ] **AC-5** — El comando `setup` (CLI y app de escritorio) muestra la
-      guía, pide un Client ID nuevo y lo guarda. Si cambió, borra los tokens
-      cacheados de la Web API (eran de otro Client ID) y avisa que hay que
-      hacer `login`. En la CLI, cancelar con Ctrl+C / `q`, o en la app de
+      guía (con el login como último paso), pide un Client ID nuevo, lo
+      guarda y sigue directo con el login. Si cambió, borra antes los tokens
+      cacheados de la Web API (eran de otro Client ID), así el login pide
+      autorizar de nuevo. Si la variable de entorno / `.env` lo tapa, avisa y
+      no hace login. En la CLI, cancelar con Ctrl+C / `q`, o en la app de
       escritorio con Esc, deja el Client ID anterior intacto.
 - [ ] **AC-6** — Un Client ID con buen formato que Spotify no reconoce
       termina el login con un mensaje que dice que el Client ID es
@@ -328,7 +335,8 @@ inválido), pide el Client ID con `setup::prompt(reader, writer)` hasta que
 sea válido, lo aplica y vuelve a cargar `Config` para seguir con el login
 en el mismo proceso (AC-1, AC-3). `prompt` es genérica sobre
 `BufRead`/`Write` para testearla; `q` o fin de entrada (Ctrl+C / Ctrl+Z)
-cancela sin guardar (AC-5).
+cancela sin guardar (AC-5). `setup` hace lo mismo y al guardar sigue con
+el login (la misma función que `login`), salvo que `.env` lo tape.
 
 **Escritorio (`engine.rs`, `shell.rs`, `backend.rs`, `app.rs`).**
 
@@ -339,8 +347,8 @@ cancela sin guardar (AC-5).
   `client_id_status` dice que falta (AC-1), o con `setup` (AC-5). Muestra
   `SETUP_GUIDE` como líneas de la consola. En ese modo cada línea se valida
   como Client ID (inválido → aviso con el motivo y sigue esperando; válido
-  → `set_client_id` y vuelve a `Ready`, avisando si hay que hacer `login`
-  o si `.env` lo tapa). Esc lo cancela sin guardar, igual que `Choose`.
+  → `set_client_id`, vuelve a `Ready` y sigue con el login, al abrir y con
+  `setup`; si `.env` lo tapa, solo avisa). Esc lo cancela sin guardar, igual que `Choose`.
   Escribir un comando conocido mientras se espera **no** se toma como
   comando (un Client ID pegado nunca lo es, y así un error de tipeo no
   sale del modo); solo Esc sale.

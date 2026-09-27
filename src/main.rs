@@ -42,7 +42,7 @@ async fn run() -> Result<(), AppError> {
     match cli::parse(&args)? {
         Command::Help => println!("{}", cli::USAGE),
         Command::Version => println!("spotify-terminal {}", config::VERSION),
-        Command::Setup => setup_command()?,
+        Command::Setup => setup_command().await?,
         Command::Logout => {
             if auth::logout(&config::data_dir()?)? {
                 println!("Sesión cerrada.");
@@ -50,14 +50,7 @@ async fn run() -> Result<(), AppError> {
                 println!("No había una sesión guardada.");
             }
         }
-        Command::Login => {
-            let config = config_or_setup()?;
-            for kind in TokenKind::ALL {
-                auth::get_valid_token(&config, kind).await?;
-                println!("Acceso de {} listo.", kind.label());
-            }
-            println!("Sesión guardada en {}.", config.data_dir.display());
-        }
+        Command::Login => login(&config_or_setup()?).await?,
         Command::Whoami => {
             let config = config_or_setup()?;
             let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
@@ -110,8 +103,9 @@ fn config_or_setup() -> Result<Config, AppError> {
     }
 }
 
-/// `setup`: muestra el Client ID actual, la guía y pide uno nuevo.
-fn setup_command() -> Result<(), AppError> {
+/// `setup`: muestra el Client ID actual, la guía y pide uno nuevo; al
+/// guardarlo sigue con el login (salvo que `.env` / la variable lo tapen).
+async fn setup_command() -> Result<(), AppError> {
     if let Ok(current) = Config::load() {
         let from = match current.client_id_source {
             ClientIdSource::Env => "variable de entorno o .env",
@@ -119,15 +113,26 @@ fn setup_command() -> Result<(), AppError> {
         };
         println!("Client ID actual: {} ({from}).\n", current.web_client_id);
     }
-    match ask_client_id(false)? {
-        None => println!("Cancelado: el Client ID no cambió."),
-        Some(applied) => {
-            println!("Client ID guardado.");
-            if let Some(notice) = applied.notice("spotify-terminal login") {
-                println!("{notice}");
-            }
-        }
+    let Some(applied) = ask_client_id(false)? else {
+        println!("Cancelado: el Client ID no cambió.");
+        return Ok(());
+    };
+    println!("Client ID guardado.");
+    if let Some(notice) = applied.notice() {
+        println!("{notice}");
+        return Ok(());
     }
+    println!();
+    login(&Config::load()?).await
+}
+
+/// Pide los dos tokens (audio y Web API), autorizando si hace falta.
+async fn login(config: &Config) -> Result<(), AppError> {
+    for kind in TokenKind::ALL {
+        auth::get_valid_token(config, kind).await?;
+        println!("Acceso de {} listo.", kind.label());
+    }
+    println!("Sesión guardada en {}.", config.data_dir.display());
     Ok(())
 }
 

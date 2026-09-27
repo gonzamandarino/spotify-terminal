@@ -26,7 +26,7 @@ Todo lo que guarda la app está en `%APPDATA%\spotify-terminal\`. El
 ### CLI
 
 ```powershell
-spotify-terminal.exe setup      # configura o cambia el Client ID (también se pide solo si falta)
+spotify-terminal.exe setup      # configura o cambia el Client ID y hace login (también se pide solo si falta)
 spotify-terminal.exe login      # la primera vez: autoriza dos veces en el navegador
 spotify-terminal.exe whoami
 spotify-terminal.exe play never gonna give you up
@@ -85,7 +85,7 @@ se escribe.
 | `vol <0-100>`, `vol +`, `vol -` | fija / sube / baja el volumen (Ctrl+↑ / Ctrl+↓) |
 | `mute`, `m` | silencia / vuelve al volumen de antes |
 | `login`, `logout`, `whoami`, `help` | como en la CLI |
-| `setup` | muestra la guía y pide un Client ID nuevo (Esc cancela) |
+| `setup` | muestra la guía, pide un Client ID nuevo y vuelve a iniciar sesión (Esc cancela) |
 | `version` | versión de la app |
 | `clear` / `exit` | limpia la consola / cierra |
 
