@@ -45,8 +45,23 @@ editoriales de Spotify no aparecen en la búsqueda (la API no se las muestra
 a apps en modo desarrollo), pero se pueden reproducir con su link.
 
 `play` también acepta un tema, un álbum o una playlist por URI
-(`spotify:…`), link de `open.spotify.com` o ID de tema. Durante la
-reproducción: **espacio** pausa y reanuda, **q** sale.
+(`spotify:…`), link de `open.spotify.com` o ID de tema. Con `-s` /
+`--shuffle` arranca mezclado.
+
+Durante la reproducción:
+
+| Tecla | Qué hace |
+|---|---|
+| espacio | pausa / reanudar |
+| `n` o → | siguiente tema |
+| `p` o ← | reinicia el tema; si recién empezó (< 3 s), vuelve al anterior |
+| `s` | shuffle sí / no (el tema actual sigue sonando) |
+| `a` | busca un tema y lo agrega a la cola: suena después del actual |
+| `q` | salir |
+
+La cola vive mientras dura `play` y no se ve desde el celular ni desde la
+app oficial: el reproductor no es un dispositivo Spotify Connect (ver
+`docs/decisiones.md`).
 
 ¿Por qué dos autorizaciones? El audio usa el Client ID de librespot y la Web
 API el tuyo; ver `docs/decisiones.md`.

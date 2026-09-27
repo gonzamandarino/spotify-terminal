@@ -67,6 +67,10 @@ pub const SEARCH_API_MAX_LIMIT: usize = 10;
 const _: () =
     assert!(SEARCH_LIMIT >= 1 && SEARCH_LIMIT <= 9 && SEARCH_LIMIT <= SEARCH_API_MAX_LIMIT);
 
+/// "Anterior" con más que esto de tema sonando lo reinicia en vez de volver
+/// al tema anterior (como la app oficial).
+pub const PREVIOUS_RESTART_THRESHOLD: Duration = Duration::from_secs(3);
+
 /// Archivos de cache de token dentro de `Config::data_dir`.
 pub const AUDIO_TOKEN_FILE: &str = "token-audio.json";
 pub const WEB_TOKEN_FILE: &str = "token-web.json";
