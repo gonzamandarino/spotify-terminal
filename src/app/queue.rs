@@ -8,13 +8,24 @@ use std::{
 };
 
 use librespot_core::SpotifyUri;
+use librespot_metadata::audio::UniqueFields;
+use librespot_playback::player::PlayerEvent;
 use rand::{Rng, seq::SliceRandom};
 
 use crate::{config, error::AppError};
 
+/// Estado de lo que suena.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum PlayState {
+    /// Se pidió un tema y todavía no empezó a sonar.
+    Loading,
+    Playing,
+    Paused,
+}
+
 /// Tiempo que lleva sonando el tema actual, a partir de las posiciones que
 /// informa el reproductor (sin pedirle nada ni hacer polling).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct Clock {
     base: Duration,
     /// Desde cuándo suena sin pausa; `None` si está en pausa o cargando.
@@ -321,6 +332,100 @@ impl Queue {
         self.started = false;
         self.preload_due = false;
     }
+}
+
+/// Datos del tema que empezó a cargar (`TrackChanged`), para mostrar.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TrackInfo {
+    pub(crate) name: String,
+    /// Artistas separados por coma; vacío si no es un tema (episodio).
+    pub(crate) artists: String,
+    pub(crate) duration: Duration,
+}
+
+/// Actualiza la cola, el estado y el reloj con un evento del reproductor.
+///
+/// - Post: devuelve qué hacer con el reproductor y, si el evento es
+///   `TrackChanged`, los datos del tema para mostrarlos. `session_lost` se
+///   consulta solo ante `Unavailable`. Los eventos que no son del tema
+///   pedido último se ignoran (ver [`Queue`]).
+pub(crate) fn on_player_event(
+    event: PlayerEvent,
+    queue: &mut Queue,
+    state: &mut PlayState,
+    clock: &mut Clock,
+    session_lost: impl FnOnce() -> bool,
+) -> (Step, Option<TrackInfo>) {
+    let step = match event {
+        PlayerEvent::PlayRequestIdChanged { play_request_id } => {
+            queue.on_request_id(play_request_id);
+            Step::Nothing
+        }
+        PlayerEvent::TrackChanged { audio_item } => {
+            let artists = match &audio_item.unique_fields {
+                UniqueFields::Track { artists, .. } => artists
+                    .iter()
+                    .map(|a| a.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                _ => String::new(),
+            };
+            let info = TrackInfo {
+                name: audio_item.name,
+                artists,
+                duration: Duration::from_millis(audio_item.duration_ms.into()),
+            };
+            return (Step::Nothing, Some(info));
+        }
+        PlayerEvent::Playing {
+            play_request_id,
+            position_ms,
+            ..
+        } => {
+            if queue.on_started(play_request_id) {
+                *state = PlayState::Playing;
+                clock.playing(position_ms);
+            }
+            Step::Nothing
+        }
+        PlayerEvent::Paused {
+            play_request_id,
+            position_ms,
+            ..
+        } => {
+            if queue.on_started(play_request_id) {
+                *state = PlayState::Paused;
+                clock.paused(position_ms);
+            }
+            Step::Nothing
+        }
+        PlayerEvent::Seeked {
+            play_request_id,
+            position_ms,
+            ..
+        }
+        | PlayerEvent::PositionCorrection {
+            play_request_id,
+            position_ms,
+            ..
+        } => {
+            if queue.is_current(play_request_id) {
+                clock.seeked(position_ms);
+            }
+            Step::Nothing
+        }
+        PlayerEvent::TimeToPreloadNextTrack {
+            play_request_id, ..
+        } => queue.on_preload_time(play_request_id),
+        PlayerEvent::EndOfTrack {
+            play_request_id, ..
+        } => queue.on_end(play_request_id),
+        PlayerEvent::Unavailable {
+            play_request_id, ..
+        } => queue.on_unavailable(play_request_id, session_lost()),
+        _ => Step::Nothing,
+    };
+    (step, None)
 }
 
 pub(crate) fn uri_text(uri: &SpotifyUri) -> String {

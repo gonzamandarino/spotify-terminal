@@ -125,3 +125,71 @@ entradas viejas — se marcan reemplazadas.
   features: no suma código al binario.
 - **Estado:** Vigente (spec 003)
 
+
+## 2026-09-27 — App de escritorio: ventana propia en Rust
+- **Decisión:** la app de escritorio es una ventana propia hecha en Rust
+  (egui), que dibuja su propia consola.
+- **Alternativas:** Windows Terminal con un perfil propio (no está
+  instalado en la máquina de prueba y el look queda limitado al perfil);
+  Tauri + xterm.js (WebView2: el más pesado, ~100 MB o más).
+- **Motivo:** elegido por vos al pedir el spec 004: un solo `.exe` y
+  control total del look.
+- **Estado:** Vigente (spec 004)
+
+## 2026-09-27 — La ventana se dibuja por CPU, sin GPU
+- **Decisión:** egui 0.34 + `egui_software_backend` (rasteriza por CPU) +
+  `softbuffer` (muestra la imagen con GDI) + `winit` (ventana). El loop de
+  la ventana es nuestro (`desktop::window`); del crate solo se usa el
+  rasterizador.
+- **Evidencia (spike T5):** la misma ventana mínima con `eframe`/`glow`
+  (OpenGL) ocupaba **120 MB** en reposo: el driver de NVIDIA carga
+  `nvgpucomp64.dll` (~106 MB) y `nvoglv64.dll` (~47 MB). Por CPU:
+  **19 MB**. Con la consola completa: 26 MB en reposo y 0 ms de CPU en
+  10 s.
+- **Costos:** `egui_software_backend` es joven (0.0.3) y fija egui en 0.34.
+  Cada redibujo cuesta CPU (con caché por zonas: solo se rehace lo que
+  cambió). Por eso el cursor de texto no titila (titilar redibujaba todo
+  cada medio segundo: ~6 % de un núcleo en reposo), y la barra de progreso
+  se redibuja una vez por segundo solo mientras suena algo.
+- **Sin bordes redondeados:** GDI no maneja transparencia por pixel; la
+  ventana es rectangular con un borde de 1 px. Cambio respecto del supuesto
+  del spec.
+- **Respaldo:** si el crate se abandona o rompe, volver a `eframe`/`glow`
+  cuesta ~100 MB más pero cambia solo `desktop::window`.
+- **Estado:** Vigente (spec 004)
+
+## 2026-09-27 — Dos ejecutables del mismo crate
+- **Decisión:** `spotify-terminal.exe` (CLI, sin cambios de uso) y
+  `spotify-desktop.exe` (ventana, subsistema "windows": sin consola negra
+  detrás). La lógica está en la librería (`src/lib.rs`).
+- **Motivo:** un `.exe` con subsistema "windows" pierde la salida de
+  consola; no puede ser CLI y ventana a la vez.
+- **Estado:** Vigente (spec 004)
+
+## 2026-09-27 — Dependencias de la app de escritorio
+- `egui` (con `default_fonts` como respaldo de símbolos), `egui-winit`
+  (con portapapeles para copiar/pegar en la línea de entrada),
+  `egui_software_backend` (solo el rasterizador), `winit`, `softbuffer`,
+  `bytemuck` (ver el buffer de softbuffer como pixeles, sin `unsafe`).
+- `windows-sys` 0.52 (la misma que ya trae winit) solo para `MessageBoxW`:
+  mostrar un error fatal sin consola.
+- `winresource` (solo al compilar, en Windows): ícono de los `.exe`.
+- Fuente JetBrains Mono (licencia OFL, `assets/fonts/OFL.txt`) embebida:
+  ~540 KB entre normal y negrita. Se ve igual en cualquier PC.
+- El `.exe` de la ventana pesa ~9 MB (la CLI, ~4,5 MB).
+- **Estado:** Vigente (spec 004)
+
+## 2026-09-27 — El motor de la app de escritorio corre en su propio hilo
+- **Decisión:** `app::engine` atiende comandos, eventos del reproductor y
+  tareas de red en un hilo "motor" con runtime tokio de un hilo. La ventana
+  (hilo principal) y el motor se hablan solo por canales.
+- **Motivo:** la ventana tiene que seguir respondiendo mientras se busca o
+  se espera un login, y el reproductor tiene que seguir recibiendo sus
+  eventos (el siguiente tema no puede esperar a un redibujo).
+- **Hallazgo:** `librespot-oauth` espera el callback del navegador con una
+  llamada bloqueante dentro de una función `async`. En la CLI no importa;
+  en el motor habría frenado la cola. Los tokens se piden con
+  `spawn_blocking`. Si se cancela un login con Esc, ese hilo sigue
+  esperando el callback hasta que se completa o se cierra la app (un
+  segundo `login` avisaría que el puerto está ocupado).
+- **Estado:** Vigente (spec 004)

@@ -1,7 +1,10 @@
 # 004 - App de escritorio con consola propia
 
 ## Estado
-En implementación
+En verificación
+
+Falta T10: probar a mano los AC que necesitan audio (AC-3 a AC-9, AC-12,
+AC-13) sin cortar la sesión que está sonando en la CLI.
 
 ## Contexto
 Hoy el cliente es un comando de consola: cada `login`, `play`, `whoami` es
@@ -23,6 +26,9 @@ está instalado en la máquina de prueba.
   (motivo: `glow` pesa menos en binario y RAM; egui redibuja solo ante
   eventos, así que en reposo no gasta CPU). Se justifica en
   `docs/decisiones.md` como dependencia pesada.
+  **Cambiado en T5:** con `glow` la ventana sola ocupaba 120 MB (driver
+  OpenGL de NVIDIA). Se usa egui dibujado por CPU (`egui_software_backend`
+  + `softbuffer` + `winit`): 19 MB. Ver `docs/decisiones.md`.
 - **¿Reemplaza a la versión de consola?** → Asumido: no, conviven. Salen
   dos ejecutables del mismo crate: `spotify-terminal.exe` (el de hoy, sin
   cambios de uso) y `spotify-desktop.exe` (la ventana, sin consola negra
@@ -65,6 +71,10 @@ está instalado en la máquina de prueba.
     ~270 KB), para que se vea igual en cualquier máquina.
   - Barra de título propia (sin el marco de Windows): nombre de la app,
     arrastrar para mover, minimizar y cerrar; bordes redondeados.
+    **Cambiado en T6:** sin bordes redondeados (GDI no tiene
+    transparencia por pixel): ventana rectangular con borde de 1 px. Se
+    agregó maximizar (botón y doble clic) y cambiar el tamaño desde los
+    bordes.
   - Arriba, la consola con scroll: prompt `♫ ›` en verde, eco de cada
     comando, salida en color por tipo (normal / éxito / aviso / error).
   - Abajo, barra fija de "sonando ahora": tema — artistas, posición en la
@@ -104,7 +114,7 @@ está instalado en la máquina de prueba.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — `spotify-desktop.exe` abre una ventana con barra de título
+- [x] **AC-1** — `spotify-desktop.exe` abre una ventana con barra de título
       propia (mover, minimizar, cerrar), la consola con el prompt y el foco
       en la línea de entrada; sin ventana de consola detrás.
 - [ ] **AC-2** — `help`, `login`, `logout` y `whoami` escritos en la
@@ -131,7 +141,7 @@ está instalado en la máquina de prueba.
 - [ ] **AC-10** — `↑`/`↓` recorren el historial de la sesión, `Tab`
       completa comandos, `clear` limpia y `exit` (o cerrar la ventana)
       corta el audio y termina el proceso.
-- [ ] **AC-11** — Un comando desconocido o mal escrito muestra el error de
+- [x] **AC-11** — Un comando desconocido o mal escrito muestra el error de
       uso y la ayuda corta, sin cerrar nada.
 - [ ] **AC-12** — Con la ventana abierta y sin reproducir, la CPU queda en
       ~0 % (sin redibujar en loop); reproduciendo, la RAM total queda
@@ -139,7 +149,7 @@ está instalado en la máquina de prueba.
       `docs/decisiones.md`). Medido con `scripts/medir-consumo.ps1`.
 - [ ] **AC-13** — `spotify-terminal.exe` (CLI) pasa sus tests y se
       comporta igual que antes de este spec.
-- [ ] **AC-14** — `scripts/instalar-acceso-directo.ps1` crea accesos
+- [x] **AC-14** — `scripts/instalar-acceso-directo.ps1` crea accesos
       directos (escritorio y menú Inicio) con el ícono de la app.
 
 ## Riesgos / casos de falla
@@ -157,6 +167,12 @@ está instalado en la máquina de prueba.
   cuadro de error nativo con el motivo en vez de salir en silencio.
 
 ## Plan técnico
+
+*(Implementado con dos desvíos, anotados en "Preguntas / Supuestos": dibujo
+por CPU en vez de `eframe`/`glow`, y ventana sin bordes redondeados. Con
+eso, `desktop` queda en `mod.rs`, `window.rs` (loop de winit propio, porque
+el del crate no soporta arrastrar ni cambiar el tamaño), `app.rs` y
+`theme.rs`; la barra de título está dentro de `app.rs`.)*
 
 - **Estructura del crate:**
   - `src/lib.rs` nuevo: expone `config`, `error`, `spotify`, `ui`, `app`,
@@ -229,19 +245,20 @@ está instalado en la máquina de prueba.
 
 - [x] T1 — `lib.rs` + mover `Queue`/`Clock`/`Step` a `app::queue` (con
       sus tests); la CLI sigue igual (AC-13). Commit aparte.
-- [ ] T2 — Trait `Playback` sobre `Player` para poder testear el motor.
-- [ ] T3 — `app::shell`: parseo de línea, alias, `Tab`, con tests.
-- [ ] T4 — `app::engine`: loop de comandos + eventos + búsquedas, con
+- [x] T2 — Trait `Playback` sobre `Player` para poder testear el motor.
+- [x] T3 — `app::shell`: parseo de línea, alias, `Tab`, con tests.
+- [x] T4 — `app::engine`: loop de comandos + eventos + búsquedas, con
       tests con reproductor falso.
-- [ ] T5 — Spike: ventana mínima de eframe/glow sin decoración; medir RAM
+- [x] T5 — Spike: ventana mínima de eframe/glow sin decoración; medir RAM
       y CPU en reposo antes de seguir (si se va muy arriba de 40 MB, se
       vuelve a este spec a decidir).
-- [ ] T6 — `desktop`: consola, historial, colores por tipo de línea, `Tab`.
-- [ ] T7 — Barra de título propia y barra de "sonando ahora".
-- [ ] T8 — Fuente, ícono, `build.rs`, log de panics, `MessageBoxW`.
-- [ ] T9 — `scripts/instalar-acceso-directo.ps1`.
+- [x] T6 — `desktop`: consola, historial, colores por tipo de línea, `Tab`.
+- [x] T7 — Barra de título propia y barra de "sonando ahora".
+- [x] T8 — Fuente, ícono, `build.rs`, log de panics, `MessageBoxW`.
+- [x] T9 — `scripts/instalar-acceso-directo.ps1`.
 - [ ] T10 — Pruebas a mano de todos los AC + medición (AC-12).
-- [ ] T11 — Docs: arquitectura, decisiones, README, changelog.
+      Hechas las que no necesitan audio (ver Notas de verificación).
+- [x] T11 — Docs: arquitectura, decisiones, README, changelog.
 
 ## Definition of Done
 
@@ -257,3 +274,25 @@ está instalado en la máquina de prueba.
 - [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
+
+Automático: 94 tests (`app::shell`, `app::engine` con reproductor falso,
+`app::queue`, `desktop::app`), `cargo fmt --check` y
+`cargo clippy --all-targets -- -D warnings` sin avisos.
+
+A mano (2026-09-27, `spotify-desktop.exe` release, Windows 10), sin audio
+porque la CLI estaba sonando:
+- **AC-1:** ventana con barra de título propia (minimizar, maximizar,
+  cerrar, arrastre), foco en la entrada, sin consola detrás.
+- **AC-2 (parcial):** `help` y `whoami` bien; errores en rojo sin cerrar.
+  Falta `login`/`logout` desde la ventana.
+- **AC-3 (parcial):** `play list rock` → 5 playlists, prompt `1-5 ›`,
+  `9` avisa fuera de rango, Esc cancela. Falta elegir y que suene.
+- **AC-10 (parcial):** ↑/↓ y Tab bien a velocidad humana (con teclas
+  simuladas todas en el mismo frame, Tab se procesaba antes que el texto;
+  se corrigió que dos ↑ en un frame contaran como uno). Falta `exit` y
+  cerrar con audio sonando.
+- **AC-11:** `bailar`, `zz` → error de uso con "Escribí `help`…".
+- **AC-12 (parcial):** en reposo 26 MB de RAM y 0 ms de CPU en 10 s. Falta
+  la medición reproduciendo.
+- **AC-14:** el script creó el acceso directo (probado en una carpeta
+  temporal): apunta al `.exe`, arranca en el repo, ícono del `.exe`.

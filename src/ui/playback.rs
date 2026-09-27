@@ -14,15 +14,13 @@ use crossterm::{
 };
 use futures_util::StreamExt;
 use librespot_core::SpotifyUri;
-use librespot_metadata::audio::UniqueFields;
-use librespot_playback::player::PlayerEvent;
 
 use super::{
     RawMode,
     select::{self, Choice},
 };
 use crate::{
-    app::queue::{Clock, Queue, Step, uri_text},
+    app::queue::{Clock, PlayState, Queue, Step, on_player_event, uri_text},
     error::AppError,
     spotify::{
         player::Player,
@@ -81,7 +79,12 @@ pub async fn play_queue(
                 let Some(event) = event else {
                     return Err(AppError::PlayerStopped);
                 };
-                on_event(event, &mut queue, &mut state, &mut clock, player)
+                let (step, track) =
+                    on_player_event(event, &mut queue, &mut state, &mut clock, || player.session_lost());
+                if let Some(track) = track {
+                    line(&format!("♪ {}{} — {}", queue.position(), track.name, track.artists));
+                }
+                step
             }
             (query, result) = poll_search(&mut search) => {
                 search = None;
@@ -209,94 +212,6 @@ async fn poll_search(
         Some(future) => future.await,
         None => std::future::pending().await,
     }
-}
-
-/// Actualiza la cola, el estado y el reloj con un evento del reproductor.
-fn on_event(
-    event: PlayerEvent,
-    queue: &mut Queue,
-    state: &mut PlayState,
-    clock: &mut Clock,
-    player: &Player,
-) -> Step {
-    match event {
-        PlayerEvent::PlayRequestIdChanged { play_request_id } => {
-            queue.on_request_id(play_request_id);
-            Step::Nothing
-        }
-        PlayerEvent::TrackChanged { audio_item } => {
-            let artists = match &audio_item.unique_fields {
-                UniqueFields::Track { artists, .. } => artists
-                    .iter()
-                    .map(|a| a.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                _ => String::new(),
-            };
-            line(&format!(
-                "♪ {}{} — {}",
-                queue.position(),
-                audio_item.name,
-                artists
-            ));
-            Step::Nothing
-        }
-        PlayerEvent::Playing {
-            play_request_id,
-            position_ms,
-            ..
-        } => {
-            if queue.on_started(play_request_id) {
-                *state = PlayState::Playing;
-                clock.playing(position_ms);
-            }
-            Step::Nothing
-        }
-        PlayerEvent::Paused {
-            play_request_id,
-            position_ms,
-            ..
-        } => {
-            if queue.on_started(play_request_id) {
-                *state = PlayState::Paused;
-                clock.paused(position_ms);
-            }
-            Step::Nothing
-        }
-        PlayerEvent::Seeked {
-            play_request_id,
-            position_ms,
-            ..
-        }
-        | PlayerEvent::PositionCorrection {
-            play_request_id,
-            position_ms,
-            ..
-        } => {
-            if queue.is_current(play_request_id) {
-                clock.seeked(position_ms);
-            }
-            Step::Nothing
-        }
-        PlayerEvent::TimeToPreloadNextTrack {
-            play_request_id, ..
-        } => queue.on_preload_time(play_request_id),
-        PlayerEvent::EndOfTrack {
-            play_request_id, ..
-        } => queue.on_end(play_request_id),
-        PlayerEvent::Unavailable {
-            play_request_id, ..
-        } => queue.on_unavailable(play_request_id, player.session_lost()),
-        _ => Step::Nothing,
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum PlayState {
-    /// Se pidió un tema y todavía no empezó a sonar.
-    Loading,
-    Playing,
-    Paused,
 }
 
 /// Qué está haciendo el teclado.

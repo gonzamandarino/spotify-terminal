@@ -53,7 +53,7 @@ pub async fn choose(hits: &[Hit]) -> Result<Option<usize>, AppError> {
 }
 
 /// Línea de un resultado en la lista (`i` desde 0; se muestra desde 1).
-pub(super) fn hit_line(i: usize, hit: &Hit) -> String {
+pub(crate) fn hit_line(i: usize, hit: &Hit) -> String {
     format!("  {}. {} — {}", i + 1, hit.name, hit.detail)
 }
 

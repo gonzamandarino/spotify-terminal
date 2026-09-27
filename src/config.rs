@@ -82,6 +82,46 @@ const WEB_CLIENT_ID_VAR: &str = "SPOTIFY_CLIENT_ID";
 /// (`%APPDATA%` en Windows).
 const APP_DIR_NAME: &str = "spotify-terminal";
 
+// --- App de escritorio (spec 004) ---
+
+/// Título de la ventana (barra de tareas y barra de título propia).
+pub const WINDOW_TITLE: &str = "spotify-terminal";
+
+/// Tamaño inicial y mínimo de la ventana, en puntos lógicos.
+pub const WINDOW_SIZE: [f32; 2] = [920.0, 580.0];
+pub const WINDOW_MIN_SIZE: [f32; 2] = [520.0, 320.0];
+
+/// Líneas que guarda la consola; las más viejas se descartan.
+pub const SCROLLBACK_LINES: usize = 2_000;
+
+/// Comandos que recuerda el historial (↑/↓) durante la sesión.
+pub const HISTORY_LEN: usize = 200;
+
+/// Cada cuánto se redibuja la barra de progreso mientras suena algo. En
+/// pausa o sin nada sonando no se redibuja solo.
+pub const PROGRESS_REPAINT: Duration = Duration::from_secs(1);
+
+/// Archivo (en la carpeta de datos) donde se anota un panic de la app de
+/// escritorio, que no tiene consola donde mostrarlo.
+pub const PANIC_LOG_FILE: &str = "desktop-panic.log";
+
+/// Colores de la app de escritorio (RGB), tema oscuro tipo Spotify.
+pub mod theme {
+    pub const BACKGROUND: [u8; 3] = [0x12, 0x12, 0x12];
+    pub const PANEL: [u8; 3] = [0x18, 0x18, 0x18];
+    pub const BORDER: [u8; 3] = [0x2A, 0x2A, 0x2A];
+    pub const ACCENT: [u8; 3] = [0x1D, 0xB9, 0x54];
+    pub const TEXT: [u8; 3] = [0xE0, 0xE0, 0xE0];
+    pub const TEXT_STRONG: [u8; 3] = [0xFF, 0xFF, 0xFF];
+    pub const SECONDARY: [u8; 3] = [0x8A, 0x8A, 0x8A];
+    pub const WARNING: [u8; 3] = [0xF5, 0xC4, 0x51];
+    pub const ERROR: [u8; 3] = [0xF1, 0x5E, 0x6C];
+    /// Fondo del botón de cerrar al pasar el mouse.
+    pub const CLOSE_HOVER: [u8; 3] = [0xC4, 0x2B, 0x1C];
+    /// Tamaño de letra de la consola, en puntos.
+    pub const FONT_SIZE: f32 = 14.0;
+}
+
 /// Configuración resuelta para esta máquina.
 ///
 /// Invariante: `web_client_id` nunca está vacío ni tiene espacios alrededor.
@@ -108,15 +148,24 @@ impl Config {
             }
         }
         let web_client_id = parse_client_id(std::env::var(WEB_CLIENT_ID_VAR).ok())?;
-        let data_dir = directories::BaseDirs::new()
-            .ok_or(AppError::NoConfigDir)?
-            .config_dir()
-            .join(APP_DIR_NAME);
+        let data_dir = data_dir()?;
         Ok(Config {
             web_client_id,
             data_dir,
         })
     }
+}
+
+/// Carpeta de datos locales (`%APPDATA%\spotify-terminal`), sin necesitar
+/// el resto de la configuración.
+///
+/// - Post: la ruta; no la crea.
+/// - Errores: `NoConfigDir` si el sistema no informa la carpeta del usuario.
+pub fn data_dir() -> Result<PathBuf, AppError> {
+    Ok(directories::BaseDirs::new()
+        .ok_or(AppError::NoConfigDir)?
+        .config_dir()
+        .join(APP_DIR_NAME))
 }
 
 /// Valida el Client ID crudo. Separada de `load` para testearla sin tocar

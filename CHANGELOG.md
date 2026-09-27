@@ -2,6 +2,26 @@
 
 ## [Sin publicar]
 
+### Agregado (spec 004 — app de escritorio)
+- `spotify-desktop.exe`: ventana propia con una consola estilizada (tema
+  oscuro, JetBrains Mono, barra de título propia) donde se escriben los
+  mismos comandos que en la CLI, sin PowerShell.
+- La música sigue mientras se escribe: `pause`, `next`/`n`, `prev`/`p`,
+  `shuffle`/`s`, `queue <tema>`/`a <tema>`, `stop`, `clear`, `exit`, y los
+  atajos Ctrl+Espacio, Ctrl+→ y Ctrl+←. Un `play` nuevo reemplaza lo que
+  sonaba.
+- Barra de "sonando ahora" con tema, artistas, posición en la lista,
+  progreso, shuffle y temas en cola.
+- Historial con ↑/↓, Tab completa comandos, Esc cancela una búsqueda.
+- `scripts/instalar-acceso-directo.ps1`: accesos directos en el escritorio
+  y el menú Inicio. Ícono propio (`scripts/generar-icono.py`).
+- Consumo en reposo: ~26 MB de RAM y 0 % de CPU (dibujo por CPU, sin GPU).
+
+### Cambiado (spec 004)
+- La lógica pasó a una librería (`src/lib.rs`) y la cola de reproducción a
+  `app::queue`, compartida por la CLI y la app de escritorio. La CLI se usa
+  igual que antes.
+
 ### Agregado (spec 003 — shuffle, siguiente/anterior y cola)
 - Durante la reproducción: `n`/→ siguiente, `p`/← reinicia el tema o vuelve
   al anterior (según si lleva más de 3 s), `s` shuffle sí/no (el tema

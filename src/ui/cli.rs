@@ -67,24 +67,31 @@ const SHUFFLE_FLAGS: [&str; 2] = ["-s", "--shuffle"];
 ///   `-s`/`--shuffle` en cualquier lugar después de `play` prende `shuffle`
 ///   y no cuenta como texto.
 ///   Un comando desconocido, `play` sin texto, un URI/link mal formado o
-///   argumentos de más → `AppError::Usage`.
+///   argumentos de más → `AppError::Usage`, con el motivo seguido de
+///   [`USAGE`].
 pub fn parse(args: &[String]) -> Result<Command, AppError> {
+    parse_command(args).map_err(|e| usage_error(&e))
+}
+
+/// Igual que [`parse`], pero el error es solo el motivo (sin [`USAGE`]),
+/// para quien muestra su propia ayuda (la consola de la app de escritorio).
+pub fn parse_command(args: &[String]) -> Result<Command, String> {
     let (command, expected_args) = match args.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => return Ok(Command::Help),
         Some("login") => (Command::Login, 1),
         Some("logout") => (Command::Logout, 1),
         Some("whoami") => (Command::Whoami, 1),
         Some("play") => return parse_play(&args[1..]),
-        Some(other) => return Err(usage_error(&format!("comando desconocido: {other}"))),
+        Some(other) => return Err(format!("comando desconocido: {other}")),
     };
     if args.len() > expected_args {
-        return Err(usage_error("demasiados argumentos"));
+        return Err("demasiados argumentos".into());
     }
     Ok(command)
 }
 
 /// Argumentos de `play` (sin la palabra `play`).
-fn parse_play(args: &[String]) -> Result<Command, AppError> {
+fn parse_play(args: &[String]) -> Result<Command, String> {
     let shuffle = args.iter().any(|a| SHUFFLE_FLAGS.contains(&a.as_str()));
     let args: Vec<String> = args
         .iter()
@@ -114,10 +121,11 @@ fn parse_play(args: &[String]) -> Result<Command, AppError> {
         .collect::<Vec<_>>()
         .join(" ");
     if query.is_empty() {
-        return Err(usage_error(match kind {
+        return Err(match kind {
             SearchKind::Track => "falta qué reproducir",
             SearchKind::Playlist => "falta el nombre de la playlist",
-        }));
+        }
+        .into());
     }
     Ok(Command::Search {
         kind,
@@ -136,7 +144,7 @@ const PLAYABLE_KINDS: [&str; 3] = ["track", "album", "playlist"];
 /// Interpreta lo que se pide reproducir. Acepta la URI
 /// (`spotify:<tipo>:<ID>`), un link de `open.spotify.com/<tipo>/<ID>` (con o
 /// sin `?si=...` o prefijo de idioma) o el ID solo, que se toma como tema.
-fn parse_playable(input: &str) -> Result<SpotifyUri, AppError> {
+fn parse_playable(input: &str) -> Result<SpotifyUri, String> {
     let (kind, id) = if let Some(rest) = input.strip_prefix("spotify:") {
         rest.split_once(':').unwrap_or_default()
     } else if let Some((_, path)) = input.split_once("open.spotify.com/") {
@@ -154,7 +162,7 @@ fn parse_playable(input: &str) -> Result<SpotifyUri, AppError> {
 
     let valid_id =
         id.len() == config::SPOTIFY_ID_LEN && id.chars().all(|c| c.is_ascii_alphanumeric());
-    let unrecognized = || usage_error(&format!("no reconozco qué reproducir: {input}"));
+    let unrecognized = || format!("no reconozco qué reproducir: {input}");
     if !(PLAYABLE_KINDS.contains(&kind) && valid_id) {
         return Err(unrecognized());
     }

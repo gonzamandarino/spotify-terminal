@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod config;
+pub mod desktop;
 pub mod error;
 pub mod spotify;
 pub mod ui;
