@@ -175,9 +175,9 @@ entradas viejas — se marcan reemplazadas.
 - `windows-sys` 0.52 (la misma que ya trae winit) solo para `MessageBoxW`:
   mostrar un error fatal sin consola.
 - `winresource` (solo al compilar, en Windows): ícono de los `.exe`.
-- Fuente JetBrains Mono (licencia OFL, `assets/fonts/OFL.txt`) embebida:
-  ~540 KB entre normal y negrita. Se ve igual en cualquier PC.
-- El `.exe` de la ventana pesa ~9 MB (la CLI, ~4,5 MB).
+- Fuente: ver "La consola usa Consolas" (reemplazó a JetBrains Mono
+  embebida).
+- El `.exe` de la ventana pesa ~8 MB (la CLI, ~4,5 MB).
 - **Estado:** Vigente (spec 004)
 
 ## 2026-09-27 — El motor de la app de escritorio corre en su propio hilo
@@ -194,3 +194,14 @@ entradas viejas — se marcan reemplazadas.
   esperando el callback hasta que se completa o se cierra la app (un
   segundo `login` avisaría que el puerto está ocupado).
 - **Estado:** Vigente (spec 004)
+
+## 2026-09-27 — La consola usa Consolas, la fuente de la consola de Windows
+- **Decisión:** la app de escritorio usa Consolas (normal y negrita),
+  leída de `%WINDIR%\Fonts` al arrancar. Si no está, la monoespaciada de
+  egui.
+- **Alternativa anterior:** JetBrains Mono embebida en el `.exe` (OFL,
+  ~540 KB). Reemplazada a pedido de vos: querías la fuente de la consola.
+- **Por qué no se embebe:** la licencia de Consolas no permite
+  redistribuirla; viene con Windows desde Vista.
+- **Estado:** Vigente (spec 004; reemplaza la fuente de la entrada
+  "Dependencias de la app de escritorio")

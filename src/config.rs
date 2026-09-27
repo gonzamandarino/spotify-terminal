@@ -118,6 +118,10 @@ pub mod theme {
     pub const ERROR: [u8; 3] = [0xF1, 0x5E, 0x6C];
     /// Fondo del botón de cerrar al pasar el mouse.
     pub const CLOSE_HOVER: [u8; 3] = [0xC4, 0x2B, 0x1C];
+    /// Fuente de la consola de Windows (Consolas), normal y negrita, en
+    /// `%WINDIR%\Fonts`.
+    pub const CONSOLE_FONT: &str = "consola.ttf";
+    pub const CONSOLE_FONT_BOLD: &str = "consolab.ttf";
     /// Tamaño de letra de la consola, en puntos.
     pub const FONT_SIZE: f32 = 14.0;
 }

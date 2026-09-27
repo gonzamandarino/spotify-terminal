@@ -1,7 +1,7 @@
-//! Look de la app de escritorio: fuente embebida y colores de
+//! Look de la app de escritorio: fuente de la consola de Windows y colores de
 //! `config::theme` aplicados al estilo de egui.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle, Visuals};
 
@@ -14,6 +14,14 @@ pub(super) fn color(rgb: [u8; 3]) -> Color32 {
     Color32::from_rgb(rgb[0], rgb[1], rgb[2])
 }
 
+/// Fuente de la carpeta de fuentes del sistema (`%WINDIR%\Fonts`), o
+/// `None` si no se puede leer.
+fn system_font(file: &str) -> Option<FontData> {
+    let windows = std::env::var_os("WINDIR").map_or_else(|| r"C:\Windows".into(), PathBuf::from);
+    let bytes = std::fs::read(windows.join("Fonts").join(file)).ok()?;
+    Some(FontData::from_owned(bytes))
+}
+
 pub(super) fn mono(size: f32) -> FontId {
     FontId::new(size, FontFamily::Monospace)
 }
@@ -24,38 +32,40 @@ pub(super) fn bold(size: f32) -> FontId {
 
 /// Instala la fuente y el estilo. Llamar una vez, antes del primer frame.
 ///
-/// - Post: todo el texto usa JetBrains Mono (embebida en el binario); los
-///   símbolos que no tiene (♫, 🔀...) salen de las fuentes de egui. El
-///   cursor de texto no titila: cada parpadeo sería un redibujo completo
-///   por CPU (T5 del spec 004: ~6 % de un núcleo en reposo).
+/// - Post: el texto usa Consolas, la fuente de la consola de Windows,
+///   leída de la carpeta de fuentes del sistema (su licencia no permite
+///   incluirla en el repo). Si no está, queda la monoespaciada de egui; si
+///   falta solo la negrita, se usa la normal. Los símbolos que Consolas no
+///   tiene (♫, 🔀...) salen de las fuentes de egui. El cursor de texto no
+///   titila: cada parpadeo sería un redibujo completo por CPU (T5 del spec
+///   004: ~6 % de un núcleo en reposo).
 pub(super) fn install(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
-    fonts.font_data.insert(
-        "jetbrains".into(),
-        Arc::new(FontData::from_static(include_bytes!(
-            "../../assets/fonts/JetBrainsMono-Regular.ttf"
-        ))),
-    );
-    fonts.font_data.insert(
-        "jetbrains-bold".into(),
-        Arc::new(FontData::from_static(include_bytes!(
-            "../../assets/fonts/JetBrainsMono-Bold.ttf"
-        ))),
-    );
     let fallbacks = fonts
         .families
         .get(&FontFamily::Proportional)
         .cloned()
         .unwrap_or_default();
-    for family in [FontFamily::Monospace, FontFamily::Proportional] {
-        fonts
-            .families
-            .entry(family)
-            .or_default()
-            .insert(0, "jetbrains".into());
+    let regular = system_font(theme::CONSOLE_FONT);
+    let bold = system_font(theme::CONSOLE_FONT_BOLD);
+    let mut bold_family = fallbacks;
+    if let Some(regular) = regular {
+        fonts.font_data.insert("consola".into(), Arc::new(regular));
+        for family in [FontFamily::Monospace, FontFamily::Proportional] {
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .insert(0, "consola".into());
+        }
+        bold_family.insert(0, "consola".into());
     }
-    let mut bold_family = vec!["jetbrains-bold".to_string()];
-    bold_family.extend(fallbacks);
+    if let Some(bold) = bold {
+        fonts
+            .font_data
+            .insert("consola-bold".into(), Arc::new(bold));
+        bold_family.insert(0, "consola-bold".into());
+    }
     fonts
         .families
         .insert(FontFamily::Name(BOLD.into()), bold_family);

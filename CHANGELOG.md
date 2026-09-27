@@ -4,8 +4,9 @@
 
 ### Agregado (spec 004 — app de escritorio)
 - `spotify-desktop.exe`: ventana propia con una consola estilizada (tema
-  oscuro, JetBrains Mono, barra de título propia) donde se escriben los
-  mismos comandos que en la CLI, sin PowerShell.
+  oscuro, fuente Consolas como la consola de Windows, barra de título
+  propia) donde se escriben los mismos comandos que en la CLI, sin
+  PowerShell.
 - La música sigue mientras se escribe: `pause`, `next`/`n`, `prev`/`p`,
   `shuffle`/`s`, `queue <tema>`/`a <tema>`, `stop`, `clear`, `exit`, y los
   atajos Ctrl+Espacio, Ctrl+→ y Ctrl+←. Un `play` nuevo reemplaza lo que

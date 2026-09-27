@@ -66,6 +66,10 @@ está instalado en la máquina de prueba.
     `#F15E6C`, avisos `#F5C451`. Colores en config, no en la lógica.
   - Fuente monoespaciada embebida en el binario: **JetBrains Mono** (OFL,
     ~270 KB), para que se vea igual en cualquier máquina.
+    **Cambiado a pedido de vos (después de verificar):** Consolas, la
+    fuente de la consola de Windows, leída de `%WINDIR%\Fonts` al
+    arrancar (su licencia no permite incluirla en el repo). Sin ella, queda
+    la monoespaciada de egui.
   - Barra de título propia (sin el marco de Windows): nombre de la app,
     arrastrar para mover, minimizar y cerrar; bordes redondeados.
     **Cambiado en T6:** sin bordes redondeados (GDI no tiene
@@ -209,7 +213,8 @@ el del crate no soporta arrastrar ni cambiar el tamaño), `app.rs` y
     `request_repaint_after(1 s)` para el progreso; en pausa o sin nada,
     ninguno.
   - `desktop::theme` — colores, tamaños y fuente (JetBrains Mono embebida
-    con `include_bytes!` desde `assets/fonts/`, con su licencia OFL).
+    con `include_bytes!` desde `assets/fonts/`, con su licencia OFL;
+    después reemplazada por Consolas del sistema).
   - `desktop::titlebar` — barra de título propia (arrastre con
     `ViewportCommand::StartDrag`, minimizar, cerrar).
 - **Config** (`src/config.rs`): colores (`THEME_*`), tamaños de ventana,
