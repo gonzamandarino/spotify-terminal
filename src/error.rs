@@ -117,6 +117,13 @@ pub enum AppError {
     )]
     NotFound(String),
 
+    /// Una búsqueda no devolvió nada (`kind` en plural: "temas", "playlists").
+    #[error(
+        "no encontré {kind} para «{query}».
+Probá con otras palabras."
+    )]
+    NoResults { kind: &'static str, query: String },
+
     /// Álbum o playlist sin temas reproducibles.
     #[error("{0} no tiene temas para reproducir.")]
     NothingToPlay(String),

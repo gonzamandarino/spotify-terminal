@@ -31,13 +31,22 @@ Copy-Item .env.example .env
 cargo build --release
 .\target\release\spotify-terminal.exe login    # la primera vez: autoriza dos veces en el navegador
 .\target\release\spotify-terminal.exe whoami
+.\target\release\spotify-terminal.exe play never gonna give you up
+.\target\release\spotify-terminal.exe play list rock nacional
 .\target\release\spotify-terminal.exe play https://open.spotify.com/album/<ID>
 .\target\release\spotify-terminal.exe logout
 ```
 
-`play` acepta un tema, un álbum o una playlist (URI `spotify:…`, link de
-`open.spotify.com` o ID de tema). Durante la reproducción: **espacio** pausa
-y reanuda, **q** sale.
+`play <nombre>` busca temas y `play list <nombre>` (o `play playlist`)
+busca playlists: muestra los 5 mejores resultados y se elige con **1-5**
+(**Enter** = el primero, **q** = cancelar). Para buscar un tema que empieza
+con "list", ponelo entre comillas: `play "list of demands"`. Las playlists
+editoriales de Spotify no aparecen en la búsqueda (la API no se las muestra
+a apps en modo desarrollo), pero se pueden reproducir con su link.
+
+`play` también acepta un tema, un álbum o una playlist por URI
+(`spotify:…`), link de `open.spotify.com` o ID de tema. Durante la
+reproducción: **espacio** pausa y reanuda, **q** sale.
 
 ¿Por qué dos autorizaciones? El audio usa el Client ID de librespot y la Web
 API el tuyo; ver `docs/decisiones.md`.

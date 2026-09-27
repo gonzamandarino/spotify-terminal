@@ -2,7 +2,7 @@
 
 use librespot_core::SpotifyUri;
 
-use crate::{config, error::AppError};
+use crate::{config, error::AppError, spotify::web::SearchKind};
 
 /// Texto de ayuda (`help` y errores de uso).
 pub const USAGE: &str = "\
@@ -12,10 +12,14 @@ Comandos:
   login         Inicia sesión en Spotify (o confirma que la sesión guardada sirve)
   logout        Borra la sesión guardada
   whoami        Muestra el usuario logueado y su plan
-  play <qué>    Reproduce un tema, un álbum o una playlist: URI
+  play <nombre> Busca temas por nombre y muestra los 5 mejores para elegir
+                (1-5, Enter = el primero, q = cancelar)
+  play list <nombre>
+                Lo mismo con playlists (también `play playlist <nombre>`)
+  play <link>   Reproduce un tema, un álbum o una playlist: URI
                 (spotify:track:ID, spotify:album:ID, spotify:playlist:ID),
                 link de open.spotify.com o ID de tema.
-                Espacio = pausa/reanudar, q = salir";
+                Durante la reproducción: espacio = pausa/reanudar, q = salir";
 
 /// Subcomando pedido, ya validado.
 #[derive(Debug, PartialEq)]
@@ -25,32 +29,75 @@ pub enum Command {
     Whoami,
     /// Tema, álbum o playlist a reproducir.
     Play(SpotifyUri),
+    /// Buscar por texto y elegir qué reproducir. Invariante: `query` no está
+    /// vacío y sus palabras van separadas por un solo espacio.
+    Search {
+        kind: SearchKind,
+        query: String,
+    },
     Help,
 }
 
+/// Palabras que, después de `play`, piden buscar playlists en vez de temas.
+const PLAYLIST_WORDS: [&str; 2] = ["list", "playlist"];
+
 /// Interpreta los argumentos (sin el nombre del programa).
 ///
-/// - Post: sin argumentos o con `help`/`-h`/`--help` → `Command::Help`;
-///   un comando desconocido, algo irreconocible para `play` o argumentos
-///   de más → `AppError::Usage`.
+/// - Post: sin argumentos o con `help`/`-h`/`--help` → `Command::Help`.
+///   `play` con un solo argumento que es URI, link o ID → `Command::Play`;
+///   `play list|playlist <texto>` → búsqueda de playlists; cualquier otro
+///   texto después de `play` (una o varias palabras) → búsqueda de temas.
+///   Un comando desconocido, `play` sin texto, un URI/link mal formado o
+///   argumentos de más → `AppError::Usage`.
 pub fn parse(args: &[String]) -> Result<Command, AppError> {
     let (command, expected_args) = match args.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => return Ok(Command::Help),
         Some("login") => (Command::Login, 1),
         Some("logout") => (Command::Logout, 1),
         Some("whoami") => (Command::Whoami, 1),
-        Some("play") => {
-            let track = args
-                .get(1)
-                .ok_or_else(|| usage_error("falta qué reproducir"))?;
-            (Command::Play(parse_playable(track)?), 2)
-        }
+        Some("play") => return parse_play(&args[1..]),
         Some(other) => return Err(usage_error(&format!("comando desconocido: {other}"))),
     };
     if args.len() > expected_args {
         return Err(usage_error("demasiados argumentos"));
     }
     Ok(command)
+}
+
+/// Argumentos de `play` (sin la palabra `play`).
+fn parse_play(args: &[String]) -> Result<Command, AppError> {
+    if let [single] = args {
+        // Algo que parece un URI o link se valida como tal: si está mal, es
+        // más útil decirlo que buscarlo como texto.
+        if looks_like_link(single) {
+            return Ok(Command::Play(parse_playable(single)?));
+        }
+        if let Ok(uri) = parse_playable(single) {
+            return Ok(Command::Play(uri));
+        }
+    }
+    let (kind, words) = match args.split_first() {
+        Some((first, rest)) if PLAYLIST_WORDS.contains(&first.as_str()) => {
+            (SearchKind::Playlist, rest)
+        }
+        _ => (SearchKind::Track, args),
+    };
+    let query = words
+        .iter()
+        .flat_map(|w| w.split_whitespace())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if query.is_empty() {
+        return Err(usage_error(match kind {
+            SearchKind::Track => "falta qué reproducir",
+            SearchKind::Playlist => "falta el nombre de la playlist",
+        }));
+    }
+    Ok(Command::Search { kind, query })
+}
+
+fn looks_like_link(input: &str) -> bool {
+    input.starts_with("spotify:") || input.contains("open.spotify.com/")
 }
 
 /// Tipos que acepta `play`, tal como aparecen en URIs y links.
@@ -121,11 +168,75 @@ mod tests {
             &["bailar"][..],
             &["login", "extra"],
             &["play"],
-            &["play", ID, "x"],
+            &["play", "  "],
+            &["play", "list"],
+            &["play", "playlist", " "],
+            &["play", "spotify:artist:4uLU6hMCjMI75M1A2tKUQC"],
+            &[
+                "play",
+                "https://open.spotify.com/artist/4uLU6hMCjMI75M1A2tKUQC",
+            ],
         ] {
             assert!(
                 matches!(parse(&args(bad)), Err(AppError::Usage(_))),
                 "{bad:?}"
+            );
+        }
+    }
+
+    fn search(kind: SearchKind, query: &str) -> Command {
+        Command::Search {
+            kind,
+            query: query.into(),
+        }
+    }
+
+    #[test]
+    fn busqueda_de_temas() {
+        assert_eq!(
+            parse(&args(&["play", "never", "gonna", "give", "you", "up"])).unwrap(),
+            search(SearchKind::Track, "never gonna give you up")
+        );
+        assert_eq!(
+            parse(&args(&["play", "  soda   stereo "])).unwrap(),
+            search(SearchKind::Track, "soda stereo")
+        );
+        // Entre comillas, "list" no pide playlists.
+        assert_eq!(
+            parse(&args(&["play", "list of demands"])).unwrap(),
+            search(SearchKind::Track, "list of demands")
+        );
+        // Un ID con algo más ya no es un ID: se busca como texto.
+        assert_eq!(
+            parse(&args(&["play", ID, "x"])).unwrap(),
+            search(SearchKind::Track, &format!("{ID} x"))
+        );
+    }
+
+    #[test]
+    fn busqueda_de_playlists() {
+        for word in PLAYLIST_WORDS {
+            assert_eq!(
+                parse(&args(&["play", word, "rock", "nacional"])).unwrap(),
+                search(SearchKind::Playlist, "rock nacional")
+            );
+        }
+        assert_eq!(
+            parse(&args(&["play", "list", "of", "demands"])).unwrap(),
+            search(SearchKind::Playlist, "of demands")
+        );
+    }
+
+    #[test]
+    fn uri_link_o_id_no_busca() {
+        for input in [
+            ID.to_string(),
+            format!("spotify:album:{ID}"),
+            format!("https://open.spotify.com/playlist/{ID}?si=x"),
+        ] {
+            assert!(
+                matches!(parse(&args(&["play", &input])).unwrap(), Command::Play(_)),
+                "{input}"
             );
         }
     }

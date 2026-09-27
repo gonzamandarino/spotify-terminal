@@ -2,6 +2,14 @@
 
 ## [Sin publicar]
 
+### Agregado (spec 002 — búsqueda)
+- `play <nombre>`: busca temas y muestra los 5 mejores (artistas, álbum,
+  duración); se elige con 1-5, Enter = el primero, q = cancelar.
+- `play list <nombre>` / `play playlist <nombre>`: lo mismo con playlists
+  (dueño y cantidad de temas). Las playlists editoriales de Spotify no
+  aparecen (limitación de la API para apps en modo desarrollo).
+- `play` con URI, link o ID funciona igual que antes.
+
 ### Agregado (spec 001 — stack, reproductor y login)
 - `login` / `logout`: OAuth PKCE con dos tokens (audio y Web API), cacheados
   en `%APPDATA%\spotify-terminal\` y renovados solos.

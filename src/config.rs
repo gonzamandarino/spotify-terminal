@@ -55,6 +55,18 @@ pub const AUDIO_BITRATE: Bitrate = Bitrate::Bitrate160;
 /// más que eso casi seguro es la conexión, no los temas.
 pub const MAX_CONSECUTIVE_UNAVAILABLE: u32 = 3;
 
+/// Resultados que muestra una búsqueda (`play <texto>`, `play list <texto>`).
+pub const SEARCH_LIMIT: usize = 5;
+
+/// Máximo de resultados que acepta `GET /search` en modo desarrollo (desde
+/// feb 2026; con más responde 400).
+pub const SEARCH_API_MAX_LIMIT: usize = 10;
+
+// Se chequea al compilar: la API no acepta más de `SEARCH_API_MAX_LIMIT` y
+// `ui::select` elige con una sola tecla (1-9).
+const _: () =
+    assert!(SEARCH_LIMIT >= 1 && SEARCH_LIMIT <= 9 && SEARCH_LIMIT <= SEARCH_API_MAX_LIMIT);
+
 /// Archivos de cache de token dentro de `Config::data_dir`.
 pub const AUDIO_TOKEN_FILE: &str = "token-audio.json";
 pub const WEB_TOKEN_FILE: &str = "token-web.json";
