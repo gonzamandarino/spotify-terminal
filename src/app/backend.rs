@@ -2,7 +2,7 @@
 //! traits chicos para poder testearlo con un reproductor falso.
 
 use librespot_core::SpotifyUri;
-use librespot_playback::player::PlayerEventChannel;
+use librespot_playback::{config::Bitrate, player::PlayerEventChannel};
 use tokio::runtime::Handle;
 
 use super::volume::Volume;
@@ -82,7 +82,7 @@ pub(crate) trait Backend {
     /// Abre un reproductor nuevo con `volume`. Antes chequea que la cuenta
     /// sea Premium (sin Premium → `NotPremium`, sin abrir la sesión de
     /// audio).
-    async fn connect(&self, volume: Volume) -> Result<Self::Player, AppError>;
+    async fn connect(&self, volume: Volume, bitrate: Bitrate) -> Result<Self::Player, AppError>;
 
     /// Temas de un tema, álbum o playlist (ver [`Player::resolve_tracks`]).
     async fn resolve(&self, player: &Self::Player, uri: &SpotifyUri) -> Result<Resolved, AppError>;
@@ -131,12 +131,12 @@ impl Backend for SpotifyBackend {
         Self::web().await?.search(kind, query).await
     }
 
-    async fn connect(&self, volume: Volume) -> Result<Player, AppError> {
+    async fn connect(&self, volume: Volume, bitrate: Bitrate) -> Result<Player, AppError> {
         let user = self.current_user().await?;
         if !user.is_premium() {
             return Err(AppError::NotPremium(user.plan().to_string()));
         }
-        Player::connect(&Self::token(TokenKind::Audio).await?, volume).await
+        Player::connect(&Self::token(TokenKind::Audio).await?, volume, bitrate).await
     }
 
     async fn resolve(&self, player: &Player, uri: &SpotifyUri) -> Result<Resolved, AppError> {

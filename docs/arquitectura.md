@@ -47,11 +47,22 @@ error   <── usado por todos (AppError con mensajes para el usuario)
 
 ```
 bin/desktop ──> desktop::run
+                  ├──> desktop::settings::load (ajustes.json → Settings)
                   ├──> desktop::window (winit + softbuffer, dibujo por CPU con
-                  │      egui_software_backend; barra de título propia)
+                  │      egui_software_backend; barra de título propia
+                  │      y renglón de menús debajo)
                   │      └──> desktop::app::DesktopApp (consola: salida,
-                  │             entrada, historial, Tab, barra "sonando")
-                  │                 │ Input (línea, atajos, Esc)
+                  │             entrada, historial, Tab, barra "sonando";
+                  │             dueña de los Settings vivos)
+                  │               ├──> desktop::menu (barra de menús y
+                  │               │      diálogos: editan Settings)
+                  │               ├──> desktop::theme (Settings → estilo,
+                  │               │      fuente y zoom de egui)
+                  │               ├──> desktop::settings::save (diferido)
+                  │               └──> desktop::hotkeys::replace (al
+                  │                      cambiar un atajo global)
+                  │                 │ Input (línea, atajos, Esc,
+                  │                 │ Playback, Shortcuts)
                   │                 ▼
                   ├──> desktop::hotkeys (hilo "atajos": RegisterHotKey)
                   │                 │ Input::Global (con la app minimizada)
@@ -83,7 +94,8 @@ bin/desktop ──> desktop::run
   globales y duerme en `GetMessageW` hasta que se aprieta uno; entonces
   manda un `Input::Global` al motor por el mismo canal que la ventana. Se
   cierra (y los libera) antes de esperar al motor, porque también es
-  emisor de ese canal.
+  emisor de ese canal. Al cambiar un atajo global desde el menú (spec
+  007) el hilo se cierra y se abre otro con la lista nueva.
 
 ## Quién posee qué estado
 - **Caches de token:** solo `spotify::auth` los lee y escribe (escritura
@@ -112,9 +124,18 @@ bin/desktop ──> desktop::run
   "anterior" (`timeline`) y el `play_request_id` vigente. Es nuestra, no
   de Spotify: la Web API no la ve.
 - **Consola de la app de escritorio:** `desktop::app::DesktopApp` es dueña
-  del texto mostrado (con tope `config::SCROLLBACK_LINES`), la línea de
+  del texto mostrado (con el tope de líneas de los ajustes), la línea de
   entrada y el historial. No guarda estado de reproducción propio: muestra
   el último `NowPlaying` que mandó el motor.
+- **Ajustes de la app de escritorio (spec 007):** `DesktopApp` es dueña
+  de los `Settings` vivos. `desktop::menu` los edita directamente y la
+  consola compara antes/después de cada frame para aplicar lo que cambió:
+  estilo y fuente (`theme`), atajos globales (`hotkeys::replace`),
+  reproducción (`Input::Playback` al motor, que guarda su copia) y lista
+  de atajos para `help` (`Input::Shortcuts`). Solo `desktop::settings`
+  lee y escribe `ajustes.json` (escritura atómica: temporal + rename), 1 s
+  después del último cambio (`config::SETTINGS_SAVE_DELAY`) y al cerrar.
+  Los valores de `config.rs` son los defaults; la CLI usa siempre esos.
 
 ## Reglas estructurales
 - `spotify::web` solo recibe tokens `Web` y `spotify::player` solo `Audio`
@@ -152,7 +173,12 @@ corregir la tabla.
 | `shell::parse_line`, `shell::complete`, `shell::ShellCommand`, `shell::VolumeCommand` (crate) | `src/app/shell.rs` | doc-comment |
 | `engine::spawn`, `engine::Input`, `engine::Output`, `engine::Engine` (crate) | `src/app/engine.rs` | doc-comment |
 | `backend::Backend`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
-| `hotkeys::spawn`, `hotkeys::Hotkeys`, `hotkeys::Shortcut`, `hotkeys::Key` (crate) | `src/desktop/hotkeys.rs` | doc-comment |
+| `hotkeys::spawn`, `hotkeys::replace`, `hotkeys::from_settings`, `hotkeys::Hotkeys`, `hotkeys::Shortcut` (crate) | `src/desktop/hotkeys.rs` | doc-comment |
+| `combo::Combo`, `combo::Key` (crate; `Combo::from_str` con contrato) | `src/desktop/combo.rs` | doc-comment |
+| `settings::Settings` (`from_json`, `to_json`, `check_combo`, `assign`, `restore`), `settings::load`, `settings::save` (crate) | `src/desktop/settings.rs` | doc-comment |
+| `engine::PlaybackSettings` (crate) | `src/app/engine.rs` | doc-comment |
+| `menu::Menus` (`keyboard`, `bar`, `dialogs`, `wants_keyboard`), `menu::Command` | `src/desktop/menu.rs` | doc-comment |
+| `theme::Theme::apply`, `theme::installed_fonts` | `src/desktop/theme.rs` | doc-comment |
 | `engine::GlobalAction` (crate) | `src/app/engine.rs` | doc-comment |
 | `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |
 | `config::data_dir` | `src/config.rs` | doc-comment |

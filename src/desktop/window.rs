@@ -13,11 +13,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use egui::{ResizeDirection, ViewportCommand, ViewportId};
+use egui::{ResizeDirection, ViewportCommand, ViewportId, WindowLevel};
 use egui_software_backend::{BufferMutRef, ColorFieldOrder, EguiSoftwareRender};
 use winit::{
     application::ApplicationHandler,
-    dpi::LogicalSize,
+    dpi::{LogicalSize, PhysicalPosition},
     event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{self, Icon, Window, WindowId},
@@ -30,6 +30,16 @@ pub(super) trait Content {
     fn ui(&mut self, ui: &mut egui::Ui);
 }
 
+/// Tamaño y posición con que abre la ventana.
+pub(super) struct Start {
+    /// En puntos lógicos de Windows.
+    pub(super) size: [f32; 2],
+    /// Esquina de arriba a la izquierda, en px físicos; `None` = donde la
+    /// ponga Windows. Si no cae en ningún monitor (se desconectó), se
+    /// ignora.
+    pub(super) position: Option<[i32; 2]>,
+}
+
 /// Pedido de repintado desde cualquier hilo (el callback de egui).
 #[derive(Debug)]
 struct Repaint(Duration);
@@ -40,7 +50,11 @@ struct Repaint(Duration);
 /// - Post: la ventana se cerró (botón, Alt+F4 o `ViewportCommand::Close`).
 /// - Errores: no se pudo crear la ventana o la superficie de dibujo →
 ///   `Internal` con el motivo.
-pub(super) fn run(ctx: egui::Context, content: &mut impl Content) -> Result<(), AppError> {
+pub(super) fn run(
+    ctx: egui::Context,
+    start: Start,
+    content: &mut impl Content,
+) -> Result<(), AppError> {
     let event_loop = EventLoop::<Repaint>::with_user_event()
         .build()
         .map_err(|e| internal("no se pudo iniciar la ventana", e))?;
@@ -52,6 +66,7 @@ pub(super) fn run(ctx: egui::Context, content: &mut impl Content) -> Result<(), 
         ctx,
         content,
         renderer: EguiSoftwareRender::new(ColorFieldOrder::Bgra),
+        start,
         gui: None,
         next_repaint: None,
         error: None,
@@ -82,6 +97,7 @@ struct Runner<'a, C: Content> {
     ctx: egui::Context,
     content: &'a mut C,
     renderer: EguiSoftwareRender,
+    start: Start,
     gui: Option<Gui>,
     /// Próximo repintado pedido con demora (p. ej. la barra de progreso).
     next_repaint: Option<Instant>,
@@ -93,7 +109,7 @@ impl<C: Content> ApplicationHandler<Repaint> for Runner<'_, C> {
         if self.gui.is_some() {
             return;
         }
-        match create_gui(event_loop, &self.ctx) {
+        match create_gui(event_loop, &self.ctx, &self.start) {
             Ok(gui) => self.gui = Some(gui),
             Err(e) => {
                 self.error = Some(e);
@@ -212,6 +228,16 @@ fn apply(command: &ViewportCommand, window: &Window, event_loop: &ActiveEventLoo
         }
         ViewportCommand::Minimized(on) => window.set_minimized(*on),
         ViewportCommand::Maximized(on) => window.set_maximized(*on),
+        ViewportCommand::WindowLevel(level) => window.set_window_level(match level {
+            WindowLevel::AlwaysOnTop => window::WindowLevel::AlwaysOnTop,
+            WindowLevel::AlwaysOnBottom => window::WindowLevel::AlwaysOnBottom,
+            WindowLevel::Normal => window::WindowLevel::Normal,
+        }),
+        // La app lo manda en puntos lógicos de Windows (sin el zoom del
+        // tamaño de letra), no en puntos de egui.
+        ViewportCommand::InnerSize(size) => {
+            let _ = window.request_inner_size(LogicalSize::new(size.x, size.y));
+        }
         _ => {}
     }
 }
@@ -229,15 +255,34 @@ fn resize_direction(direction: ResizeDirection) -> window::ResizeDirection {
     }
 }
 
-fn create_gui(event_loop: &ActiveEventLoop, ctx: &egui::Context) -> Result<Gui, AppError> {
-    let [width, height] = config::WINDOW_SIZE;
+fn create_gui(
+    event_loop: &ActiveEventLoop,
+    ctx: &egui::Context,
+    start: &Start,
+) -> Result<Gui, AppError> {
+    let [width, height] = start.size;
     let [min_width, min_height] = config::WINDOW_MIN_SIZE;
-    let attributes = Window::default_attributes()
+    let mut attributes = Window::default_attributes()
         .with_title(config::WINDOW_TITLE)
         .with_inner_size(LogicalSize::new(width, height))
         .with_min_inner_size(LogicalSize::new(min_width, min_height))
         .with_decorations(false)
         .with_window_icon(icon());
+    if let Some([x, y]) = start.position {
+        // La barra de título (arriba a la izquierda) tiene que quedar en
+        // algún monitor; si no, no hay cómo agarrarla.
+        let visible = event_loop.available_monitors().any(|monitor| {
+            let (origin, size) = (monitor.position(), monitor.size());
+            let inside = |value: i32, from: i32, len: u32| {
+                i64::from(value) >= i64::from(from)
+                    && i64::from(value) < i64::from(from) + i64::from(len)
+            };
+            inside(x + 40, origin.x, size.width) && inside(y + 10, origin.y, size.height)
+        });
+        if visible {
+            attributes = attributes.with_position(PhysicalPosition::new(x, y));
+        }
+    }
     let window = Rc::new(
         event_loop
             .create_window(attributes)

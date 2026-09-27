@@ -217,10 +217,12 @@ impl Queue {
         }
     }
 
-    /// Tecla `p`: con más de `config::PREVIOUS_RESTART_THRESHOLD` sonando, o
-    /// en el primer tema, reinicia; si no, vuelve al tema que sonó antes.
-    pub(crate) fn previous(&mut self, elapsed: Duration) -> Step {
-        if elapsed > config::PREVIOUS_RESTART_THRESHOLD || self.cursor == 0 {
+    /// Tecla `p`: con más de `threshold` sonando, o en el primer tema,
+    /// reinicia; si no, vuelve al tema que sonó antes. La CLI usa
+    /// `config::PREVIOUS_RESTART_THRESHOLD`; la app de escritorio, el de sus
+    /// ajustes (spec 007).
+    pub(crate) fn previous(&mut self, elapsed: Duration, threshold: Duration) -> Step {
+        if elapsed > threshold || self.cursor == 0 {
             return Step::Restart;
         }
         self.cursor -= 1;
@@ -626,10 +628,19 @@ mod tests {
         let list = tracks(3);
         let mut q = started(&list);
         // En el primer tema siempre reinicia.
-        assert!(matches!(q.previous(SHORT), Step::Restart));
+        assert!(matches!(
+            q.previous(SHORT, config::PREVIOUS_RESTART_THRESHOLD),
+            Step::Restart
+        ));
         q.next();
-        assert!(matches!(q.previous(LONG), Step::Restart));
-        assert!(is_play(&q.previous(SHORT), &list[0]));
+        assert!(matches!(
+            q.previous(LONG, config::PREVIOUS_RESTART_THRESHOLD),
+            Step::Restart
+        ));
+        assert!(is_play(
+            &q.previous(SHORT, config::PREVIOUS_RESTART_THRESHOLD),
+            &list[0]
+        ));
         // Después de volver, "siguiente" retoma donde estaba.
         assert!(is_play(&q.next(), &list[1]));
         assert!(is_play(&q.next(), &list[2]));
@@ -642,8 +653,14 @@ mod tests {
         q.toggle_shuffle(&mut rng());
         let a = played(q.next());
         let b = played(q.next());
-        assert!(is_play(&q.previous(SHORT), &a));
-        assert!(is_play(&q.previous(SHORT), &list[0]));
+        assert!(is_play(
+            &q.previous(SHORT, config::PREVIOUS_RESTART_THRESHOLD),
+            &a
+        ));
+        assert!(is_play(
+            &q.previous(SHORT, config::PREVIOUS_RESTART_THRESHOLD),
+            &list[0]
+        ));
         assert!(is_play(&q.next(), &a));
         assert!(is_play(&q.next(), &b));
     }
@@ -749,7 +766,7 @@ mod tests {
         let list = tracks(3);
         let mut q = started(&list);
         q.next();
-        q.previous(SHORT); // vuelve a list[0]; list[1] queda adelante
+        q.previous(SHORT, config::PREVIOUS_RESTART_THRESHOLD); // vuelve a list[0]; list[1] queda adelante
         q.enqueue(track("91"));
         assert!(is_play(&q.next(), &track("91")));
         assert!(is_play(&q.next(), &list[1]));

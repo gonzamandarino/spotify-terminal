@@ -9,86 +9,23 @@
 
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::{combo::Combo, settings::Settings};
 use crate::{
     app::engine::{GlobalAction, Input},
-    config,
     error::AppError,
 };
-
-/// Tecla de un atajo global (sin los modificadores).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Key {
-    /// Letra A-Z o dígito 0-9, en mayúscula.
-    Char(char),
-    Enter,
-    Left,
-    Right,
-    Up,
-    Down,
-}
-
-impl Key {
-    /// Virtual-key code de Windows. Letras y dígitos son su código ASCII
-    /// en mayúscula.
-    pub(crate) fn vk(self) -> u32 {
-        match self {
-            Key::Char(c) => u32::from(c.to_ascii_uppercase()),
-            Key::Enter => 0x0D,
-            Key::Left => 0x25,
-            Key::Up => 0x26,
-            Key::Right => 0x27,
-            Key::Down => 0x28,
-        }
-    }
-
-    fn name(self) -> String {
-        match self {
-            Key::Char(c) => c.to_ascii_uppercase().to_string(),
-            Key::Enter => "Enter".into(),
-            Key::Left => "←".into(),
-            Key::Right => "→".into(),
-            Key::Up => "↑".into(),
-            Key::Down => "↓".into(),
-        }
-    }
-}
-
-/// Modificadores de los atajos globales.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Modifiers {
-    pub(crate) ctrl: bool,
-    pub(crate) alt: bool,
-    pub(crate) shift: bool,
-}
 
 /// Un atajo global: combinación + acción.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Shortcut {
-    pub(crate) modifiers: Modifiers,
-    pub(crate) key: Key,
+    pub(crate) combo: Combo,
     pub(crate) action: GlobalAction,
 }
 
 impl Shortcut {
-    /// "Ctrl+Alt+→".
-    pub(crate) fn combo(&self) -> String {
-        let mut text = String::new();
-        for (on, name) in [
-            (self.modifiers.ctrl, "Ctrl+"),
-            (self.modifiers.alt, "Alt+"),
-            (self.modifiers.shift, "Shift+"),
-        ] {
-            if on {
-                text.push_str(name);
-            }
-        }
-        text.push_str(&self.key.name());
-        text
-    }
-
     /// "Ctrl+Alt+→  siguiente", para `help`.
     pub(crate) fn describe(&self) -> String {
-        format!("{:<16} {}", self.combo(), self.action.describe())
+        format!("{:<16} {}", self.combo.to_string(), self.action.describe())
     }
 
     /// Mantener apretado repite la acción: solo el volumen (como Ctrl+↑ en
@@ -101,15 +38,13 @@ impl Shortcut {
     }
 }
 
-/// Atajos de `config::GLOBAL_SHORTCUTS`, con los modificadores de config.
-pub(crate) fn configured() -> Vec<Shortcut> {
-    config::GLOBAL_SHORTCUTS
+/// Atajos globales de los ajustes (los que tienen combinación), en el
+/// orden de `GlobalAction::ALL`.
+pub(crate) fn from_settings(settings: &Settings) -> Vec<Shortcut> {
+    settings
+        .global_keys
         .iter()
-        .map(|&(key, action)| Shortcut {
-            modifiers: config::GLOBAL_SHORTCUT_MODIFIERS,
-            key,
-            action,
-        })
+        .filter_map(|(&action, combo)| combo.map(|combo| Shortcut { combo, action }))
         .collect()
 }
 
@@ -125,7 +60,7 @@ impl Failed {
     pub(crate) fn warning(&self) -> String {
         format!(
             "⚠ {} {}: sin atajo global para {}.",
-            self.shortcut.combo(),
+            self.shortcut.combo,
             self.reason,
             self.shortcut.action.describe()
         )
@@ -172,6 +107,53 @@ pub(crate) fn spawn(
         failed,
         thread: Some((thread_id, thread)),
     })
+}
+
+/// Cambia los atajos registrados por `wanted` (spec 007).
+///
+/// - Pre: `current` son los registrados ahora (o `None`); `previous`, la
+///   lista con la que se registraron.
+/// - Post: `current` se suelta antes de registrar (sus combinaciones
+///   quedan libres para otras apps y para `wanted`). Una combinación de
+///   `wanted` que no estaba en `previous` y que Windows rechaza vuelve a la
+///   de `previous` para esa acción (o a ninguna), y va en la lista
+///   devuelta. Las que ya fallaban antes siguen en `failed`, sin volver a
+///   avisar.
+/// - Errores: `Internal` si no arranca el hilo.
+pub(crate) fn replace(
+    current: Option<Hotkeys>,
+    wanted: &[Shortcut],
+    previous: &[Shortcut],
+    inputs: &UnboundedSender<Input>,
+) -> Result<(Hotkeys, Vec<Failed>), AppError> {
+    drop(current);
+    let hotkeys = spawn(wanted.to_vec(), inputs.clone())?;
+    let (rejected, _): (Vec<Failed>, Vec<Failed>) = hotkeys
+        .failed
+        .iter()
+        .map(|f| Failed {
+            shortcut: f.shortcut,
+            reason: f.reason.clone(),
+        })
+        .partition(|f| !previous.contains(&f.shortcut));
+    if rejected.is_empty() {
+        return Ok((hotkeys, rejected));
+    }
+    drop(hotkeys);
+    let fallback: Vec<Shortcut> = wanted
+        .iter()
+        .filter_map(|&shortcut| {
+            if rejected.iter().any(|f| f.shortcut == shortcut) {
+                previous
+                    .iter()
+                    .find(|p| p.action == shortcut.action)
+                    .copied()
+            } else {
+                Some(shortcut)
+            }
+        })
+        .collect();
+    Ok((spawn(fallback, inputs.clone())?, rejected))
 }
 
 /// Fuera de Windows no hay atajos globales: todos van a `failed`.
@@ -295,9 +277,9 @@ mod win {
     pub(super) fn register(id: i32, shortcut: &Shortcut) -> io::Result<()> {
         let mut modifiers = 0;
         for (on, flag) in [
-            (shortcut.modifiers.ctrl, MOD_CONTROL),
-            (shortcut.modifiers.alt, MOD_ALT),
-            (shortcut.modifiers.shift, MOD_SHIFT),
+            (shortcut.combo.ctrl, MOD_CONTROL),
+            (shortcut.combo.alt, MOD_ALT),
+            (shortcut.combo.shift, MOD_SHIFT),
             (!shortcut.repeats(), MOD_NOREPEAT),
         ] {
             if on {
@@ -305,7 +287,7 @@ mod win {
             }
         }
         // SAFETY: sin ventana (0) = los mensajes van a la cola del hilo.
-        if unsafe { RegisterHotKey(0, id, modifiers, shortcut.key.vk()) } == 0 {
+        if unsafe { RegisterHotKey(0, id, modifiers, shortcut.combo.key.vk()) } == 0 {
             return Err(io::Error::last_os_error());
         }
         Ok(())
@@ -329,28 +311,18 @@ mod win {
 mod tests {
     use super::*;
 
-    fn shortcut(key: Key, action: GlobalAction) -> Shortcut {
+    fn shortcut(combo: &str, action: GlobalAction) -> Shortcut {
         Shortcut {
-            modifiers: Modifiers {
-                ctrl: true,
-                alt: true,
-                shift: false,
-            },
-            key,
+            combo: combo.parse().unwrap(),
             action,
         }
     }
 
     #[test]
     fn nombres_de_las_combinaciones() {
-        let next = shortcut(Key::Right, GlobalAction::Next);
-        assert_eq!(next.combo(), "Ctrl+Alt+→");
+        let next = shortcut("Ctrl+Alt+→", GlobalAction::Next);
         assert!(next.describe().starts_with("Ctrl+Alt+→ "));
         assert!(next.describe().ends_with(" siguiente"));
-        assert_eq!(
-            shortcut(Key::Char('p'), GlobalAction::TogglePause).combo(),
-            "Ctrl+Alt+P"
-        );
         let failed = Failed {
             shortcut: next,
             reason: "ya lo usa otra app".into(),
@@ -362,20 +334,13 @@ mod tests {
     }
 
     #[test]
-    fn teclas_virtuales() {
-        assert_eq!(Key::Char('p').vk(), 0x50);
-        assert_eq!(Key::Enter.vk(), 0x0D);
-        assert_eq!(Key::Right.vk(), 0x27);
-        assert_eq!(Key::Down.vk(), 0x28);
-    }
-
-    #[test]
     fn config_sin_combinaciones_repetidas_y_solo_volumen_repite() {
-        let all = configured();
+        let all = from_settings(&Settings::default());
+        assert_eq!(all.len(), GlobalAction::ALL.len());
         assert!(!all.is_empty());
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
-                assert_ne!(a.key, b.key, "{} repetida", a.combo());
+                assert_ne!(a.combo, b.combo, "{} repetida", a.combo);
             }
             assert_eq!(
                 a.repeats(),
@@ -388,15 +353,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn combinacion_tomada_falla_y_al_soltarla_queda_libre() {
-        let rare = Shortcut {
-            modifiers: Modifiers {
-                ctrl: true,
-                alt: true,
-                shift: true,
-            },
-            key: Key::Char('Q'),
-            action: GlobalAction::Stop,
-        };
+        let rare = shortcut("Ctrl+Alt+Shift+Q", GlobalAction::Stop);
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let first = spawn(vec![rare], tx.clone()).unwrap();
         assert_eq!(first.active.len(), 1, "{:?}", first.failed);
@@ -410,5 +367,33 @@ mod tests {
         drop(first);
         let third = spawn(vec![rare], tx).unwrap();
         assert_eq!(third.active.len(), 1, "{:?}", third.failed);
+    }
+
+    /// Spec 007, AC-5: cambiar suelta la anterior; si la nueva está tomada,
+    /// vuelve a la anterior y avisa.
+    #[cfg(windows)]
+    #[test]
+    fn reemplazar_suelta_la_anterior_y_vuelve_si_la_nueva_esta_tomada() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let old = shortcut("Ctrl+Alt+Shift+F9", GlobalAction::Stop);
+        let new = shortcut("Ctrl+Alt+Shift+F10", GlobalAction::Stop);
+        let taken = shortcut("Ctrl+Alt+Shift+F11", GlobalAction::Stop);
+        let current = spawn(vec![old], tx.clone()).unwrap();
+
+        let (hotkeys, rejected) = replace(Some(current), &[new], &[old], &tx).unwrap();
+        assert!(rejected.is_empty());
+        assert_eq!(hotkeys.active, vec![new]);
+        // La anterior quedó libre.
+        let other = spawn(vec![old], tx.clone()).unwrap();
+        assert_eq!(other.active, vec![old], "{:?}", other.failed);
+        drop(other);
+
+        // Otra "app" tiene la que se pide: vuelve a la de antes.
+        let holder = spawn(vec![taken], tx.clone()).unwrap();
+        let (hotkeys, rejected) = replace(Some(hotkeys), &[taken], &[new], &tx).unwrap();
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].shortcut, taken);
+        assert_eq!(hotkeys.active, vec![new]);
+        drop(holder);
     }
 }

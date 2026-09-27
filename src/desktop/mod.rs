@@ -4,17 +4,16 @@
 //! 006) en el suyo, y el audio en los de `spotify::player`.
 
 mod app;
+pub(crate) mod combo;
 pub(crate) mod hotkeys;
+mod menu;
+pub(crate) mod settings;
 mod theme;
 mod window;
 
 use std::{fs::OpenOptions, io::Write};
 
-use crate::{
-    app::engine::{self, Input},
-    config,
-    error::AppError,
-};
+use crate::{app::engine, config, error::AppError};
 
 /// Abre la ventana y la atiende hasta que se cierra.
 ///
@@ -29,8 +28,15 @@ use crate::{
 ///   consola y la app sigue abierta.
 pub fn run() -> Result<(), AppError> {
     log_panics();
+    // Sin carpeta de datos, los ajustes son los de fábrica y no se guardan.
+    let data_dir = config::data_dir().ok();
+    let (settings, settings_warnings) = data_dir.as_deref().map(settings::load).unwrap_or_default();
     let ctx = egui::Context::default();
-    theme::install(&ctx);
+    let mut theme = theme::Theme::default();
+    let mut warnings: Vec<String> = theme
+        .apply(&ctx, &settings.appearance)
+        .into_iter()
+        .collect();
     let wake = ctx.clone();
     let engine::EngineHandle {
         inputs,
@@ -38,13 +44,9 @@ pub fn run() -> Result<(), AppError> {
         thread,
     } = engine::spawn(move || wake.request_repaint())?;
 
-    let mut warnings = Vec::new();
-    let hotkeys = match hotkeys::spawn(hotkeys::configured(), inputs.clone()) {
+    let hotkeys = match hotkeys::spawn(hotkeys::from_settings(&settings), inputs.clone()) {
         Ok(hotkeys) => {
             warnings.extend(hotkeys.failed.iter().map(hotkeys::Failed::warning));
-            let active = hotkeys.active.iter().map(hotkeys::Shortcut::describe);
-            // Si el motor ya no está, la consola lo avisa al primer comando.
-            let _ = inputs.send(Input::GlobalShortcuts(active.collect()));
             Some(hotkeys)
         }
         Err(e) => {
@@ -53,11 +55,30 @@ pub fn run() -> Result<(), AppError> {
         }
     };
 
-    let mut console = app::DesktopApp::new(inputs, outputs, warnings);
-    let result = window::run(ctx, &mut console);
-    // Primero se sueltan los atajos (su hilo también manda comandos) y
-    // después la consola: sin emisores, el motor corta el audio y termina.
-    drop(hotkeys);
+    let start = window::Start {
+        size: settings
+            .window
+            .geometry
+            .map_or(config::WINDOW_SIZE, |g| [g.width, g.height]),
+        position: settings.window.geometry.map(|g| [g.x, g.y]),
+    };
+    let mut console = app::DesktopApp::new(
+        inputs,
+        outputs,
+        app::Startup {
+            settings,
+            settings_warnings,
+            warnings,
+            data_dir,
+            hotkeys,
+            theme,
+        },
+    );
+    let result = window::run(ctx.clone(), start, &mut console);
+    console.finish(&ctx);
+    // Al soltar la consola se sueltan los atajos globales (su hilo también
+    // manda comandos) y el último emisor: el motor corta el audio y
+    // termina.
     drop(console);
     if thread.join().is_err() {
         return Err(AppError::Internal("el motor terminó con un panic".into()));

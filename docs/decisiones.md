@@ -210,7 +210,8 @@ entradas viejas — se marcan reemplazadas.
 - **Combinaciones:** `Ctrl+Alt+…`. `Ctrl+Shift` tapaba la selección de
   texto en las demás apps. `Ctrl+Alt+Espacio` ya la registraba otra app
   en la PC de desarrollo (error 1409), así que pausa va en `Ctrl+Alt+P`.
-  La lista está en `config::GLOBAL_SHORTCUTS`.
+  La lista está en `config::GLOBAL_SHORTCUTS` (desde spec 007, los
+  defaults: se cambian desde el menú Atajos).
 - **Estado:** Vigente (spec 006)
 
 ## 2026-09-27 — Volumen por software de librespot, no el de Windows por app
@@ -237,3 +238,64 @@ entradas viejas — se marcan reemplazadas.
   redistribuirla; viene con Windows desde Vista.
 - **Estado:** Vigente (spec 004; reemplaza la fuente de la entrada
   "Dependencias de la app de escritorio")
+
+## 2026-09-27 — Ajustes en JSON, solo lo que difiere de fábrica
+- **Decisión:** los ajustes de la app de escritorio (spec 007) se guardan
+  en `%APPDATA%\spotify-terminal\ajustes.json`, con claves en castellano
+  por sección (`tema`, `fuente`, `atajos_ventana`...), y solo las que
+  difieren del default. Cada clave se valida por separado: una inválida
+  vuelve a fábrica con un aviso y no arrastra a las demás.
+- **Alternativa descartada:** TOML (más cómodo a mano, pero una
+  dependencia nueva; `serde_json` ya estaba).
+- **Consecuencias:** un default nuevo le llega al usuario que no lo
+  cambió. Un archivo con avisos no se pisa hasta que el usuario cambie
+  algo, para no perder lo que escribió. Se acepta UTF-8 con BOM (lo
+  escriben el Bloc de notas y PowerShell 5.1).
+- **Estado:** Vigente (spec 007)
+
+## 2026-09-27 — Barra de menús en un renglón bajo la barra de título
+- **Decisión:** los menús de customización (Tema, Fuente, Atajos,
+  Reproducción, Consola, Ventana, Ajustes) van en un renglón propio
+  debajo de la barra de título; arriba sigue ♫ + "spotify-terminal" +
+  botones de ventana. Se abren con clic o `Alt`+letra subrayada;
+  `Alt`+esas letras no se aceptan como atajo de ventana. Usa los menús
+  que ya trae egui (sin dependencias).
+- **Alternativa descartada:** los menús dentro de la barra de título,
+  entre el ícono y el título (como VS Code). Fue la primera versión;
+  se cambió a pedido tuyo al verla.
+- **Consecuencias:** la consola tiene un renglón menos de alto.
+- **Estado:** Vigente (spec 007)
+
+## 2026-09-27 — El tamaño de letra es un zoom de toda la ventana
+- **Decisión:** el tamaño de letra de los ajustes se aplica como zoom de
+  egui (`set_zoom_factor`): texto, barras y márgenes crecen juntos, como
+  `Ctrl++` en VS Code. El zoom propio de egui con el teclado se apaga
+  para que `Ctrl++`/`Ctrl+-`/`Ctrl+0` sean atajos configurables.
+- **Alternativa descartada:** cambiar solo el tamaño del texto (las
+  barras de alto fijo lo cortaban con letra grande).
+- **Estado:** Vigente (spec 007)
+
+## 2026-09-27 — La calidad de audio cambia desde el próximo `play`
+- **Decisión:** librespot fija la calidad al crear el reproductor. Al
+  cambiarla, el motor sigue con el reproductor actual y abre uno nuevo en
+  el próximo `play` (lo que suena sigue hasta que el nuevo está listo).
+- **Alternativa descartada:** recrear el reproductor en el momento (corta
+  el tema que suena; la reproducción tiene prioridad).
+- **Estado:** Vigente (spec 007)
+
+## 2026-09-27 — Atajo fijo para restaurar todo
+- **Decisión:** `Ctrl+Shift+F12` vuelve todos los ajustes a fábrica y no
+  se puede reasignar ni quitar (`config::RESTORE_ALL_SHORTCUT`).
+- **Motivo:** un tema ilegible o atajos borrados podrían dejar el menú
+  inusable. Borrar `ajustes.json` a mano también vuelve a fábrica.
+- **Estado:** Vigente (spec 007)
+
+## 2026-09-27 — Solo fuentes monoespaciadas de un catálogo
+- **Decisión:** el menú Fuente ofrece las de `config::FONT_CATALOG`
+  (Consolas, Cascadia Mono, Courier New, Lucida Console) que estén
+  instaladas, más la de egui. Se mira solo si el archivo existe; se lee
+  entera solo la elegida.
+- **Alternativa descartada:** listar todas las fuentes del sistema (leer
+  cada archivo para saber su nombre cuesta RAM y arranque; las
+  proporcionales desarman las columnas de la consola).
+- **Estado:** Vigente (spec 007)

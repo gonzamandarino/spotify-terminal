@@ -113,7 +113,27 @@ enfocada:
 | Ctrl+Alt+↑ / Ctrl+Alt+↓ | sube / baja el volumen |
 
 Si otra app ya usa alguno, la consola lo avisa al abrir y ese atajo queda
-sin efecto. Se cambian en `config::GLOBAL_SHORTCUTS` (`src/config.rs`).
+sin efecto. Se cambian desde el menú Atajos.
+
+### Personalizar
+
+Arriba, debajo de la barra de título, están los menús (se abren con clic o con
+`Alt`+la letra subrayada):
+
+| Menú | Qué se cambia |
+|---|---|
+| Tema | temas predefinidos (Spotify oscuro, Claro, Alto contraste) y cada color |
+| Fuente | Consolas, Cascadia Mono, Courier New, Lucida Console (las instaladas) o la de la app; tamaño (también Ctrl++ / Ctrl+- / Ctrl+0 y Ctrl+rueda); negrita |
+| Atajos | los de la ventana y los globales: clic y apretá la combinación nueva |
+| Reproducción | paso de volumen, cuándo "anterior" reinicia el tema, calidad de audio (desde el próximo `play`) |
+| Consola | símbolo del prompt, líneas guardadas, historial, hora en cada línea |
+| Ventana | siempre visible, recordar tamaño y posición |
+| Ajustes | abrir / recargar `ajustes.json`, restaurar todo |
+
+Todo se aplica al instante y se guarda en
+`%APPDATA%\spotify-terminal\ajustes.json` (solo lo que difiere de
+fábrica; se puede editar a mano y recargar desde el menú). **Ctrl+Shift+F12**
+vuelve todo a fábrica y no se puede cambiar.
 
 La app busca el `.env` en la carpeta desde donde arranca (el acceso directo
 arranca en la del repo). Si algo falla al abrir la ventana, se muestra un

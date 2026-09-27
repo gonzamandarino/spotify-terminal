@@ -17,7 +17,10 @@ use std::{
 };
 
 use librespot_core::SpotifyUri;
-use librespot_playback::player::{PlayerEvent, PlayerEventChannel};
+use librespot_playback::{
+    config::Bitrate,
+    player::{PlayerEvent, PlayerEventChannel},
+};
 use rand::{SeedableRng, rngs::StdRng};
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -59,12 +62,19 @@ pub(crate) enum Input {
     /// escribe en la consola; sin nada sonando, los controles no hacen
     /// nada.
     Global(GlobalAction),
-    /// Atajos globales activos ("Ctrl+Alt+→  siguiente"), para `help`.
-    GlobalShortcuts(Vec<String>),
+    /// Atajos vigentes para `help` ("Ctrl+→  siguiente"): los de la
+    /// ventana y los globales activos (spec 007: configurables).
+    Shortcuts {
+        window: Vec<String>,
+        global: Vec<String>,
+    },
+    /// Ajustes de reproducción nuevos (spec 007). Rigen desde el próximo
+    /// uso; la calidad, desde el próximo `play`.
+    Playback(PlaybackSettings),
 }
 
 /// Lo que puede hacer un atajo global.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum GlobalAction {
     /// Como `pause`.
     TogglePause,
@@ -80,6 +90,15 @@ pub(crate) enum GlobalAction {
 }
 
 impl GlobalAction {
+    pub(crate) const ALL: [GlobalAction; 6] = [
+        GlobalAction::TogglePause,
+        GlobalAction::Next,
+        GlobalAction::Prev,
+        GlobalAction::Stop,
+        GlobalAction::VolumeUp,
+        GlobalAction::VolumeDown,
+    ];
+
     /// Para `help` y los avisos: "pausa / reanudar", "siguiente"...
     pub(crate) fn describe(self) -> &'static str {
         match self {
@@ -89,6 +108,30 @@ impl GlobalAction {
             GlobalAction::Stop => "stop",
             GlobalAction::VolumeUp => "subir volumen",
             GlobalAction::VolumeDown => "bajar volumen",
+        }
+    }
+}
+
+/// Ajustes de reproducción que el usuario cambia desde la app de
+/// escritorio (spec 007). La CLI usa siempre `default()`.
+///
+/// Invariante: cada valor está dentro de su rango de `config`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlaybackSettings {
+    /// Cuánto suben / bajan `vol +` / `vol -` y sus atajos, en %.
+    pub(crate) volume_step: u8,
+    /// Con más que esto sonando, "anterior" reinicia el tema.
+    pub(crate) previous_threshold: Duration,
+    /// Calidad del audio desde el próximo `play`.
+    pub(crate) bitrate: Bitrate,
+}
+
+impl Default for PlaybackSettings {
+    fn default() -> PlaybackSettings {
+        PlaybackSettings {
+            volume_step: config::VOLUME_STEP,
+            previous_threshold: config::PREVIOUS_RESTART_THRESHOLD,
+            bitrate: config::AUDIO_BITRATE,
         }
     }
 }
@@ -245,12 +288,13 @@ enum Done<P> {
         result: Result<Vec<Hit>, AppError>,
     },
     /// Lista de temas lista para sonar. `new_player` viene si hubo que
-    /// conectar (no había reproductor o se había caído la sesión), abierto
-    /// con `volume`.
+    /// conectar (no había reproductor, se había caído la sesión o cambió
+    /// la calidad), abierto con `volume` y `bitrate`.
     Prepared {
         shuffle: bool,
         new_player: Option<P>,
         volume: Volume,
+        bitrate: Bitrate,
         result: Result<Resolved, AppError>,
     },
 }
@@ -295,8 +339,13 @@ pub(crate) struct Engine<B: Backend> {
     volume_dir: Option<PathBuf>,
     save_at: Option<Instant>,
     shown_volume: Option<Volume>,
+    /// Atajos de la ventana, para `help`. Vacío = sin sección.
+    window_shortcuts: Vec<String>,
     /// Atajos globales activos, para `help`. Vacío = sin sección.
     global_shortcuts: Vec<String>,
+    playback: PlaybackSettings,
+    /// Calidad con la que se abrió `player`.
+    player_bitrate: Bitrate,
 }
 
 impl<B: Backend + 'static> Engine<B> {
@@ -317,7 +366,10 @@ impl<B: Backend + 'static> Engine<B> {
             volume_dir,
             save_at: None,
             shown_volume: None,
+            window_shortcuts: Vec::new(),
             global_shortcuts: Vec::new(),
+            playback: PlaybackSettings::default(),
+            player_bitrate: config::AUDIO_BITRATE,
         }
     }
 
@@ -353,8 +405,8 @@ impl<B: Backend + 'static> Engine<B> {
             Input::TogglePause => self.control(Control::Pause),
             Input::Next => self.control(Control::Next),
             Input::Prev => self.control(Control::Prev),
-            Input::VolumeUp => self.change_volume(Volume::up, false),
-            Input::VolumeDown => self.change_volume(Volume::down, false),
+            Input::VolumeUp => self.volume_step(true, false),
+            Input::VolumeDown => self.volume_step(false, false),
             Input::Cancel => {
                 if self.choosing.take().is_some() {
                     self.out.line(LineKind::Dim, "Elección cancelada.");
@@ -363,7 +415,11 @@ impl<B: Backend + 'static> Engine<B> {
                 }
             }
             Input::Global(action) => self.global(action),
-            Input::GlobalShortcuts(list) => self.global_shortcuts = list,
+            Input::Shortcuts { window, global } => {
+                self.window_shortcuts = window;
+                self.global_shortcuts = global;
+            }
+            Input::Playback(playback) => self.playback = playback,
         }
         Flow::Continue
     }
@@ -371,8 +427,8 @@ impl<B: Backend + 'static> Engine<B> {
     /// Atajo global: lo mismo que el comando, sin escribir en la consola.
     fn global(&mut self, action: GlobalAction) {
         match action {
-            GlobalAction::VolumeUp => self.change_volume(Volume::up, false),
-            GlobalAction::VolumeDown => self.change_volume(Volume::down, false),
+            GlobalAction::VolumeUp => self.volume_step(true, false),
+            GlobalAction::VolumeDown => self.volume_step(false, false),
             // Sin nada sonando no hay nada que hacer, y tampoco que avisar:
             // la consola puede estar minimizada.
             _ if self.playing.is_none() => {}
@@ -383,18 +439,25 @@ impl<B: Backend + 'static> Engine<B> {
         }
     }
 
-    /// Ayuda de `help`, con los atajos globales activos si hay.
+    /// Ayuda de `help`, con los atajos vigentes si hay.
     fn help(&self) -> String {
-        if self.global_shortcuts.is_empty() {
-            return shell::HELP.to_string();
-        }
-        let mut text = format!(
-            "{}\n\nAtajos globales (andan con la app minimizada):",
-            shell::HELP
-        );
-        for line in &self.global_shortcuts {
-            text.push_str("\n  ");
-            text.push_str(line);
+        let mut text = shell::HELP.to_string();
+        for (title, list) in [
+            ("Atajos de la ventana:", &self.window_shortcuts),
+            (
+                "Atajos globales (andan con la app minimizada):",
+                &self.global_shortcuts,
+            ),
+        ] {
+            if list.is_empty() {
+                continue;
+            }
+            text.push_str("\n\n");
+            text.push_str(title);
+            for line in list {
+                text.push_str("\n  ");
+                text.push_str(line);
+            }
         }
         text
     }
@@ -469,8 +532,8 @@ impl<B: Backend + 'static> Engine<B> {
             ShellCommand::Volume(VolumeCommand::Set(level)) => {
                 self.change_volume(|v| v.set(level), true);
             }
-            ShellCommand::Volume(VolumeCommand::Up) => self.change_volume(Volume::up, true),
-            ShellCommand::Volume(VolumeCommand::Down) => self.change_volume(Volume::down, true),
+            ShellCommand::Volume(VolumeCommand::Up) => self.volume_step(true, true),
+            ShellCommand::Volume(VolumeCommand::Down) => self.volume_step(false, true),
             ShellCommand::Mute => self.change_volume(Volume::toggle_mute, true),
             ShellCommand::Clear => self.out.send(Output::Clear),
             ShellCommand::Exit => {
@@ -556,20 +619,27 @@ impl<B: Backend + 'static> Engine<B> {
     /// Resuelve qué temas suenan para `target` (conectando si hace falta).
     fn prepare(&mut self, target: SpotifyUri, shuffle: bool) {
         let backend = self.backend.clone();
-        let existing = self.player.clone().filter(|p| !p.session_lost());
+        // Con otra calidad pedida se abre un reproductor nuevo: lo que
+        // suena sigue hasta que el nuevo esté listo (spec 007).
+        let bitrate = self.playback.bitrate;
+        let existing = self
+            .player
+            .clone()
+            .filter(|p| !p.session_lost() && self.player_bitrate == bitrate);
         let volume = self.volume;
         self.start_task(
             "preparando la reproducción",
             Box::pin(async move {
                 let (player, connected) = match existing {
                     Some(player) => (player, false),
-                    None => match backend.connect(volume).await {
+                    None => match backend.connect(volume, bitrate).await {
                         Ok(player) => (Rc::new(player), true),
                         Err(e) => {
                             return Done::Prepared {
                                 shuffle,
                                 new_player: None,
                                 volume,
+                                bitrate,
                                 result: Err(e),
                             };
                         }
@@ -586,6 +656,7 @@ impl<B: Backend + 'static> Engine<B> {
                     shuffle,
                     new_player,
                     volume,
+                    bitrate,
                     result,
                 }
             }),
@@ -631,10 +702,12 @@ impl<B: Backend + 'static> Engine<B> {
                 shuffle,
                 new_player,
                 volume,
+                bitrate,
                 result,
             } => {
                 if let Some(player) = new_player {
                     self.stop_playing();
+                    self.player_bitrate = bitrate;
                     if volume != self.volume {
                         // Cambió mientras conectaba.
                         player.set_volume(self.volume);
@@ -726,7 +799,9 @@ impl<B: Backend + 'static> Engine<B> {
                 Step::Nothing
             }
             Control::Next => playing.queue.next(),
-            Control::Prev => playing.queue.previous(playing.clock.elapsed()),
+            Control::Prev => playing
+                .queue
+                .previous(playing.clock.elapsed(), self.playback.previous_threshold),
             Control::Shuffle => match playing.queue.toggle_shuffle(&mut self.rng) {
                 Some(on) => {
                     let step = playing.queue.repreload();
@@ -825,6 +900,16 @@ impl<B: Backend + 'static> Engine<B> {
     /// Aplica `change` al volumen y al reproductor (si hay), y programa el
     /// guardado. `announce`: escribirlo en la consola (comandos sí, atajos
     /// no).
+    /// Sube o baja un paso de volumen (el de los ajustes).
+    fn volume_step(&mut self, up: bool, announce: bool) {
+        let step = self.playback.volume_step;
+        if up {
+            self.change_volume(|v| v.up(step), announce);
+        } else {
+            self.change_volume(|v| v.down(step), announce);
+        }
+    }
+
     fn change_volume(&mut self, change: impl FnOnce(&mut Volume), announce: bool) {
         change(&mut self.volume);
         if let Some(player) = &self.player {
@@ -1008,8 +1093,13 @@ mod tests {
                 })
                 .collect())
         }
-        async fn connect(&self, volume: Volume) -> Result<FakePlayer, AppError> {
-            self.log.borrow_mut().push(format!("connect {volume}"));
+        async fn connect(&self, volume: Volume, bitrate: Bitrate) -> Result<FakePlayer, AppError> {
+            let line = if bitrate == config::AUDIO_BITRATE {
+                format!("connect {volume}")
+            } else {
+                format!("connect {volume} {bitrate:?}")
+            };
+            self.log.borrow_mut().push(line);
             if !self.premium {
                 return Err(AppError::NotPremium("free".into()));
             }
@@ -1378,6 +1468,52 @@ mod tests {
         assert_eq!(h.engine.volume, volume_at(50));
     }
 
+    /// Spec 007, AC-6: paso de volumen y umbral de "anterior" desde los
+    /// ajustes, al instante.
+    #[tokio::test(flavor = "current_thread")]
+    async fn ajustes_de_reproduccion_cambian_paso_y_umbral() {
+        let mut h = harness(true);
+        h.type_line(&format!("play {}", album("a"))).await;
+        h.confirm(1);
+        h.type_line("n").await;
+        h.confirm(2);
+        h.type_line("vol 50").await;
+        h.take_log();
+        h.engine.on_input(Input::Playback(PlaybackSettings {
+            volume_step: 20,
+            previous_threshold: Duration::ZERO,
+            ..PlaybackSettings::default()
+        }));
+        h.engine.on_input(Input::VolumeUp);
+        h.type_line("v -").await;
+        // Con umbral 0, "anterior" reinicia en vez de volver.
+        std::thread::sleep(Duration::from_millis(5));
+        h.type_line("prev").await;
+        assert_eq!(h.take_log(), ["volume 70 %", "volume 50 %", "restart"]);
+    }
+
+    /// Spec 007, AC-6: otra calidad no toca lo que suena; el próximo `play`
+    /// abre un reproductor nuevo con ella, y el siguiente lo reusa.
+    #[tokio::test(flavor = "current_thread")]
+    async fn calidad_nueva_desde_el_proximo_play() {
+        let mut h = harness(true);
+        h.type_line(&format!("play {}", album("a"))).await;
+        h.confirm(1);
+        h.take_log();
+        h.engine.on_input(Input::Playback(PlaybackSettings {
+            bitrate: Bitrate::Bitrate320,
+            ..PlaybackSettings::default()
+        }));
+        assert!(h.take_log().is_empty(), "lo que suena sigue");
+        h.type_line(&format!("play {}", album("b"))).await;
+        assert_eq!(
+            h.take_log(),
+            ["connect 100 % Bitrate320", "stop", "play bx0"]
+        );
+        h.type_line(&format!("play {}", album("c"))).await;
+        assert_eq!(h.take_log(), ["stop", "play cx0"]);
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn volumen_cambiado_mientras_conecta() {
         let mut h = harness(true);
@@ -1490,10 +1626,13 @@ mod tests {
         let mut h = harness(true);
         h.type_line("help").await;
         assert!(!has_line(&h.outputs(), LineKind::Normal, "Atajos globales"));
-        h.engine.on_input(Input::GlobalShortcuts(vec![
-            "Ctrl+Alt+P  pausa / reanudar".into(),
-            "Ctrl+Alt+→  siguiente".into(),
-        ]));
+        h.engine.on_input(Input::Shortcuts {
+            window: vec!["Ctrl+F5          stop".into()],
+            global: vec![
+                "Ctrl+Alt+P  pausa / reanudar".into(),
+                "Ctrl+Alt+→  siguiente".into(),
+            ],
+        });
         h.type_line("help").await;
         let outputs = h.outputs();
         assert!(has_line(&outputs, LineKind::Normal, "Atajos globales"));
@@ -1501,6 +1640,12 @@ mod tests {
             &outputs,
             LineKind::Normal,
             "Ctrl+Alt+→  siguiente"
+        ));
+        assert!(has_line(&outputs, LineKind::Normal, "Atajos de la ventana"));
+        assert!(has_line(
+            &outputs,
+            LineKind::Normal,
+            "Ctrl+F5          stop"
         ));
     }
 }

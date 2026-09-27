@@ -24,6 +24,7 @@ use crate::{
         queue::{Clock, PlayState, Queue, Step, on_player_event, uri_text},
         volume::Volume,
     },
+    config,
     error::AppError,
     spotify::{
         player::Player,
@@ -126,7 +127,9 @@ pub async fn play_queue(
                             Step::Nothing
                         }
                         Action::Next => queue.next(),
-                        Action::Previous => queue.previous(clock.elapsed()),
+                        Action::Previous => {
+                            queue.previous(clock.elapsed(), config::PREVIOUS_RESTART_THRESHOLD)
+                        }
                         Action::ToggleShuffle => match queue.toggle_shuffle(&mut rng) {
                             Some(on) => {
                                 line(if on { "🔀 Shuffle: sí" } else { "➡ Shuffle: no" });
@@ -138,12 +141,12 @@ pub async fn play_queue(
                             }
                         },
                         Action::VolumeUp => {
-                            volume.up();
+                            volume.up(config::VOLUME_STEP);
                             player.set_volume(*volume);
                             Step::Nothing
                         }
                         Action::VolumeDown => {
-                            volume.down();
+                            volume.down(config::VOLUME_STEP);
                             player.set_volume(*volume);
                             Step::Nothing
                         }

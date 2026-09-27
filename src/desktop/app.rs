@@ -1,38 +1,52 @@
-//! Consola de la app de escritorio: barra de título propia, historial de
-//! salida, línea de entrada y barra de "sonando ahora". No sabe nada de
-//! Spotify: manda lo escrito al motor (`app::engine`) y muestra lo que
-//! vuelve.
+//! Consola de la app de escritorio: barra de título propia, renglón de
+//! menús (spec 007), historial de salida, línea de entrada y barra de
+//! "sonando ahora". No sabe nada de Spotify: manda lo escrito al motor
+//! (`app::engine`) y muestra lo que vuelve.
+//!
+//! Es la dueña de los ajustes vivos (`settings::Settings`): los menús y los
+//! atajos los cambian, y al final de cada frame se aplica lo que cambió
+//! (tema, atajos globales, reproducción...) y se agenda el guardado.
 
-use std::{collections::VecDeque, sync::Arc, sync::mpsc, time::Duration};
+use std::{
+    collections::VecDeque,
+    path::PathBuf,
+    sync::Arc,
+    sync::mpsc,
+    time::{Duration, Instant},
+};
 
 use egui::{
-    Align2, CentralPanel, Color32, CursorIcon, FontId, Frame, Galley, Id, Key, Margin, Modifiers,
-    Panel, Pos2, Rect, ResizeDirection, RichText, ScrollArea, Sense, Stroke, StrokeKind, TextEdit,
-    Ui, Vec2, ViewportCommand,
+    Align, Align2, CentralPanel, Color32, CursorIcon, FontId, Frame, Galley, Id, Key, Layout,
+    Margin, Modifiers, Panel, Pos2, Rect, ResizeDirection, RichText, ScrollArea, Sense, Stroke,
+    StrokeKind, TextEdit, Ui, UiBuilder, Vec2, ViewportCommand, WindowLevel,
     text::{CCursor, CCursorRange, LayoutJob, TextWrapping},
 };
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{
-    theme::{bold, color, mono},
+    combo,
+    hotkeys::{self, Hotkeys},
+    menu::{self, Command, Menus},
+    settings::{self, Geometry, Palette, Settings, Target, WindowAction},
+    theme::{Theme, bold, color, installed_fonts, mono},
     window::Content,
 };
 use crate::{
     app::{
-        engine::{Input, LineKind, NowPlaying, Output, Prompt},
+        engine::{GlobalAction, Input, LineKind, NowPlaying, Output, Prompt},
         queue::PlayState,
         shell,
         volume::Volume,
     },
-    config::{self, theme as colors},
+    config::{self, theme::FONT_SIZE},
 };
 
 const TITLE_HEIGHT: f32 = 36.0;
+const MENU_HEIGHT: f32 = 26.0;
 const INPUT_HEIGHT: f32 = 34.0;
 const NOW_HEIGHT: f32 = 64.0;
 /// Ancho del borde de la ventana que sirve para cambiarle el tamaño.
 const GRIP: f32 = 5.0;
-const PROMPT: &str = "♫ ›";
 
 /// Una línea de la consola.
 enum ConsoleLine {
@@ -44,10 +58,26 @@ enum ConsoleLine {
     Out(LineKind, String),
 }
 
+/// Lo que la app necesita al abrir, además de los canales del motor.
+pub(super) struct Startup {
+    pub(super) settings: Settings,
+    /// Avisos de `settings::load`. Si hay, el archivo no se toca hasta que
+    /// el usuario cambie algo (para no perder lo que escribió a mano).
+    pub(super) settings_warnings: Vec<String>,
+    /// Otros avisos del arranque (atajos globales que no se registraron).
+    pub(super) warnings: Vec<String>,
+    /// Dónde se guardan los ajustes; `None` = no se guardan.
+    pub(super) data_dir: Option<PathBuf>,
+    pub(super) hotkeys: Option<Hotkeys>,
+    /// Con los ajustes ya aplicados.
+    pub(super) theme: Theme,
+}
+
 pub(super) struct DesktopApp {
     inputs: UnboundedSender<Input>,
     outputs: mpsc::Receiver<Output>,
-    lines: VecDeque<ConsoleLine>,
+    /// Cada línea con la hora en que llegó ("14:05:09").
+    lines: VecDeque<(String, ConsoleLine)>,
     input: String,
     input_id: Id,
     history: VecDeque<String>,
@@ -60,16 +90,37 @@ pub(super) struct DesktopApp {
     volume: Option<Volume>,
     prompt: Prompt,
     engine_gone: bool,
+
+    settings: Settings,
+    data_dir: Option<PathBuf>,
+    menus: Menus,
+    commands: Vec<Command>,
+    theme: Theme,
+    fonts: Vec<&'static str>,
+    hotkeys: Option<Hotkeys>,
+    /// Cuándo guardar los ajustes (cambio pendiente).
+    save_at: Option<Instant>,
+    /// El archivo tuvo avisos al cargarse y el usuario todavía no cambió
+    /// nada: no se pisa.
+    keep_file: bool,
+    started: bool,
 }
 
 impl DesktopApp {
-    /// `warnings`: avisos del arranque (atajos globales que no se pudieron
-    /// registrar), en amarillo después de la bienvenida.
     pub(super) fn new(
         inputs: UnboundedSender<Input>,
         outputs: mpsc::Receiver<Output>,
-        warnings: Vec<String>,
+        startup: Startup,
     ) -> Self {
+        let Startup {
+            settings,
+            settings_warnings,
+            warnings,
+            data_dir,
+            hotkeys,
+            theme,
+        } = startup;
+        let keep_file = !settings_warnings.is_empty();
         let mut app = DesktopApp {
             inputs,
             outputs,
@@ -83,26 +134,44 @@ impl DesktopApp {
             volume: None,
             prompt: Prompt::Ready,
             engine_gone: false,
+            settings,
+            data_dir,
+            menus: Menus::default(),
+            commands: Vec::new(),
+            theme,
+            fonts: installed_fonts(),
+            hotkeys,
+            save_at: None,
+            keep_file,
+            started: false,
         };
         app.push(ConsoleLine::Out(
             LineKind::Track,
-            format!("{PROMPT} {}", config::WINDOW_TITLE),
+            format!("{} {}", app.settings.console.prompt, config::WINDOW_TITLE),
         ));
         app.push(ConsoleLine::Out(
             LineKind::Dim,
-            "Escribí `play <nombre>` para arrancar, o `help` para ver los comandos.".into(),
+            "Escribí `play <nombre>` para arrancar, o `help` para ver los comandos. \
+             Arriba, los menús para personalizar la app."
+                .into(),
         ));
-        for warning in warnings {
+        for warning in settings_warnings.into_iter().chain(warnings) {
             app.push(ConsoleLine::Out(LineKind::Warn, warning));
         }
+        app.send(Input::Playback(app.settings.playback));
+        app.send_shortcuts();
         app
     }
 
     fn push(&mut self, line: ConsoleLine) {
-        if self.lines.len() >= config::SCROLLBACK_LINES {
+        while self.lines.len() >= self.settings.console.scrollback {
             self.lines.pop_front();
         }
-        self.lines.push_back(line);
+        self.lines.push_back((local_clock(), line));
+    }
+
+    fn warn(&mut self, text: String) {
+        self.push(ConsoleLine::Out(LineKind::Warn, text));
     }
 
     fn send(&mut self, input: Input) {
@@ -113,6 +182,28 @@ impl DesktopApp {
                 "Error interno: el motor se detuvo. Cerrá y abrí la app de nuevo.".into(),
             ));
         }
+    }
+
+    /// Los atajos vigentes, para `help`.
+    fn send_shortcuts(&mut self) {
+        let window = self
+            .settings
+            .window_keys
+            .iter()
+            .filter_map(|(action, combo)| {
+                combo.map(|combo| format!("{:<16} {}", combo.to_string(), action.label()))
+            })
+            .chain([format!(
+                "{:<16} restaurar todos los ajustes",
+                config::RESTORE_ALL_SHORTCUT.to_string()
+            )])
+            .collect();
+        let global = self
+            .hotkeys
+            .iter()
+            .flat_map(|h| h.active.iter().map(hotkeys::Shortcut::describe))
+            .collect();
+        self.send(Input::Shortcuts { window, global });
     }
 
     /// Todo lo que mandó el motor desde el último frame.
@@ -129,11 +220,26 @@ impl DesktopApp {
         }
     }
 
+    fn palette(&self) -> Palette {
+        self.settings.appearance.palette
+    }
+
+    /// Fuente del título y del tema que suena: negrita si así está en los
+    /// ajustes.
+    fn strong(&self, size: f32) -> FontId {
+        if self.settings.appearance.bold_titles {
+            bold(size)
+        } else {
+            mono(size)
+        }
+    }
+
     fn prompt_text(&self) -> (String, Color32) {
+        let p = self.palette();
         match self.prompt {
-            Prompt::Ready => (PROMPT.into(), color(colors::ACCENT)),
-            Prompt::Choose(n) => (format!("1-{n} ›"), color(colors::WARNING)),
-            Prompt::Busy(_) => ("… ›".into(), color(colors::SECONDARY)),
+            Prompt::Ready => (self.settings.console.prompt.clone(), color(p.accent)),
+            Prompt::Choose(n) => (format!("1-{n} ›"), color(p.warning)),
+            Prompt::Busy(_) => ("… ›".into(), color(p.secondary)),
         }
     }
 
@@ -146,7 +252,7 @@ impl DesktopApp {
         });
         let trimmed = text.trim();
         if !trimmed.is_empty() && self.history.back().map(String::as_str) != Some(trimmed) {
-            if self.history.len() >= config::HISTORY_LEN {
+            while self.history.len() >= self.settings.console.history {
                 self.history.pop_front();
             }
             self.history.push_back(trimmed.to_string());
@@ -156,46 +262,91 @@ impl DesktopApp {
     }
 
     /// Atajos que se atienden antes que la línea de entrada (así Ctrl+→
-    /// no mueve el cursor por palabras y Tab no saca el foco).
+    /// no mueve el cursor por palabras y Tab no saca el foco). Con un menú
+    /// abierto o una combinación grabándose, el teclado es de los menús.
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        let mut pressed = Vec::new();
+        self.menus.keyboard(ctx, &mut self.settings);
+        if self.menus.wants_keyboard(ctx) {
+            return;
+        }
+        let restore = config::RESTORE_ALL_SHORTCUT;
+        if let Some(key) = restore.key.to_egui() {
+            if ctx.input_mut(|i| i.consume_key(restore.egui_modifiers(), key)) {
+                self.commands.push(Command::RestoreAll);
+            }
+        }
+
+        // Los configurados antes que ↑/↓ solos, para que Ctrl+↑/↓ no los
+        // tome el historial.
+        let mut actions = Vec::new();
         ctx.input_mut(|i| {
-            // Ctrl+↑/↓ antes que ↑/↓ solos, para que no los tome el historial.
-            for (modifiers, key) in [
-                (Modifiers::CTRL, Key::Space),
-                (Modifiers::CTRL, Key::ArrowRight),
-                (Modifiers::CTRL, Key::ArrowLeft),
-                (Modifiers::CTRL, Key::ArrowUp),
-                (Modifiers::CTRL, Key::ArrowDown),
-                (Modifiers::NONE, Key::Escape),
-                (Modifiers::NONE, Key::ArrowUp),
-                (Modifiers::NONE, Key::ArrowDown),
-                (Modifiers::NONE, Key::Tab),
-            ] {
-                // Varias pulsaciones pueden llegar en el mismo frame.
-                for _ in 0..i.count_and_consume_key(modifiers, key) {
-                    pressed.push((modifiers, key));
+            for (&action, combo) in &self.settings.window_keys {
+                let Some(combo) = combo else {
+                    continue;
+                };
+                let mut keys: Vec<Key> = combo.key.to_egui().into_iter().collect();
+                if combo.key == combo::Key::Plus {
+                    // Misma tecla física en teclados en inglés.
+                    keys.push(Key::Equals);
+                }
+                for key in keys {
+                    // Varias pulsaciones pueden llegar en el mismo frame.
+                    for _ in 0..i.count_and_consume_key(combo.egui_modifiers(), key) {
+                        actions.push(action);
+                    }
                 }
             }
         });
-        for (modifiers, key) in pressed {
-            match (modifiers, key) {
-                (Modifiers::CTRL, Key::Space) => self.send(Input::TogglePause),
-                (Modifiers::CTRL, Key::ArrowRight) => self.send(Input::Next),
-                (Modifiers::CTRL, Key::ArrowLeft) => self.send(Input::Prev),
-                (Modifiers::CTRL, Key::ArrowUp) => self.send(Input::VolumeUp),
-                (Modifiers::CTRL, Key::ArrowDown) => self.send(Input::VolumeDown),
-                (_, Key::Escape) => {
+        // Ctrl+rueda: tamaño de letra.
+        let zoom = ctx.input(|i| i.zoom_delta());
+        if zoom > 1.0 {
+            actions.push(WindowAction::FontBigger);
+        } else if zoom < 1.0 {
+            actions.push(WindowAction::FontSmaller);
+        }
+        for action in actions {
+            self.window_action(action);
+        }
+
+        let mut pressed = Vec::new();
+        ctx.input_mut(|i| {
+            for key in [Key::Escape, Key::ArrowUp, Key::ArrowDown, Key::Tab] {
+                for _ in 0..i.count_and_consume_key(Modifiers::NONE, key) {
+                    pressed.push(key);
+                }
+            }
+        });
+        for key in pressed {
+            match key {
+                Key::Escape if self.menus.has_dialog() => self.menus.close_dialogs(),
+                Key::Escape => {
                     if self.input.is_empty() {
                         self.send(Input::Cancel);
                     } else {
                         self.input.clear();
                     }
                 }
-                (_, Key::ArrowUp) => self.browse_history(ctx, true),
-                (_, Key::ArrowDown) => self.browse_history(ctx, false),
-                (_, Key::Tab) => self.complete(ctx),
+                Key::ArrowUp => self.browse_history(ctx, true),
+                Key::ArrowDown => self.browse_history(ctx, false),
+                Key::Tab => self.complete(ctx),
                 _ => {}
+            }
+        }
+    }
+
+    fn window_action(&mut self, action: WindowAction) {
+        match action {
+            WindowAction::TogglePause => self.send(Input::TogglePause),
+            WindowAction::Next => self.send(Input::Next),
+            WindowAction::Prev => self.send(Input::Prev),
+            WindowAction::VolumeUp => self.send(Input::VolumeUp),
+            WindowAction::VolumeDown => self.send(Input::VolumeDown),
+            // Como el atajo global: sin nada sonando no hace nada.
+            WindowAction::Stop => self.send(Input::Global(GlobalAction::Stop)),
+            WindowAction::Shuffle => self.send(Input::Line("shuffle".into())),
+            WindowAction::ClearConsole => self.lines.clear(),
+            WindowAction::FontBigger | WindowAction::FontSmaller | WindowAction::FontReset => {
+                menu::apply_font_action(&mut self.settings, action);
             }
         }
     }
@@ -245,9 +396,187 @@ impl DesktopApp {
         }
     }
 
+    /// Lo que pidió el menú que no es cambiar un ajuste.
+    fn run_command(&mut self, ctx: &egui::Context, command: Command) -> bool {
+        let mut save = true;
+        match command {
+            Command::OpenFile => self.open_settings_file(),
+            Command::Reload => {
+                if let Some(dir) = &self.data_dir {
+                    let (loaded, warnings) = settings::load(dir);
+                    self.keep_file = !warnings.is_empty();
+                    for warning in warnings {
+                        self.warn(warning);
+                    }
+                    self.settings = loaded;
+                    self.push(ConsoleLine::Out(
+                        LineKind::Ok,
+                        format!("Ajustes recargados de {}.", config::SETTINGS_FILE),
+                    ));
+                    // Lo que se leyó no se reescribe.
+                    save = false;
+                }
+            }
+            Command::RestoreAll => {
+                self.settings = Settings::default();
+                self.menus.close_dialogs();
+                self.push(ConsoleLine::Out(
+                    LineKind::Ok,
+                    "Ajustes de fábrica restaurados.".into(),
+                ));
+            }
+            Command::ClearConsole => self.lines.clear(),
+            Command::ResetGeometry => {
+                self.settings.window.geometry = None;
+                let [width, height] = config::WINDOW_SIZE;
+                ctx.send_viewport_cmd(ViewportCommand::Maximized(false));
+                // `window::apply` lo toma en puntos lógicos de Windows.
+                ctx.send_viewport_cmd(ViewportCommand::InnerSize(Vec2::new(width, height)));
+            }
+        }
+        save
+    }
+
+    fn open_settings_file(&mut self) {
+        let Some(dir) = self.data_dir.clone() else {
+            self.warn("⚠ No hay carpeta de datos: los ajustes no se guardan.".into());
+            return;
+        };
+        let path = dir.join(config::SETTINGS_FILE);
+        if !path.exists() {
+            if let Err(e) = settings::save(&dir, &self.settings) {
+                self.warn(format!("⚠ No se pudo crear {}: {e}", path.display()));
+                return;
+            }
+        }
+        #[cfg(windows)]
+        let opener = "explorer";
+        #[cfg(not(windows))]
+        let opener = "xdg-open";
+        match std::process::Command::new(opener).arg(&path).spawn() {
+            Ok(_) => self.push(ConsoleLine::Out(
+                LineKind::Dim,
+                format!(
+                    "Abierto {}. Después de guardarlo: Ajustes → Recargar desde el archivo.",
+                    path.display()
+                ),
+            )),
+            Err(e) => self.warn(format!("⚠ No se pudo abrir {}: {e}", path.display())),
+        }
+    }
+
+    /// Aplica lo que cambió de los ajustes en este frame y, si `save`,
+    /// agenda el guardado.
+    fn settings_changed(&mut self, ctx: &egui::Context, before: &Settings, save: bool) {
+        let keys_changed = self.settings.window_keys != before.window_keys
+            || self.settings.global_keys != before.global_keys;
+        if self.settings.appearance != before.appearance {
+            if let Some(warning) = self.theme.apply(ctx, &self.settings.appearance) {
+                self.warn(warning);
+            }
+        }
+        if self.settings.global_keys != before.global_keys {
+            self.reload_hotkeys(before);
+        }
+        if keys_changed {
+            self.send_shortcuts();
+        }
+        if self.settings.playback != before.playback {
+            self.send(Input::Playback(self.settings.playback));
+        }
+        while self.lines.len() > self.settings.console.scrollback {
+            self.lines.pop_front();
+        }
+        while self.history.len() > self.settings.console.history {
+            self.history.pop_front();
+            self.history_pos = None;
+        }
+        if self.settings.window.always_on_top != before.window.always_on_top {
+            ctx.send_viewport_cmd(ViewportCommand::WindowLevel(window_level(
+                self.settings.window.always_on_top,
+            )));
+        }
+        if save {
+            self.keep_file = false;
+            let at = Instant::now() + config::SETTINGS_SAVE_DELAY;
+            self.save_at = Some(at);
+            ctx.request_repaint_after(config::SETTINGS_SAVE_DELAY);
+        }
+    }
+
+    /// Registra los atajos globales nuevos. Uno que Windows rechaza vuelve
+    /// al de antes, con aviso.
+    fn reload_hotkeys(&mut self, before: &Settings) {
+        let wanted = hotkeys::from_settings(&self.settings);
+        let previous = hotkeys::from_settings(before);
+        match hotkeys::replace(self.hotkeys.take(), &wanted, &previous, &self.inputs) {
+            Ok((hotkeys, rejected)) => {
+                self.hotkeys = Some(hotkeys);
+                for failed in rejected {
+                    let action = failed.shortcut.action;
+                    let old = before.combo(Target::Global(action));
+                    self.settings.global_keys.insert(action, old);
+                    self.warn(format!(
+                        "⚠ {} {}: el atajo global para {} queda {}.",
+                        failed.shortcut.combo,
+                        failed.reason,
+                        action.describe(),
+                        old.map_or_else(|| "sin combinación".into(), |c| format!("en {c}"))
+                    ));
+                }
+            }
+            Err(e) => self.warn(format!("⚠ Sin atajos globales: {e}")),
+        }
+    }
+
+    fn save_if_due(&mut self, ctx: &egui::Context) {
+        let Some(at) = self.save_at else {
+            return;
+        };
+        let now = Instant::now();
+        if now < at {
+            // Despertó antes (otro evento): una sola espera más.
+            ctx.request_repaint_after(at - now);
+            return;
+        }
+        self.save_now();
+    }
+
+    fn save_now(&mut self) {
+        self.save_at = None;
+        let Some(dir) = &self.data_dir else {
+            return;
+        };
+        if let Err(e) = settings::save(dir, &self.settings) {
+            self.warn(format!("⚠ No se pudieron guardar los ajustes: {e}"));
+        }
+    }
+
+    /// Al cerrar: anota tamaño y posición (si así está en los ajustes) y
+    /// guarda lo pendiente.
+    ///
+    /// - No debe: pisar un `ajustes.json` con avisos que el usuario no
+    ///   tocó (solo por la geometría).
+    pub(super) fn finish(&mut self, ctx: &egui::Context) {
+        let geometry = self
+            .settings
+            .window
+            .remember_geometry
+            .then(|| window_geometry(ctx))
+            .flatten();
+        let moved = geometry.is_some() && geometry != self.settings.window.geometry;
+        if let Some(geometry) = geometry {
+            self.settings.window.geometry = Some(geometry);
+        }
+        if self.save_at.is_some() || (moved && !self.keep_file) {
+            self.save_now();
+        }
+    }
+
     fn title_bar(&mut self, ui: &mut Ui) {
         let rect = ui.max_rect();
         let ctx = ui.ctx().clone();
+        let p = self.palette();
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         let drag = ui.interact(rect, Id::new("barra-titulo"), Sense::click_and_drag());
         if drag.double_clicked() {
@@ -256,28 +585,36 @@ impl DesktopApp {
             ctx.send_viewport_cmd(ViewportCommand::StartDrag);
         }
 
-        let painter = ui.painter();
         let mid = rect.center().y;
-        let icon = painter.text(
+        let icon = ui.painter().text(
             Pos2::new(rect.left() + 14.0, mid),
             Align2::LEFT_CENTER,
             "♫",
             bold(16.0),
-            color(colors::ACCENT),
-        );
-        painter.text(
-            Pos2::new(icon.right() + 8.0, mid),
-            Align2::LEFT_CENTER,
-            config::WINDOW_TITLE,
-            bold(13.0),
-            color(colors::TEXT),
+            color(p.accent),
         );
 
         let button = Vec2::new(46.0, rect.height());
         let close = Rect::from_min_size(Pos2::new(rect.right() - button.x, rect.top()), button);
         let max = close.translate(Vec2::new(-button.x, 0.0));
         let min = max.translate(Vec2::new(-button.x, 0.0));
-        if title_button(ui, close, "cerrar", TitleIcon::Close).clicked() {
+
+        // Título después del ícono, cortado con "…" si no entra.
+        let x = icon.right() + 8.0;
+        let title = one_line(
+            ui,
+            config::WINDOW_TITLE,
+            self.strong(13.0),
+            color(p.text),
+            (min.left() - 16.0 - x).max(0.0),
+        );
+        ui.painter().galley(
+            Pos2::new(x, mid - title.size().y / 2.0),
+            title,
+            color(p.text),
+        );
+
+        if title_button(ui, &p, close, "cerrar", TitleIcon::Close).clicked() {
             ctx.send_viewport_cmd(ViewportCommand::Close);
         }
         let icon = if maximized {
@@ -285,58 +622,79 @@ impl DesktopApp {
         } else {
             TitleIcon::Maximize
         };
-        if title_button(ui, max, "maximizar", icon).clicked() {
+        if title_button(ui, &p, max, "maximizar", icon).clicked() {
             ctx.send_viewport_cmd(ViewportCommand::Maximized(!maximized));
         }
-        if title_button(ui, min, "minimizar", TitleIcon::Minimize).clicked() {
+        if title_button(ui, &p, min, "minimizar", TitleIcon::Minimize).clicked() {
             ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
         }
     }
 
+    /// Renglón de menús, debajo de la barra de título.
+    fn menu_row(&mut self, ui: &mut Ui) {
+        let fonts = &self.fonts;
+        let commands = ui
+            .scope_builder(
+                UiBuilder::new()
+                    .max_rect(ui.max_rect())
+                    .layout(Layout::left_to_right(Align::Center)),
+                |ui| self.menus.bar(ui, &mut self.settings, fonts),
+            )
+            .inner;
+        self.commands.extend(commands);
+    }
+
     fn console(&self, ui: &mut Ui) {
+        let p = self.palette();
+        let stamps = self.settings.console.timestamps;
         ScrollArea::vertical()
             .auto_shrink(false)
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
-                for line in &self.lines {
+                for (stamp, line) in &self.lines {
+                    let mut job = LayoutJob::default();
+                    if stamps {
+                        job.append(
+                            &format!("{stamp} "),
+                            0.0,
+                            egui::TextFormat::simple(mono(FONT_SIZE - 2.0), color(p.secondary)),
+                        );
+                    }
                     match line {
                         ConsoleLine::Echo { prompt, text } => {
-                            let mut job = LayoutJob::default();
                             job.append(
                                 &format!("{prompt} "),
                                 0.0,
-                                egui::TextFormat::simple(
-                                    bold(colors::FONT_SIZE),
-                                    color(colors::ACCENT),
-                                ),
+                                egui::TextFormat::simple(self.strong(FONT_SIZE), color(p.accent)),
                             );
                             job.append(
                                 text,
                                 0.0,
-                                egui::TextFormat::simple(
-                                    mono(colors::FONT_SIZE),
-                                    color(colors::TEXT_STRONG),
-                                ),
+                                egui::TextFormat::simple(mono(FONT_SIZE), color(p.text_strong)),
                             );
-                            ui.label(job);
                         }
                         ConsoleLine::Out(kind, text) => {
-                            ui.label(RichText::new(text).color(line_color(*kind)));
+                            job.append(
+                                text,
+                                0.0,
+                                egui::TextFormat::simple(mono(FONT_SIZE), line_color(&p, *kind)),
+                            );
                         }
                     }
+                    job.wrap.max_width = ui.available_width();
+                    ui.label(job);
                 }
             });
     }
 
     fn input_row(&mut self, ui: &mut Ui) {
+        let p = self.palette();
         let (prompt, prompt_color) = self.prompt_text();
+        let menus_have_keyboard = self.menus.wants_keyboard(ui.ctx());
+        let strong = self.strong(FONT_SIZE);
         ui.horizontal_centered(|ui| {
-            ui.label(
-                RichText::new(prompt)
-                    .font(bold(colors::FONT_SIZE))
-                    .color(prompt_color),
-            );
+            ui.label(RichText::new(prompt).font(strong).color(prompt_color));
             let busy = match self.prompt {
                 Prompt::Busy(what) => Some(what),
                 _ => None,
@@ -351,22 +709,25 @@ impl DesktopApp {
                 // Tab no saca el foco: lo usa `complete`.
                 .lock_focus(true)
                 .frame(Frame::NONE)
-                .font(mono(colors::FONT_SIZE))
-                .text_color(color(colors::TEXT_STRONG))
-                .hint_text(RichText::new(hint).color(color(colors::SECONDARY).gamma_multiply(0.7)))
+                .font(mono(FONT_SIZE))
+                .text_color(color(p.text_strong))
+                .hint_text(RichText::new(hint).color(color(p.secondary).gamma_multiply(0.7)))
                 .desired_width(ui.available_width() - if busy.is_some() { 260.0 } else { 0.0 });
             let response = ui.add(edit);
             if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 self.submit();
             }
-            // La consola es la entrada: el foco vuelve siempre acá.
-            response.request_focus();
+            // La consola es la entrada: el foco vuelve siempre acá, salvo
+            // mientras se usa un menú.
+            if !menus_have_keyboard {
+                response.request_focus();
+            }
             if let Some(what) = busy {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(
                         RichText::new(format!("⋯ {what}  (Esc cancela)"))
                             .small()
-                            .color(color(colors::SECONDARY)),
+                            .color(color(p.secondary)),
                     );
                 });
             }
@@ -374,16 +735,17 @@ impl DesktopApp {
     }
 
     fn now_bar(&self, ui: &mut Ui) {
+        let p = self.palette();
         let rect = ui.max_rect().shrink2(Vec2::new(16.0, 0.0));
         let painter = ui.painter();
-        let volume = self.volume.map(volume_chip);
+        let volume = self.volume.map(|v| volume_chip(&p, v));
         let Some(now) = &self.now else {
             painter.text(
                 rect.left_center(),
                 Align2::LEFT_CENTER,
                 "Nada sonando · escribí  play <nombre>",
                 mono(13.0),
-                color(colors::SECONDARY),
+                color(p.secondary),
             );
             if let Some((text, chip_color)) = volume {
                 painter.text(
@@ -401,15 +763,15 @@ impl DesktopApp {
         let top = rect.top() + 20.0;
         let mut chips = Vec::new();
         if !now.position.trim().is_empty() {
-            chips.push((now.position.trim().to_string(), color(colors::SECONDARY)));
+            chips.push((now.position.trim().to_string(), color(p.secondary)));
         }
         if now.queued > 0 {
-            chips.push((format!("cola {}", now.queued), color(colors::SECONDARY)));
+            chips.push((format!("cola {}", now.queued), color(p.secondary)));
         }
         let shuffle = if now.shuffle {
-            color(colors::ACCENT)
+            color(p.accent)
         } else {
-            color(colors::SECONDARY).gamma_multiply(0.5)
+            color(p.secondary).gamma_multiply(0.5)
         };
         chips.push(("🔀".to_string(), shuffle));
         chips.extend(volume);
@@ -426,9 +788,9 @@ impl DesktopApp {
         }
 
         let (state_icon, state_color) = match now.state {
-            PlayState::Loading => ("…", color(colors::SECONDARY)),
-            PlayState::Playing => ("▶", color(colors::ACCENT)),
-            PlayState::Paused => ("⏸", color(colors::WARNING)),
+            PlayState::Loading => ("…", color(p.secondary)),
+            PlayState::Playing => ("▶", color(p.accent)),
+            PlayState::Paused => ("⏸", color(p.warning)),
         };
         let icon = painter.text(
             Pos2::new(rect.left(), top),
@@ -444,12 +806,18 @@ impl DesktopApp {
         };
         let x = icon.right() + 10.0;
         let max_width = (right - x).max(0.0);
-        let title_galley = one_line(ui, title, bold(14.0), color(colors::TEXT_STRONG), max_width);
+        let title_galley = one_line(
+            ui,
+            title,
+            self.strong(14.0),
+            color(p.text_strong),
+            max_width,
+        );
         let title_width = title_galley.size().x;
         painter.galley(
             Pos2::new(x, top - title_galley.size().y / 2.0),
             title_galley,
-            color(colors::TEXT_STRONG),
+            color(p.text_strong),
         );
         if !now.artists.is_empty() {
             let artists = format!("  —  {}", now.artists);
@@ -457,13 +825,13 @@ impl DesktopApp {
                 ui,
                 &artists,
                 mono(13.0),
-                color(colors::SECONDARY),
+                color(p.secondary),
                 (max_width - title_width).max(0.0),
             );
             painter.galley(
                 Pos2::new(x + title_width, top - galley.size().y / 2.0),
                 galley,
-                color(colors::SECONDARY),
+                color(p.secondary),
             );
         }
 
@@ -475,25 +843,25 @@ impl DesktopApp {
             Align2::LEFT_CENTER,
             clock_text(elapsed),
             mono(11.0),
-            color(colors::SECONDARY),
+            color(p.secondary),
         );
         let right = painter.text(
             Pos2::new(rect.right(), bottom),
             Align2::RIGHT_CENTER,
             clock_text(now.duration),
             mono(11.0),
-            color(colors::SECONDARY),
+            color(p.secondary),
         );
         let track = Rect::from_min_max(
             Pos2::new(left.right() + 12.0, bottom - 2.0),
             Pos2::new(right.left() - 12.0, bottom + 2.0),
         );
-        painter.rect_filled(track, 2.0, color(colors::BORDER));
+        painter.rect_filled(track, 2.0, color(p.border));
         if now.duration > Duration::ZERO {
             let fraction = elapsed.as_secs_f32() / now.duration.as_secs_f32();
             let mut done = track;
             done.set_width(track.width() * fraction.clamp(0.0, 1.0));
-            painter.rect_filled(done, 2.0, color(colors::ACCENT));
+            painter.rect_filled(done, 2.0, color(p.accent));
         }
     }
 
@@ -562,23 +930,39 @@ impl DesktopApp {
 impl Content for DesktopApp {
     fn ui(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
+        if !self.started {
+            self.started = true;
+            if self.settings.window.always_on_top {
+                ctx.send_viewport_cmd(ViewportCommand::WindowLevel(WindowLevel::AlwaysOnTop));
+            }
+        }
+        let before = self.settings.clone();
         self.drain(&ctx);
         self.shortcuts(&ctx);
 
+        let p = self.palette();
         let rect = ui.max_rect();
-        ui.painter()
-            .rect_filled(rect, 0.0, color(colors::BACKGROUND));
+        ui.painter().rect_filled(rect, 0.0, color(p.background));
 
         Panel::top("titulo")
             .exact_size(TITLE_HEIGHT)
-            .frame(Frame::new().fill(color(colors::PANEL)))
+            .frame(Frame::new().fill(color(p.panel)))
             .show_inside(ui, |ui| self.title_bar(ui));
+        Panel::top("menus")
+            .exact_size(MENU_HEIGHT)
+            .frame(
+                Frame::new()
+                    .fill(color(p.panel))
+                    .inner_margin(Margin::symmetric(8, 0))
+                    .stroke(Stroke::new(1.0_f32, color(p.border))),
+            )
+            .show_inside(ui, |ui| self.menu_row(ui));
         Panel::bottom("sonando")
             .exact_size(NOW_HEIGHT)
             .frame(
                 Frame::new()
-                    .fill(color(colors::PANEL))
-                    .stroke(Stroke::new(1.0_f32, color(colors::BORDER))),
+                    .fill(color(p.panel))
+                    .stroke(Stroke::new(1.0_f32, color(p.border))),
             )
             .show_inside(ui, |ui| self.now_bar(ui));
         Panel::bottom("entrada")
@@ -593,14 +977,24 @@ impl Content for DesktopApp {
                 bottom: 4,
             }))
             .show_inside(ui, |ui| self.console(ui));
+        self.menus.dialogs(&ctx, &mut self.settings);
 
         ui.painter().rect_stroke(
             rect,
             0.0,
-            Stroke::new(1.0_f32, color(colors::BORDER)),
+            Stroke::new(1.0_f32, color(p.border)),
             StrokeKind::Inside,
         );
         self.resize_grips(ui, rect);
+
+        let mut save = true;
+        for command in std::mem::take(&mut self.commands) {
+            save &= self.run_command(&ctx, command);
+        }
+        if self.settings != before {
+            self.settings_changed(&ctx, &before, save);
+        }
+        self.save_if_due(&ctx);
 
         // La barra de progreso avanza sola solo mientras suena.
         if self
@@ -613,14 +1007,75 @@ impl Content for DesktopApp {
     }
 }
 
-fn line_color(kind: LineKind) -> Color32 {
+fn window_level(always_on_top: bool) -> WindowLevel {
+    if always_on_top {
+        WindowLevel::AlwaysOnTop
+    } else {
+        WindowLevel::Normal
+    }
+}
+
+/// Posición (px físicos) y tamaño (puntos lógicos de Windows, sin el zoom
+/// del tamaño de letra) de la ventana, o `None` si está maximizada o
+/// minimizada (no se anota: al reabrir queda la de antes).
+fn window_geometry(ctx: &egui::Context) -> Option<Geometry> {
+    let info = ctx.input(|i| i.viewport().clone());
+    if info.maximized == Some(true) || info.minimized == Some(true) {
+        return None;
+    }
+    let (outer, inner, native) = (
+        info.outer_rect?,
+        info.inner_rect?,
+        info.native_pixels_per_point?,
+    );
+    let points_to_px = ctx.pixels_per_point();
+    let to_logical = points_to_px / native;
+    // Coordenadas de pantalla: entran de sobra en i32.
+    #[allow(clippy::cast_possible_truncation)]
+    Some(Geometry {
+        x: (outer.min.x * points_to_px).round() as i32,
+        y: (outer.min.y * points_to_px).round() as i32,
+        width: (inner.width() * to_logical).round(),
+        height: (inner.height() * to_logical).round(),
+    })
+}
+
+/// Hora local "HH:MM:SS", para la hora de cada línea.
+#[cfg(windows)]
+fn local_clock() -> String {
+    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+    // SAFETY: SYSTEMTIME es un struct de C sin invariantes; GetLocalTime lo
+    // llena entero.
+    let time = unsafe {
+        let mut time = std::mem::zeroed();
+        GetLocalTime(&mut time);
+        time
+    };
+    format!("{:02}:{:02}:{:02}", time.wHour, time.wMinute, time.wSecond)
+}
+
+/// Fuera de Windows, la hora UTC (sin crate de zonas horarias).
+#[cfg(not(windows))]
+fn local_clock() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    format!(
+        "{:02}:{:02}:{:02}",
+        secs / 3600 % 24,
+        secs / 60 % 60,
+        secs % 60
+    )
+}
+
+fn line_color(p: &Palette, kind: LineKind) -> Color32 {
     match kind {
-        LineKind::Normal => color(colors::TEXT),
-        LineKind::Track => color(colors::ACCENT),
-        LineKind::Ok => color(colors::ACCENT),
-        LineKind::Warn => color(colors::WARNING),
-        LineKind::Error => color(colors::ERROR),
-        LineKind::Dim => color(colors::SECONDARY),
+        LineKind::Normal => color(p.text),
+        LineKind::Track => color(p.accent),
+        LineKind::Ok => color(p.accent),
+        LineKind::Warn => color(p.warning),
+        LineKind::Error => color(p.error),
+        LineKind::Dim => color(p.secondary),
     }
 }
 
@@ -631,14 +1086,11 @@ fn clock_text(time: Duration) -> String {
 }
 
 /// Indicador de volumen de la barra: "vol 70 %", o "mute" en amarillo.
-fn volume_chip(volume: Volume) -> (String, Color32) {
+fn volume_chip(p: &Palette, volume: Volume) -> (String, Color32) {
     if volume.muted() {
-        ("mute".into(), color(colors::WARNING))
+        ("mute".into(), color(p.warning))
     } else {
-        (
-            format!("vol {} %", volume.level()),
-            color(colors::SECONDARY),
-        )
+        (format!("vol {} %", volume.level()), color(p.secondary))
     }
 }
 
@@ -664,17 +1116,17 @@ enum TitleIcon {
 
 /// Botón de la barra de título, dibujado con líneas (no depende de que la
 /// fuente tenga los símbolos).
-fn title_button(ui: &mut Ui, rect: Rect, id: &str, icon: TitleIcon) -> egui::Response {
+fn title_button(ui: &mut Ui, p: &Palette, rect: Rect, id: &str, icon: TitleIcon) -> egui::Response {
     let response = ui.interact(rect, Id::new(("boton-titulo", id)), Sense::click());
     let painter = ui.painter();
     if response.hovered() {
         let fill = match icon {
-            TitleIcon::Close => color(colors::CLOSE_HOVER),
-            _ => color(colors::BORDER),
+            TitleIcon::Close => color(p.close_hover),
+            _ => color(p.border),
         };
         painter.rect_filled(rect, 0.0, fill);
     }
-    let stroke = Stroke::new(1.2_f32, color(colors::TEXT));
+    let stroke = Stroke::new(1.2_f32, color(p.text));
     let c = rect.center();
     let s = 5.0;
     match icon {
@@ -693,7 +1145,7 @@ fn title_button(ui: &mut Ui, rect: Rect, id: &str, icon: TitleIcon) -> egui::Res
             let back = Rect::from_center_size(c + Vec2::new(2.0, -2.0), Vec2::splat(1.6 * s));
             let front = Rect::from_center_size(c + Vec2::new(-1.5, 1.5), Vec2::splat(1.6 * s));
             painter.rect_stroke(back, 0.0, stroke, StrokeKind::Middle);
-            painter.rect_filled(front, 0.0, color(colors::PANEL));
+            painter.rect_filled(front, 0.0, color(p.panel));
             painter.rect_stroke(front, 0.0, stroke, StrokeKind::Middle);
         }
         TitleIcon::Close => {
@@ -715,10 +1167,43 @@ mod tests {
         assert_eq!(clock_text(Duration::from_secs(3_605)), "60:05");
     }
 
-    fn app() -> (DesktopApp, tokio::sync::mpsc::UnboundedReceiver<Input>) {
+    fn app_with(settings: Settings) -> (DesktopApp, tokio::sync::mpsc::UnboundedReceiver<Input>) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let (_out_tx, out_rx) = mpsc::channel();
-        (DesktopApp::new(tx, out_rx, Vec::new()), rx)
+        let startup = Startup {
+            settings,
+            settings_warnings: Vec::new(),
+            warnings: Vec::new(),
+            data_dir: None,
+            hotkeys: None,
+            theme: Theme::default(),
+        };
+        (DesktopApp::new(tx, out_rx, startup), rx)
+    }
+
+    /// App de prueba, sin lo que manda al motor al arrancar.
+    fn app() -> (DesktopApp, tokio::sync::mpsc::UnboundedReceiver<Input>) {
+        let (app, mut rx) = app_with(Settings::default());
+        while rx.try_recv().is_ok() {}
+        (app, rx)
+    }
+
+    #[test]
+    fn al_arrancar_manda_reproduccion_y_atajos() {
+        let mut settings = Settings::default();
+        settings.playback.volume_step = 10;
+        let (_app, mut rx) = app_with(settings.clone());
+        assert_eq!(rx.try_recv().ok(), Some(Input::Playback(settings.playback)));
+        let Ok(Input::Shortcuts { window, global }) = rx.try_recv() else {
+            panic!("sin atajos");
+        };
+        assert!(
+            window
+                .iter()
+                .any(|l| l.starts_with("Ctrl+→ ") && l.ends_with(" siguiente"))
+        );
+        assert!(window.iter().any(|l| l.starts_with("Ctrl+Shift+F12 ")));
+        assert!(global.is_empty(), "sin hilo de atajos en el test");
     }
 
     #[test]
@@ -748,12 +1233,54 @@ mod tests {
     }
 
     #[test]
-    fn el_scrollback_tiene_tope() {
+    fn el_scrollback_y_el_historial_tienen_el_tope_de_los_ajustes() {
         let (mut app, _rx) = app();
+        let ctx = egui::Context::default();
         for i in 0..config::SCROLLBACK_LINES + 10 {
             app.push(ConsoleLine::Out(LineKind::Normal, i.to_string()));
         }
         assert_eq!(app.lines.len(), config::SCROLLBACK_LINES);
+
+        // Achicarlo descarta las más viejas.
+        let before = app.settings.clone();
+        app.settings.console.scrollback = config::SCROLLBACK_MIN;
+        app.settings.console.history = config::HISTORY_MIN;
+        for i in 0..config::HISTORY_MIN + 5 {
+            app.history.push_back(i.to_string());
+        }
+        app.settings_changed(&ctx, &before, false);
+        assert_eq!(app.lines.len(), config::SCROLLBACK_MIN);
+        let Some((_, ConsoleLine::Out(_, last))) = app.lines.back() else {
+            panic!("sin líneas");
+        };
+        assert_eq!(*last, (config::SCROLLBACK_LINES + 9).to_string());
+        assert_eq!(app.history.len(), config::HISTORY_MIN);
+    }
+
+    #[test]
+    fn cambiar_reproduccion_o_atajos_avisa_al_motor() {
+        let (mut app, mut rx) = app();
+        let ctx = egui::Context::default();
+        let before = app.settings.clone();
+        app.settings.playback.volume_step = 20;
+        app.settings.assign(
+            Target::Window(WindowAction::Stop),
+            Some("Ctrl+F5".parse().unwrap()),
+        );
+        app.settings_changed(&ctx, &before, false);
+        let sent: Vec<Input> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        assert!(
+            sent.iter()
+                .any(|i| matches!(i, Input::Playback(p) if p.volume_step == 20))
+        );
+        assert!(sent.iter().any(|i| matches!(
+            i,
+            Input::Shortcuts { window, .. } if window.iter().any(|l| l.starts_with("Ctrl+F5 "))
+        )));
+        // Sin cambios no manda nada.
+        let before = app.settings.clone();
+        app.settings_changed(&ctx, &before, false);
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]
@@ -768,5 +1295,12 @@ mod tests {
         app.complete(&ctx);
         assert_eq!(app.input, "log");
         assert_eq!(app.lines.len(), before + 1);
+    }
+
+    #[test]
+    fn hora_con_formato() {
+        let clock = local_clock();
+        assert_eq!(clock.len(), 8, "{clock}");
+        assert_eq!(clock.as_bytes()[2], b':');
     }
 }
