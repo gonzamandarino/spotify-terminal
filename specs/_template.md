@@ -77,6 +77,7 @@ las rutas de docs si el proyecto las nombra distinto)*
 - [ ] Changelog actualizado
 - [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
 - [ ] Sin secretos ni credenciales en el diff
+- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
 *(al cerrar: qué se probó y resultado — por AC cuando no sea obvio)*

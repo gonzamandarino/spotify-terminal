@@ -26,8 +26,9 @@ sin spec aprobado (ver "Sistema SDD" abajo).
 - Endpoints como `/recommendations` y `/audio-features` fueron restringidos
   para apps nuevas (nov 2024): el generador de playlists no debe asumirlos
   disponibles. Confirmar en el spec del generador.
-- Stack/lenguaje: pendiente de decidir en el primer spec (criterio principal:
-  bajo consumo de recursos). Registrar en `docs/decisiones.md`.
+- Stack: **Rust** + `librespot` embebido para el audio (ver
+  `docs/decisiones.md`). Bajo consumo de RAM, pero nunca a costa de cortes
+  en la reproducción: si hay que elegir, gana la reproducción.
 
 ## Agentes
 
@@ -102,5 +103,9 @@ un comportamiento documentado sin tocar su contrato está incompleto —
 - Todo cambio de firma o comportamiento de una función/módulo documentado
   actualiza su contrato y, si aplica, `docs/arquitectura.md`, en el mismo
   commit
+- Todo commit de Rust pasa `cargo fmt --check`, `cargo clippy -- -D warnings`
+  y `cargo test`
+- Nada de `unwrap()`/`expect()` en lógica de producción salvo invariantes
+  documentadas; los errores se propagan con `Result` y `?`
 - Bajo consumo es un requisito, no un extra: nada de polling agresivo, ni
   dependencias pesadas sin justificarlas en `docs/decisiones.md`

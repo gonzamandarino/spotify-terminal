@@ -7,3 +7,6 @@ tokens.json
 
 # Claude Code (config local)
 .claude/settings.local.json
+
+# Rust / Cargo
+target/
