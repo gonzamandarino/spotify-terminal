@@ -195,6 +195,24 @@ entradas viejas — se marcan reemplazadas.
   segundo `login` avisaría que el puerto está ocupado).
 - **Estado:** Vigente (spec 004)
 
+## 2026-09-27 — Atajos globales con RegisterHotKey en un hilo propio
+- **Decisión:** los atajos globales se registran con `RegisterHotKey` de
+  Windows, sin ventana, desde un hilo "atajos" que espera en
+  `GetMessageW` y manda cada atajo al motor como un `Input`.
+- **Alternativas descartadas:**
+  - Hook de teclado global (`WH_KEYBOARD_LL`): vería todas las teclas del
+    sistema y se despierta con cada una.
+  - El hook de mensajes de winit (`with_msg_hook`): ata los atajos al
+    loop de la ventana.
+  - La crate `global-hotkey`: sumaría una dependencia (con su propia
+    ventana oculta) para ~60 líneas de Win32. `windows-sys` ya estaba (la
+    trae winit); solo se sumaron features.
+- **Combinaciones:** `Ctrl+Alt+…`. `Ctrl+Shift` tapaba la selección de
+  texto en las demás apps. `Ctrl+Alt+Espacio` ya la registraba otra app
+  en la PC de desarrollo (error 1409), así que pausa va en `Ctrl+Alt+P`.
+  La lista está en `config::GLOBAL_SHORTCUTS`.
+- **Estado:** Vigente (spec 006)
+
 ## 2026-09-27 — Volumen por software de librespot, no el de Windows por app
 - **Decisión:** el volumen de la app se aplica con el `SoftMixer` de
   librespot (escala cada muestra antes de la salida), con su curva

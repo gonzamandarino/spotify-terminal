@@ -63,7 +63,13 @@ pub(super) struct DesktopApp {
 }
 
 impl DesktopApp {
-    pub(super) fn new(inputs: UnboundedSender<Input>, outputs: mpsc::Receiver<Output>) -> Self {
+    /// `warnings`: avisos del arranque (atajos globales que no se pudieron
+    /// registrar), en amarillo después de la bienvenida.
+    pub(super) fn new(
+        inputs: UnboundedSender<Input>,
+        outputs: mpsc::Receiver<Output>,
+        warnings: Vec<String>,
+    ) -> Self {
         let mut app = DesktopApp {
             inputs,
             outputs,
@@ -86,6 +92,9 @@ impl DesktopApp {
             LineKind::Dim,
             "Escribí `play <nombre>` para arrancar, o `help` para ver los comandos.".into(),
         ));
+        for warning in warnings {
+            app.push(ConsoleLine::Out(LineKind::Warn, warning));
+        }
         app
     }
 
@@ -709,7 +718,7 @@ mod tests {
     fn app() -> (DesktopApp, tokio::sync::mpsc::UnboundedReceiver<Input>) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let (_out_tx, out_rx) = mpsc::channel();
-        (DesktopApp::new(tx, out_rx), rx)
+        (DesktopApp::new(tx, out_rx, Vec::new()), rx)
     }
 
     #[test]

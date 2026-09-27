@@ -102,6 +102,19 @@ El volumen es solo el de la app (no toca el de Windows) y se recuerda al
 cerrar, tanto en la ventana como en la CLI
 (`%APPDATA%\spotify-terminal\volumen.txt`).
 
+Atajos globales, que andan con la ventana minimizada o con otra app
+enfocada:
+
+| Atajo | Qué hace |
+|---|---|
+| Ctrl+Alt+P | pausa / reanudar |
+| Ctrl+Alt+→ / Ctrl+Alt+← | siguiente / anterior |
+| Ctrl+Alt+Enter | stop (corta y vacía la cola) |
+| Ctrl+Alt+↑ / Ctrl+Alt+↓ | sube / baja el volumen |
+
+Si otra app ya usa alguno, la consola lo avisa al abrir y ese atajo queda
+sin efecto. Se cambian en `config::GLOBAL_SHORTCUTS` (`src/config.rs`).
+
 La app busca el `.env` en la carpeta desde donde arranca (el acceso directo
 arranca en la del repo). Si algo falla al abrir la ventana, se muestra un
 cuadro de error; un panic queda anotado en
