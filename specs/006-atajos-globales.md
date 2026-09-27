@@ -1,7 +1,7 @@
 # 006 - Atajos de teclado globales
 
 ## Estado
-En implementación
+Verificado
 
 ## Contexto
 Los atajos de la app de escritorio (spec 004: `Ctrl+Espacio`, `Ctrl+→`,
@@ -78,32 +78,32 @@ Windows.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — Con la ventana minimizada y música sonando,
+- [x] **AC-1** — Con la ventana minimizada y música sonando,
       `Ctrl+Alt+P` pausa y otra vez reanuda, sin cortes ni demora
       perceptible (< ~0,5 s).
-- [ ] **AC-2** — `Ctrl+Alt+→` / `Ctrl+Alt+←` pasan al siguiente / anterior
+- [x] **AC-2** — `Ctrl+Alt+→` / `Ctrl+Alt+←` pasan al siguiente / anterior
       (regla de 3 s de spec 003) con la ventana minimizada o con otra
       app enfocada.
-- [ ] **AC-3** — `Ctrl+Alt+Enter` corta la reproducción y vacía la cola,
+- [x] **AC-3** — `Ctrl+Alt+Enter` corta la reproducción y vacía la cola,
       igual que `stop`; la barra de "sonando ahora" queda vacía.
-- [ ] **AC-4** — Con la ventana enfocada, cada combinación hace su acción
+- [x] **AC-4** — Con la ventana enfocada, cada combinación hace su acción
       una sola vez, y los atajos de spec 004 (`Ctrl+Espacio`, `Ctrl+→`,
       `Ctrl+←`) siguen andando.
-- [ ] **AC-5** — `Ctrl+Alt+↑` / `Ctrl+Alt+↓` suben / bajan un paso de
+- [x] **AC-5** — `Ctrl+Alt+↑` / `Ctrl+Alt+↓` suben / bajan un paso de
       volumen (requiere spec 005).
-- [ ] **AC-6** — Si una combinación ya está tomada (probado abriendo una
+- [x] **AC-6** — Si una combinación ya está tomada (probado abriendo una
       segunda ventana), la consola avisa cuál y la app sigue con las
       demás; ninguna falla la cierra.
-- [ ] **AC-7** — Al cerrar la app (`exit`, botón o cerrar desde la barra
+- [x] **AC-7** — Al cerrar la app (`exit`, botón o cerrar desde la barra
       de tareas), las combinaciones quedan libres (una app nueva puede
       registrarlas).
-- [ ] **AC-8** — Sin nada sonando, las combinaciones no hacen nada y no
+- [x] **AC-8** — Sin nada sonando, las combinaciones no hacen nada y no
       muestran errores.
-- [ ] **AC-9** — `help` lista los atajos globales activos.
-- [ ] **AC-10** — Con la app en reposo, la CPU sigue en ~0 % (sin
+- [x] **AC-9** — `help` lista los atajos globales activos.
+- [x] **AC-10** — Con la app en reposo, la CPU sigue en ~0 % (sin
       polling) y la RAM reproduciendo, dentro del tope de spec 004
       (≤ 100 MB). Medido con `scripts/medir-consumo.ps1`.
-- [ ] **AC-11** — La CLI (`spotify-terminal.exe`) no cambia de
+- [x] **AC-11** — La CLI (`spotify-terminal.exe`) no cambia de
       comportamiento.
 
 ## Riesgos / casos de falla
@@ -209,20 +209,40 @@ nada sonando no hace nada salvo el volumen. La tecla de pausa quedó en
       `Input::GlobalShortcuts` y sección en `help`, con tests.
 - [x] T4 — `desktop::run`: arrancar el hilo, avisos de las que fallaron y
       cierre ordenado.
-- [ ] T5 — Pruebas a mano de todos los AC + medición (AC-10).
+- [x] T5 — Pruebas a mano de todos los AC + medición (AC-10).
 - [x] T6 — Docs: arquitectura, decisiones, README, changelog.
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y doc de arquitectura actualizados si
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y doc de arquitectura actualizados si
       el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas
-- [ ] Changelog actualizado
-- [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Decisiones de diseño relevantes documentadas
+- [x] Changelog actualizado
+- [x] Sin constantes/umbrales hardcodeados fuera de su lugar de config
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
+
+Automático: 112 tests (nuevos: `desktop::hotkeys` con nombres,
+virtual-keys, config sin repetidos y un test contra Windows de verdad
+—combinación tomada por otro hilo falla y al soltarla queda libre—;
+`app::engine` con atajos globales con y sin nada sonando, sin líneas en
+la consola, y `help` con la lista). `cargo fmt --check`,
+`cargo clippy --all-targets -- -D warnings` y `cargo test` sin avisos.
+
+A mano (2026-09-27, `spotify-desktop.exe` release, Windows 10):
+- Chequeo previo: `Ctrl+Alt+Espacio` ya estaba registrada por otra app
+  (error 1409), por eso pausa va en `Ctrl+Alt+P`.
+- AC-6/AC-7 en la app real: con la ventana abierta las 6 combinaciones
+  figuran tomadas para otro proceso; al cerrarla, las 6 quedan libres.
+- AC-1 a AC-6 y AC-8/AC-9 con audio real: confirmado por vos ("todo ok")
+  sobre la lista de pruebas de T5, incluida la segunda ventana con sus
+  avisos y que `Ctrl+Alt+flechas` no rota la pantalla.
+- AC-10: confirmado por vos junto con el resto; no quedó registrado un
+  número nuevo de RAM/CPU (referencia: spec 004, 36,9 MB máx.). El hilo
+  de atajos duerme en `GetMessageW`, sin timers.
+- AC-11: la CLI no cambió (sin cambios en `main`/`ui`; sus tests pasan).
