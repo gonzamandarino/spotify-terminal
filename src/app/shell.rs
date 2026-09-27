@@ -15,6 +15,10 @@ Comandos:
   prev, p                anterior o reinicia el tema  (Ctrl+←)
   shuffle, s             shuffle sí / no
   queue <tema>, a <tema> busca un tema y lo agrega a la cola
+  vol, v                 muestra el volumen
+  vol <0-100>            fija el volumen
+  vol + / vol -          sube / baja el volumen       (Ctrl+↑ / Ctrl+↓)
+  mute, m                silencia / vuelve al volumen de antes
   stop                   corta la reproducción y vacía la cola
   login / logout         inicia / cierra la sesión de Spotify
   whoami                 usuario y plan
@@ -24,9 +28,9 @@ Comandos:
 ↑ ↓ historial · Tab completa · Esc cancela una búsqueda o elección";
 
 /// Nombres de comando, para completar con Tab.
-const NAMES: [&str; 13] = [
-    "play", "pause", "next", "prev", "shuffle", "queue", "stop", "login", "logout", "whoami",
-    "clear", "help", "exit",
+const NAMES: [&str; 15] = [
+    "play", "pause", "next", "prev", "shuffle", "queue", "stop", "vol", "mute", "login", "logout",
+    "whoami", "clear", "help", "exit",
 ];
 
 /// Una línea de la consola, ya interpretada.
@@ -43,10 +47,23 @@ pub(crate) enum ShellCommand {
     /// separadas por un solo espacio.
     Queue(String),
     Stop,
+    Volume(VolumeCommand),
+    Mute,
     Clear,
     Exit,
     /// `login`, `logout`, `whoami`, `play …` (nunca `Command::Help`).
     Cli(Command),
+}
+
+/// `vol …`.
+#[derive(Debug, PartialEq)]
+pub(crate) enum VolumeCommand {
+    /// `vol` solo: mostrar el actual.
+    Show,
+    /// `vol N`. Invariante: ≤ 100.
+    Set(u8),
+    Up,
+    Down,
 }
 
 /// Interpreta una línea escrita en la consola.
@@ -54,8 +71,9 @@ pub(crate) enum ShellCommand {
 /// - Post: el nombre del comando no distingue mayúsculas. Las palabras se
 ///   separan por espacios; entre comillas (`"…"` o `'…'`) un texto cuenta
 ///   como una sola palabra, igual que en PowerShell (`play "list of
-///   demands"` busca ese tema). `help` → `Help`; los comandos de la CLI se
-///   validan con `cli::parse_command`.
+///   demands"` busca ese tema). `help` → `Help`; `vol` acepta nada, `+`,
+///   `-` o un entero de 0 a 100; los comandos de la CLI se validan con
+///   `cli::parse_command`.
 /// - Errores: el motivo, sin la ayuda (comando desconocido, argumentos de
 ///   más o de menos, comillas sin cerrar, link mal formado).
 pub(crate) fn parse_line(line: &str) -> Result<ShellCommand, String> {
@@ -77,6 +95,8 @@ pub(crate) fn parse_line(line: &str) -> Result<ShellCommand, String> {
         "prev" | "p" => no_args(ShellCommand::Prev),
         "shuffle" | "s" => no_args(ShellCommand::Shuffle),
         "stop" => no_args(ShellCommand::Stop),
+        "mute" | "m" => no_args(ShellCommand::Mute),
+        "vol" | "v" => parse_volume(&words[1..]).map(ShellCommand::Volume),
         "clear" => no_args(ShellCommand::Clear),
         "exit" => no_args(ShellCommand::Exit),
         "queue" | "a" => {
@@ -94,6 +114,22 @@ pub(crate) fn parse_line(line: &str) -> Result<ShellCommand, String> {
             Command::Help => Ok(ShellCommand::Help),
             command => Ok(ShellCommand::Cli(command)),
         },
+    }
+}
+
+/// Argumentos de `vol`.
+fn parse_volume(args: &[String]) -> Result<VolumeCommand, String> {
+    match args {
+        [] => Ok(VolumeCommand::Show),
+        [arg] if arg == "+" => Ok(VolumeCommand::Up),
+        [arg] if arg == "-" => Ok(VolumeCommand::Down),
+        [arg] => match arg.parse::<u8>() {
+            Ok(level) if level <= 100 => Ok(VolumeCommand::Set(level)),
+            _ => Err(format!(
+                "vol {arg}: el volumen va de 0 a 100 (o `vol +` / `vol -`)"
+            )),
+        },
+        _ => Err("vol lleva un solo valor: 0 a 100, + o -".into()),
     }
 }
 
@@ -160,6 +196,32 @@ mod tests {
             ("   ", ShellCommand::Empty),
         ] {
             assert_eq!(parse_line(line), Ok(expected), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn volumen() {
+        for (line, expected) in [
+            ("vol", VolumeCommand::Show),
+            ("V", VolumeCommand::Show),
+            ("vol 0", VolumeCommand::Set(0)),
+            ("vol 100", VolumeCommand::Set(100)),
+            ("v 35", VolumeCommand::Set(35)),
+            ("vol +", VolumeCommand::Up),
+            ("v -", VolumeCommand::Down),
+        ] {
+            assert_eq!(
+                parse_line(line),
+                Ok(ShellCommand::Volume(expected)),
+                "{line:?}"
+            );
+        }
+        assert_eq!(parse_line("mute"), Ok(ShellCommand::Mute));
+        assert_eq!(parse_line("m"), Ok(ShellCommand::Mute));
+        for line in [
+            "vol 150", "vol -3", "vol abc", "vol 1 2", "v 7.5", "mute ya",
+        ] {
+            assert!(parse_line(line).is_err(), "{line:?}");
         }
     }
 

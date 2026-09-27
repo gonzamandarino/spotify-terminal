@@ -31,6 +31,8 @@ main ──> ui::cli (parseo de subcomandos → Command)
   │         │      metadata de álbum/playlist (librespot-metadata)
   │         └──> hilos de librespot: reproductor + salida de audio (rodio/WASAPI)
   │
+  ├──> app::volume (carga el último volumen y lo guarda al salir)
+  │
   └──> ui::playback::play_queue ──> app::queue::Queue (qué suena después)
                                  ├──> spotify::player (play/preload/pause/
                                  │    restart/stop, eventos del reproductor)
@@ -54,6 +56,7 @@ bin/desktop ──> desktop::run
                   └──> app::engine (hilo "motor") ──Output──> DesktopApp
                          ├──> app::shell (línea → ShellCommand; reusa cli)
                          ├──> app::queue::Queue (misma cola que la CLI)
+                         ├──> app::volume::Volume (mismo volumen que la CLI)
                          └──> app::backend::Backend (costura para tests)
                                 └── SpotifyBackend ──> spotify::auth / web /
                                                        player (como la CLI)
@@ -84,6 +87,13 @@ bin/desktop ──> desktop::run
   `ui::playback` lo controla durante `play`. En la app de escritorio es del
   motor (`app::engine`): se abre con el primer `play`, se reutiliza para
   los siguientes y se suelta con `logout`, si se cae, o al cerrar.
+- **Volumen:** `app::volume::Volume` (nivel 0-100 y mute, sin I/O salvo
+  `load`/`save`). En la CLI lo tiene `main` y `play_queue` lo cambia; en
+  la app de escritorio es del motor, existe aunque no haya reproductor y
+  se aplica al conectar. El reproductor solo recibe el valor
+  (`Player::set_volume`). Se guarda en `volumen.txt` de la carpeta de
+  datos: la CLI al salir si cambió, el motor 2 s después del último
+  cambio (`config::VOLUME_SAVE_DELAY`) y al cerrar.
 - **Modo raw de la terminal:** `ui::RawMode` (lo usan `select` y
   `playback`); se restaura al soltarse o ante un panic.
 - **Cola de reproducción:** `app::queue::Queue` (sin I/O, testeable sola)
@@ -127,10 +137,11 @@ corregir la tabla.
 | `AppError` (una variante por caso) | `src/error.rs` | doc-comment |
 | `auth::get_valid_token`, `auth::logout`, `auth::Token`, `auth::TokenKind` | `src/spotify/auth.rs` | doc-comment |
 | `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
-| `player::Player` (incl. `restart`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
+| `player::Player` (incl. `restart`, `set_volume`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
 | `playback::play_queue` (teclas, cola, shuffle), `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
 | `queue::Queue`, `queue::Step`, `queue::Clock`, `queue::on_player_event` (crate) | `src/app/queue.rs` | doc-comment |
-| `shell::parse_line`, `shell::complete`, `shell::ShellCommand` (crate) | `src/app/shell.rs` | doc-comment |
+| `volume::Volume` (`load`, `save`, `output`) | `src/app/volume.rs` | doc-comment |
+| `shell::parse_line`, `shell::complete`, `shell::ShellCommand`, `shell::VolumeCommand` (crate) | `src/app/shell.rs` | doc-comment |
 | `engine::spawn`, `engine::Input`, `engine::Output`, `engine::Engine` (crate) | `src/app/engine.rs` | doc-comment |
 | `backend::Backend`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
 | `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |

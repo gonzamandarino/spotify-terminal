@@ -2,6 +2,16 @@
 
 ## [Sin publicar]
 
+### Agregado (spec 005 — volumen)
+- Volumen propio de la app, sin tocar el de Windows ni el de otras apps.
+  En la ventana: `vol`/`v` (ver), `vol <0-100>`, `vol +`/`vol -`,
+  `mute`/`m`, y Ctrl+↑ / Ctrl+↓. En la CLI, `+` (o `=`) y `-`
+  durante la reproducción.
+- La barra de "sonando ahora" y la línea de estado de la CLI muestran el
+  volumen.
+- El último volumen se guarda en `%APPDATA%\spotify-terminal\volumen.txt`
+  y la app arranca ahí (100 % la primera vez).
+
 ### Agregado (spec 004 — app de escritorio)
 - `spotify-desktop.exe`: ventana propia con una consola estilizada (tema
   oscuro, fuente Consolas como la consola de Windows, barra de título

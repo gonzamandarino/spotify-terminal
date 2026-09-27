@@ -5,6 +5,7 @@ use librespot_core::SpotifyUri;
 use librespot_playback::player::PlayerEventChannel;
 use tokio::runtime::Handle;
 
+use super::volume::Volume;
 use crate::{
     config::Config,
     error::AppError,
@@ -25,6 +26,7 @@ pub(crate) trait Playback {
     fn resume(&self);
     fn restart(&self);
     fn stop(&self);
+    fn set_volume(&self, volume: Volume);
     fn session_lost(&self) -> bool;
 }
 
@@ -50,6 +52,9 @@ impl Playback for Player {
     fn stop(&self) {
         Player::stop(self);
     }
+    fn set_volume(&self, volume: Volume) {
+        Player::set_volume(self, volume);
+    }
     fn session_lost(&self) -> bool {
         Player::session_lost(self)
     }
@@ -74,9 +79,10 @@ pub(crate) trait Backend {
 
     async fn search(&self, kind: SearchKind, query: &str) -> Result<Vec<Hit>, AppError>;
 
-    /// Abre un reproductor nuevo. Antes chequea que la cuenta sea Premium
-    /// (sin Premium → `NotPremium`, sin abrir la sesión de audio).
-    async fn connect(&self) -> Result<Self::Player, AppError>;
+    /// Abre un reproductor nuevo con `volume`. Antes chequea que la cuenta
+    /// sea Premium (sin Premium → `NotPremium`, sin abrir la sesión de
+    /// audio).
+    async fn connect(&self, volume: Volume) -> Result<Self::Player, AppError>;
 
     /// Temas de un tema, álbum o playlist (ver [`Player::resolve_tracks`]).
     async fn resolve(&self, player: &Self::Player, uri: &SpotifyUri) -> Result<Resolved, AppError>;
@@ -125,12 +131,12 @@ impl Backend for SpotifyBackend {
         Self::web().await?.search(kind, query).await
     }
 
-    async fn connect(&self) -> Result<Player, AppError> {
+    async fn connect(&self, volume: Volume) -> Result<Player, AppError> {
         let user = self.current_user().await?;
         if !user.is_premium() {
             return Err(AppError::NotPremium(user.plan().to_string()));
         }
-        Player::connect(&Self::token(TokenKind::Audio).await?).await
+        Player::connect(&Self::token(TokenKind::Audio).await?, volume).await
     }
 
     async fn resolve(&self, player: &Player, uri: &SpotifyUri) -> Result<Resolved, AppError> {

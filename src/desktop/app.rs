@@ -22,6 +22,7 @@ use crate::{
         engine::{Input, LineKind, NowPlaying, Output, Prompt},
         queue::PlayState,
         shell,
+        volume::Volume,
     },
     config::{self, theme as colors},
 };
@@ -55,6 +56,8 @@ pub(super) struct DesktopApp {
     /// Lo que se estaba escribiendo antes de empezar a recorrer el historial.
     draft: String,
     now: Option<NowPlaying>,
+    /// `None` hasta que el motor lo manda al arrancar.
+    volume: Option<Volume>,
     prompt: Prompt,
     engine_gone: bool,
 }
@@ -71,6 +74,7 @@ impl DesktopApp {
             history_pos: None,
             draft: String::new(),
             now: None,
+            volume: None,
             prompt: Prompt::Ready,
             engine_gone: false,
         };
@@ -109,6 +113,7 @@ impl DesktopApp {
                 Output::Line(kind, text) => self.push(ConsoleLine::Out(kind, text)),
                 Output::NowPlaying(now) => self.now = now,
                 Output::Prompt(prompt) => self.prompt = prompt,
+                Output::Volume(volume) => self.volume = Some(volume),
                 Output::Clear => self.lines.clear(),
                 Output::Exit => ctx.send_viewport_cmd(ViewportCommand::Close),
             }
@@ -146,10 +151,13 @@ impl DesktopApp {
     fn shortcuts(&mut self, ctx: &egui::Context) {
         let mut pressed = Vec::new();
         ctx.input_mut(|i| {
+            // Ctrl+↑/↓ antes que ↑/↓ solos, para que no los tome el historial.
             for (modifiers, key) in [
                 (Modifiers::CTRL, Key::Space),
                 (Modifiers::CTRL, Key::ArrowRight),
                 (Modifiers::CTRL, Key::ArrowLeft),
+                (Modifiers::CTRL, Key::ArrowUp),
+                (Modifiers::CTRL, Key::ArrowDown),
                 (Modifiers::NONE, Key::Escape),
                 (Modifiers::NONE, Key::ArrowUp),
                 (Modifiers::NONE, Key::ArrowDown),
@@ -166,6 +174,8 @@ impl DesktopApp {
                 (Modifiers::CTRL, Key::Space) => self.send(Input::TogglePause),
                 (Modifiers::CTRL, Key::ArrowRight) => self.send(Input::Next),
                 (Modifiers::CTRL, Key::ArrowLeft) => self.send(Input::Prev),
+                (Modifiers::CTRL, Key::ArrowUp) => self.send(Input::VolumeUp),
+                (Modifiers::CTRL, Key::ArrowDown) => self.send(Input::VolumeDown),
                 (_, Key::Escape) => {
                     if self.input.is_empty() {
                         self.send(Input::Cancel);
@@ -357,6 +367,7 @@ impl DesktopApp {
     fn now_bar(&self, ui: &mut Ui) {
         let rect = ui.max_rect().shrink2(Vec2::new(16.0, 0.0));
         let painter = ui.painter();
+        let volume = self.volume.map(volume_chip);
         let Some(now) = &self.now else {
             painter.text(
                 rect.left_center(),
@@ -365,6 +376,15 @@ impl DesktopApp {
                 mono(13.0),
                 color(colors::SECONDARY),
             );
+            if let Some((text, chip_color)) = volume {
+                painter.text(
+                    rect.right_center(),
+                    Align2::RIGHT_CENTER,
+                    text,
+                    mono(12.0),
+                    chip_color,
+                );
+            }
             return;
         };
 
@@ -383,6 +403,7 @@ impl DesktopApp {
             color(colors::SECONDARY).gamma_multiply(0.5)
         };
         chips.push(("🔀".to_string(), shuffle));
+        chips.extend(volume);
         let mut right = rect.right();
         for (text, chip_color) in chips.iter().rev() {
             let r = painter.text(
@@ -598,6 +619,18 @@ fn line_color(kind: LineKind) -> Color32 {
 fn clock_text(time: Duration) -> String {
     let secs = time.as_secs();
     format!("{}:{:02}", secs / 60, secs % 60)
+}
+
+/// Indicador de volumen de la barra: "vol 70 %", o "mute" en amarillo.
+fn volume_chip(volume: Volume) -> (String, Color32) {
+    if volume.muted() {
+        ("mute".into(), color(colors::WARNING))
+    } else {
+        (
+            format!("vol {} %", volume.level()),
+            color(colors::SECONDARY),
+        )
+    }
 }
 
 /// Texto en una línea, cortado con "…" si no entra en `max_width`.

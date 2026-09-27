@@ -8,6 +8,7 @@
 
 use std::{
     future::Future,
+    path::PathBuf,
     pin::Pin,
     rc::Rc,
     sync::mpsc as std_mpsc,
@@ -18,14 +19,19 @@ use std::{
 use librespot_core::SpotifyUri;
 use librespot_playback::player::{PlayerEvent, PlayerEventChannel};
 use rand::{SeedableRng, rngs::StdRng};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::{
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    time::Instant,
+};
 
 use super::{
     backend::{Backend, Playback, SpotifyBackend},
     queue::{Clock, PlayState, Queue, Step, on_player_event, uri_text},
-    shell::{self, ShellCommand},
+    shell::{self, ShellCommand, VolumeCommand},
+    volume::Volume,
 };
 use crate::{
+    config,
     error::AppError,
     spotify::{
         player::Resolved,
@@ -43,6 +49,10 @@ pub(crate) enum Input {
     TogglePause,
     Next,
     Prev,
+    /// Atajos de volumen: igual que `vol +` y `vol -`, sin escribir en la
+    /// consola.
+    VolumeUp,
+    VolumeDown,
     /// Esc: cancela la elección de un resultado o la tarea en curso.
     Cancel,
 }
@@ -94,6 +104,9 @@ pub(crate) enum Output {
     /// `None` = no suena nada.
     NowPlaying(Option<NowPlaying>),
     Prompt(Prompt),
+    /// Volumen actual, para la barra (se manda al arrancar y con cada
+    /// cambio, suene algo o no).
+    Volume(Volume),
     Clear,
     /// `exit`: la ventana tiene que cerrarse.
     Exit,
@@ -159,7 +172,11 @@ pub(crate) fn spawn(wake: impl Fn() + Send + 'static) -> Result<EngineHandle, Ap
                     return;
                 }
             };
-            runtime.block_on(Engine::new(SpotifyBackend, out).run(in_rx));
+            // Sin carpeta de datos, el volumen arranca en el default y no
+            // se guarda.
+            let volume_dir = config::data_dir().ok();
+            let volume = volume_dir.as_deref().map(Volume::load).unwrap_or_default();
+            runtime.block_on(Engine::new(SpotifyBackend, out, volume, volume_dir).run(in_rx));
             // Un login esperando al navegador no tiene que trabar el cierre.
             runtime.shutdown_background();
         })
@@ -192,10 +209,12 @@ enum Done<P> {
         result: Result<Vec<Hit>, AppError>,
     },
     /// Lista de temas lista para sonar. `new_player` viene si hubo que
-    /// conectar (no había reproductor o se había caído la sesión).
+    /// conectar (no había reproductor o se había caído la sesión), abierto
+    /// con `volume`.
     Prepared {
         shuffle: bool,
         new_player: Option<P>,
+        volume: Volume,
         result: Result<Resolved, AppError>,
     },
 }
@@ -220,6 +239,9 @@ struct Playing {
 /// - `playing` es `Some` solo con `player` `Some`.
 /// - A lo sumo una tarea de fondo (`task`) a la vez; los controles de
 ///   reproducción no esperan a la tarea.
+/// - `volume` es el del reproductor, si hay uno: se le aplica en cada
+///   cambio y al conectar. Existe aunque no haya reproductor.
+/// - `save_at` es `Some` si hay un cambio de volumen sin guardar.
 pub(crate) struct Engine<B: Backend> {
     backend: Rc<B>,
     player: Option<Rc<B::Player>>,
@@ -232,10 +254,15 @@ pub(crate) struct Engine<B: Backend> {
     out: Outbox,
     shown: Option<NowPlaying>,
     shown_prompt: Prompt,
+    volume: Volume,
+    /// Dónde se guarda el volumen; `None` = no se guarda.
+    volume_dir: Option<PathBuf>,
+    save_at: Option<Instant>,
+    shown_volume: Option<Volume>,
 }
 
 impl<B: Backend + 'static> Engine<B> {
-    fn new(backend: B, out: Outbox) -> Engine<B> {
+    fn new(backend: B, out: Outbox, volume: Volume, volume_dir: Option<PathBuf>) -> Engine<B> {
         Engine {
             backend: Rc::new(backend),
             player: None,
@@ -248,12 +275,18 @@ impl<B: Backend + 'static> Engine<B> {
             out,
             shown: None,
             shown_prompt: Prompt::Ready,
+            volume,
+            volume_dir,
+            save_at: None,
+            shown_volume: None,
         }
     }
 
     /// Atiende comandos, eventos del reproductor y tareas hasta `exit` o
-    /// hasta que se cierra `inputs`. Al salir corta el audio.
+    /// hasta que se cierra `inputs`. Al salir corta el audio y guarda el
+    /// volumen si quedó un cambio sin guardar.
     async fn run(mut self, mut inputs: UnboundedReceiver<Input>) {
+        self.publish();
         loop {
             tokio::select! {
                 input = inputs.recv() => {
@@ -267,10 +300,12 @@ impl<B: Backend + 'static> Engine<B> {
                     self.task = None;
                     self.on_done(done);
                 }
+                () = save_due(self.save_at) => self.save_volume(),
             }
             self.publish();
         }
         self.stop_playing();
+        self.save_volume();
     }
 
     fn on_input(&mut self, input: Input) -> Flow {
@@ -279,6 +314,8 @@ impl<B: Backend + 'static> Engine<B> {
             Input::TogglePause => self.control(Control::Pause),
             Input::Next => self.control(Control::Next),
             Input::Prev => self.control(Control::Prev),
+            Input::VolumeUp => self.change_volume(Volume::up, false),
+            Input::VolumeDown => self.change_volume(Volume::down, false),
             Input::Cancel => {
                 if self.choosing.take().is_some() {
                     self.out.line(LineKind::Dim, "Elección cancelada.");
@@ -354,6 +391,15 @@ impl<B: Backend + 'static> Engine<B> {
                     self.out.line(LineKind::Warn, NOTHING_PLAYING);
                 }
             }
+            ShellCommand::Volume(VolumeCommand::Show) => {
+                self.out.line(LineKind::Normal, volume_text(self.volume));
+            }
+            ShellCommand::Volume(VolumeCommand::Set(level)) => {
+                self.change_volume(|v| v.set(level), true);
+            }
+            ShellCommand::Volume(VolumeCommand::Up) => self.change_volume(Volume::up, true),
+            ShellCommand::Volume(VolumeCommand::Down) => self.change_volume(Volume::down, true),
+            ShellCommand::Mute => self.change_volume(Volume::toggle_mute, true),
             ShellCommand::Clear => self.out.send(Output::Clear),
             ShellCommand::Exit => {
                 self.stop_playing();
@@ -439,17 +485,19 @@ impl<B: Backend + 'static> Engine<B> {
     fn prepare(&mut self, target: SpotifyUri, shuffle: bool) {
         let backend = self.backend.clone();
         let existing = self.player.clone().filter(|p| !p.session_lost());
+        let volume = self.volume;
         self.start_task(
             "preparando la reproducción",
             Box::pin(async move {
                 let (player, connected) = match existing {
                     Some(player) => (player, false),
-                    None => match backend.connect().await {
+                    None => match backend.connect(volume).await {
                         Ok(player) => (Rc::new(player), true),
                         Err(e) => {
                             return Done::Prepared {
                                 shuffle,
                                 new_player: None,
+                                volume,
                                 result: Err(e),
                             };
                         }
@@ -465,6 +513,7 @@ impl<B: Backend + 'static> Engine<B> {
                 Done::Prepared {
                     shuffle,
                     new_player,
+                    volume,
                     result,
                 }
             }),
@@ -509,10 +558,15 @@ impl<B: Backend + 'static> Engine<B> {
             Done::Prepared {
                 shuffle,
                 new_player,
+                volume,
                 result,
             } => {
                 if let Some(player) = new_player {
                     self.stop_playing();
+                    if volume != self.volume {
+                        // Cambió mientras conectaba.
+                        player.set_volume(self.volume);
+                    }
                     self.events = Some(player.events());
                     self.player = Some(Rc::new(player));
                 }
@@ -696,8 +750,43 @@ impl<B: Backend + 'static> Engine<B> {
         }
     }
 
-    /// Manda a la ventana lo que cambió de la barra y del prompt.
+    /// Aplica `change` al volumen y al reproductor (si hay), y programa el
+    /// guardado. `announce`: escribirlo en la consola (comandos sí, atajos
+    /// no).
+    fn change_volume(&mut self, change: impl FnOnce(&mut Volume), announce: bool) {
+        change(&mut self.volume);
+        if let Some(player) = &self.player {
+            player.set_volume(self.volume);
+        }
+        self.save_at = Some(Instant::now() + config::VOLUME_SAVE_DELAY);
+        if announce {
+            self.out.line(LineKind::Ok, volume_text(self.volume));
+        }
+    }
+
+    /// Guarda el volumen si hay un cambio pendiente. Si falla, avisa y
+    /// sigue: la reproducción no se entera.
+    fn save_volume(&mut self) {
+        if self.save_at.take().is_none() {
+            return;
+        }
+        if let Some(dir) = &self.volume_dir {
+            if let Err(e) = self.volume.save(dir) {
+                self.out.line(
+                    LineKind::Warn,
+                    format!("⚠ No se pudo guardar el volumen: {e}"),
+                );
+            }
+        }
+    }
+
+    /// Manda a la ventana lo que cambió de la barra, del volumen y del
+    /// prompt.
     fn publish(&mut self) {
+        if self.shown_volume != Some(self.volume) {
+            self.shown_volume = Some(self.volume);
+            self.out.send(Output::Volume(self.volume));
+        }
         let now = self.playing.as_ref().map(|p| NowPlaying {
             title: p.title.clone(),
             artists: p.artists.clone(),
@@ -746,6 +835,20 @@ async fn next_event(events: &mut Option<PlayerEventChannel>) -> Option<PlayerEve
     }
 }
 
+/// Espera hasta `at`; sin plazo, no termina nunca.
+async fn save_due(at: Option<Instant>) {
+    match at {
+        Some(at) => tokio::time::sleep_until(at).await,
+        None => std::future::pending().await,
+    }
+}
+
+/// "🔊 Volumen: 70 %" o "🔇 Volumen: silenciado (70 %)".
+fn volume_text(volume: Volume) -> String {
+    let icon = if volume.muted() { "🔇" } else { "🔊" };
+    format!("{icon} Volumen: {volume}")
+}
+
 /// Espera la tarea en curso; sin tarea, no termina nunca.
 async fn finish<P>(task: &mut Option<Task<P>>) -> Done<P> {
     match task.as_mut() {
@@ -791,6 +894,9 @@ mod tests {
         fn stop(&self) {
             self.log.borrow_mut().push("stop".into());
         }
+        fn set_volume(&self, volume: Volume) {
+            self.log.borrow_mut().push(format!("volume {volume}"));
+        }
         fn session_lost(&self) -> bool {
             false
         }
@@ -830,8 +936,8 @@ mod tests {
                 })
                 .collect())
         }
-        async fn connect(&self) -> Result<FakePlayer, AppError> {
-            self.log.borrow_mut().push("connect".into());
+        async fn connect(&self, volume: Volume) -> Result<FakePlayer, AppError> {
+            self.log.borrow_mut().push(format!("connect {volume}"));
             if !self.premium {
                 return Err(AppError::NotPremium("free".into()));
             }
@@ -882,7 +988,7 @@ mod tests {
             premium,
         };
         Harness {
-            engine: Engine::new(backend, out),
+            engine: Engine::new(backend, out, Volume::default(), None),
             rx,
             log,
         }
@@ -940,7 +1046,7 @@ mod tests {
     async fn play_de_un_link_conecta_y_reproduce() {
         let mut h = harness(true);
         h.type_line(&format!("play {}", album("a"))).await;
-        assert_eq!(h.take_log(), ["connect", "play ax0"]);
+        assert_eq!(h.take_log(), ["connect 100 %", "play ax0"]);
         assert!(h.outputs().iter().any(|o| matches!(
             o,
             Output::NowPlaying(Some(now)) if now.state == PlayState::Loading
@@ -1009,7 +1115,7 @@ mod tests {
         h.type_line("7").await;
         assert!(has_line(&h.outputs(), LineKind::Warn, "del 1 al 2"));
         h.type_line(" 2 ").await;
-        assert_eq!(h.take_log(), ["connect", "play h2"]);
+        assert_eq!(h.take_log(), ["connect 100 %", "play h2"]);
 
         h.type_line("play list algo").await;
         h.type_line("").await;
@@ -1076,7 +1182,7 @@ mod tests {
     async fn sin_premium_no_reproduce() {
         let mut h = harness(false);
         h.type_line(&format!("play {}", album("a"))).await;
-        assert_eq!(h.take_log(), ["connect"]);
+        assert_eq!(h.take_log(), ["connect 100 %"]);
         assert!(has_line(&h.outputs(), LineKind::Error, "no es Premium"));
         assert!(h.engine.player.is_none());
     }
@@ -1104,7 +1210,7 @@ mod tests {
         assert!(has_line(&h.outputs(), LineKind::Error, "se cerró"));
         h.take_log();
         h.type_line(&format!("play {}", album("a"))).await;
-        assert_eq!(h.take_log(), ["connect", "play ax0"]);
+        assert_eq!(h.take_log(), ["connect 100 %", "play ax0"]);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1143,5 +1249,119 @@ mod tests {
         let outputs: Vec<_> = h.rx.try_iter().collect();
         assert!(has_line(&outputs, LineKind::Normal, "Comandos:"));
         assert!(outputs.contains(&Output::Clear));
+    }
+
+    fn volume_at(level: u8) -> Volume {
+        let mut volume = Volume::default();
+        volume.set(level);
+        volume
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn volumen_sin_reproductor_se_aplica_al_conectar() {
+        let mut h = harness(true);
+        h.type_line("vol").await;
+        let outputs = h.outputs();
+        assert!(has_line(&outputs, LineKind::Normal, "Volumen: 100 %"));
+        assert!(outputs.contains(&Output::Volume(Volume::default())));
+        h.type_line("vol 30").await;
+        let outputs = h.outputs();
+        assert!(has_line(&outputs, LineKind::Ok, "Volumen: 30 %"));
+        assert!(outputs.contains(&Output::Volume(volume_at(30))));
+        assert!(h.take_log().is_empty());
+        h.type_line(&format!("play {}", album("a"))).await;
+        assert_eq!(h.take_log(), ["connect 30 %", "play ax0"]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn volumen_con_reproductor_y_despues_de_play_y_stop() {
+        let mut h = harness(true);
+        h.type_line(&format!("play {}", album("a"))).await;
+        h.confirm(1);
+        h.take_log();
+        h.outputs();
+        h.type_line("vol 50").await;
+        h.engine.on_input(Input::VolumeUp);
+        h.type_line("m").await;
+        h.type_line("v -").await;
+        assert_eq!(
+            h.take_log(),
+            [
+                "volume 50 %",
+                "volume 55 %",
+                "volume silenciado (55 %)",
+                "volume 50 %"
+            ]
+        );
+        // El atajo no escribe en la consola; los comandos sí.
+        let outputs = h.outputs();
+        assert!(!has_line(&outputs, LineKind::Ok, "Volumen: 55 %"));
+        assert!(has_line(&outputs, LineKind::Ok, "silenciado (55 %)"));
+        // `play` nuevo, `stop` y `play` otra vez: mismo reproductor, mismo
+        // volumen, sin volver a fijarlo.
+        h.type_line(&format!("play {}", album("b"))).await;
+        h.type_line("stop").await;
+        h.type_line(&format!("play {}", album("c"))).await;
+        assert_eq!(h.take_log(), ["stop", "play bx0", "stop", "play cx0"]);
+        assert_eq!(h.engine.volume, volume_at(50));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn volumen_cambiado_mientras_conecta() {
+        let mut h = harness(true);
+        h.engine
+            .on_input(Input::Line(format!("play {}", album("a"))));
+        h.engine.on_input(Input::VolumeDown);
+        h.settle().await;
+        assert_eq!(h.take_log(), ["connect 100 %", "volume 95 %", "play ax0"]);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn volumen_se_guarda_una_vez_y_avisa_si_falla() {
+        let dir = std::env::temp_dir().join(format!(
+            "spotify-terminal-test-{}-motor-volumen",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut h = harness(true);
+        h.engine.volume_dir = Some(dir.clone());
+        h.type_line("vol 40").await;
+        h.engine.on_input(Input::VolumeUp);
+        // Hasta que vence la espera no se escribe nada.
+        assert!(h.engine.save_at.is_some());
+        assert_eq!(Volume::load(&dir), Volume::default());
+        h.engine.save_volume();
+        assert!(h.engine.save_at.is_none());
+        assert_eq!(Volume::load(&dir), volume_at(45));
+
+        // Carpeta imposible (es un archivo): avisa y sigue.
+        let file = dir.join(config::VOLUME_FILE);
+        h.engine.volume_dir = Some(file);
+        h.outputs();
+        h.type_line("vol 10").await;
+        h.engine.save_volume();
+        assert!(has_line(
+            &h.outputs(),
+            LineKind::Warn,
+            "No se pudo guardar el volumen"
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn al_salir_guarda_el_volumen_pendiente() {
+        let dir = std::env::temp_dir().join(format!(
+            "spotify-terminal-test-{}-motor-salir",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut h = harness(true);
+        h.engine.volume_dir = Some(dir.clone());
+        let (tx, rx) = mpsc::unbounded_channel();
+        tx.send(Input::Line("vol 20".into())).unwrap();
+        tx.send(Input::Line("exit".into())).unwrap();
+        h.engine.run(rx).await;
+        assert_eq!(Volume::load(&dir), volume_at(20));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

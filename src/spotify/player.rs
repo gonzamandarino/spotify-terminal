@@ -23,12 +23,12 @@ use librespot_metadata::{Album, Metadata, Playlist};
 use librespot_playback::{
     audio_backend,
     config::{AudioFormat, PlayerConfig},
-    mixer::NoOpVolume,
+    mixer::{Mixer, MixerConfig, softmixer::SoftMixer},
     player::{self, PlayerEventChannel},
 };
 use tokio::{runtime, sync::oneshot};
 
-use crate::{config, error::AppError, spotify::auth::Token};
+use crate::{app::volume::Volume, config, error::AppError, spotify::auth::Token};
 
 /// Reproductor conectado a Spotify y a la salida de audio por defecto.
 ///
@@ -42,6 +42,9 @@ pub struct Player {
     // `Arc` porque librespot devuelve el reproductor compartido entre su
     // hilo de audio y nosotros.
     inner: Arc<player::Player>,
+    /// Volumen por software (curva logarítmica): se aplica a cada muestra
+    /// antes de la salida, así que un cambio se oye enseguida.
+    mixer: SoftMixer,
     session: Session,
     runtime: AudioRuntime,
 }
@@ -61,13 +64,13 @@ impl Player {
     ///
     /// - Pre: `token` vigente de tipo `TokenKind::Audio` (con otro
     ///   Client ID la sesión conecta pero no carga audio: spike T2).
-    /// - Post: reproductor listo, sin nada cargado; la sesión corre en su
-    ///   propio hilo.
+    /// - Post: reproductor listo, sin nada cargado y con `volume`; la
+    ///   sesión corre en su propio hilo.
     /// - Errores: sin dispositivo de salida → `NoAudioOutput` (se chequea
     ///   antes de conectar); Spotify rechaza el token → `SessionRejected`;
     ///   no se llega al servidor → `Network`.
     /// - No debe: empezar a reproducir.
-    pub async fn connect(token: &Token) -> Result<Player, AppError> {
+    pub async fn connect(token: &Token, volume: Volume) -> Result<Player, AppError> {
         // Sin esto, rodio hace panic en el hilo del reproductor al abrir la
         // salida y el error llega tarde y confuso.
         if cpal::default_host().default_output_device().is_none() {
@@ -90,14 +93,19 @@ impl Player {
             bitrate: config::AUDIO_BITRATE,
             ..PlayerConfig::default()
         };
+        let mixer = SoftMixer::open(MixerConfig::default())
+            .map_err(|e| AppError::Internal(format!("control de volumen: {e}")))?;
+        // Arranca en 50 %: se fija antes de que pueda sonar nada.
+        mixer.set_volume(volume.output());
         let inner = player::Player::new(
             player_config,
             session.clone(),
-            Box::new(NoOpVolume),
+            mixer.get_soft_volume(),
             move || backend(None, AudioFormat::default()),
         );
         Ok(Player {
             inner,
+            mixer,
             session,
             runtime,
         })
@@ -209,6 +217,12 @@ impl Player {
     /// Corta la reproducción y descarga el tema actual.
     pub fn stop(&self) {
         self.inner.stop();
+    }
+
+    /// Cambia el volumen de lo que suena y de lo que venga, sin cortar el
+    /// audio. Solo afecta a esta app, no al volumen de Windows.
+    pub fn set_volume(&self, volume: Volume) {
+        self.mixer.set_volume(volume.output());
     }
 }
 
