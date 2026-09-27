@@ -1,0 +1,95 @@
+name: Release
+
+# Spec 008: pushear un tag vX.Y.Z (igual a la versión de Cargo.toml) arma
+# el zip para Windows y lo publica en el Release del tag. "Run workflow"
+# (workflow_dispatch) arma el zip y lo deja como artifact, sin publicar.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Toolchain estable
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup component add rustfmt clippy
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Versión (el tag tiene que coincidir con Cargo.toml)
+        id: version
+        shell: pwsh
+        run: |
+          $meta = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
+          $cargo = "v" + ($meta.packages | Where-Object name -eq "spotify-terminal").version
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            if ($env:GITHUB_REF_NAME -ne $cargo) {
+              throw "El tag $env:GITHUB_REF_NAME no coincide con la versión de Cargo.toml ($cargo)."
+            }
+            $version = $cargo
+          } else {
+            $version = "$cargo-$($env:GITHUB_SHA.Substring(0, 7))"
+          }
+          "version=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+
+      - name: Formato
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test
+
+      - name: Compilar release
+        run: cargo build --release --locked
+
+      - name: Sin dependencias del runtime de C/C++
+        shell: pwsh
+        run: ./scripts/verificar-dependencias.ps1
+
+      - name: Armar el zip
+        id: zip
+        shell: pwsh
+        run: ./scripts/armar-zip.ps1 -Version ${{ steps.version.outputs.version }}
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: spotify-terminal-${{ steps.version.outputs.version }}-windows-x64
+          path: ${{ steps.zip.outputs.zip }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    # Solo este job puede escribir en el repo (crear el Release).
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: spotify-terminal-${{ needs.build.outputs.version }}-windows-x64
+
+      - name: Publicar el Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" "spotify-terminal-$TAG-windows-x64.zip" \
+            --title "$TAG" \
+            --notes "Bajá el zip, descomprimilo y abrí spotify-desktop.exe. Instrucciones en el LEEME.txt del zip; cambios en CHANGELOG.md." \
+            --generate-notes
