@@ -210,6 +210,11 @@ pub const PROMPT_MAX_CHARS: usize = 8;
 /// Calidades de audio que se ofrecen, en kbps.
 pub const BITRATES_KBPS: &[u16] = &[96, 160, 320];
 
+/// Letra subrayada de cada menú de la barra, en orden: Tema, Fuente,
+/// Atajos, Reproducción, Consola, Ventana, Ajustes. `Alt`+letra abre el
+/// menú, así que `Alt`+esas letras no se aceptan como atajo de ventana.
+pub(crate) const MENU_ACCESS_KEYS: [char; 7] = ['T', 'F', 'A', 'R', 'C', 'V', 'J'];
+
 /// Atajo fijo que vuelve todo a fábrica: no se puede reasignar ni quitar,
 /// por si un tema deja el menú ilegible.
 pub(crate) const RESTORE_ALL_SHORTCUT: Combo = Combo::new(true, false, true, Key::F(12));
@@ -246,7 +251,6 @@ pub(crate) const WINDOW_SHORTCUTS: &[(Combo, WindowAction)] = &[
 
 /// Fuente monoespaciada que se puede elegir: archivos en `%WINDIR%\Fonts`.
 /// Solo se ofrecen las que están instaladas.
-#[allow(dead_code)] // TODO(spec 007, T4): la usa el menú Fuente.
 pub(crate) struct FontEntry {
     pub(crate) name: &'static str,
     pub(crate) regular: &'static str,
@@ -285,7 +289,6 @@ pub const BUILTIN_FONT: &str = "egui";
 pub const DEFAULT_FONT: &str = "Consolas";
 
 /// Temas predefinidos. El primero es el default.
-#[allow(dead_code)] // TODO(spec 007, T4): la usa el menú Tema.
 pub(crate) const THEME_PRESETS: &[(&str, Palette)] = &[
     ("Spotify oscuro", SPOTIFY_DARK),
     (

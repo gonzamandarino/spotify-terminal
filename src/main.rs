@@ -102,7 +102,12 @@ async fn play(
     let audio_token = auth::get_valid_token(config, TokenKind::Audio).await?;
     let mut volume = Volume::load(&config.data_dir);
     let initial = volume;
-    let player = Player::connect(&audio_token, volume).await?;
+    let player = Player::connect(
+        &audio_token,
+        volume,
+        spotify_terminal::config::AUDIO_BITRATE,
+    )
+    .await?;
     let resolved = player.resolve_tracks(target).await?;
     if resolved.skipped > 0 {
         println!(

@@ -2,6 +2,25 @@
 
 ## [Sin publicar]
 
+### Agregado (spec 007 — customización)
+- Barra de menús en la barra de título de la app de escritorio, como en
+  VS Code: Tema, Fuente, Atajos, Reproducción, Consola, Ventana y
+  Ajustes. Se abren con clic o `Alt`+letra y se navegan con flechas.
+- Temas predefinidos (Spotify oscuro, Claro, Alto contraste) y editor de
+  cada color; fuente (las monoespaciadas instaladas) y tamaño como zoom
+  de toda la ventana (Ctrl++ / Ctrl+- / Ctrl+0 / Ctrl+rueda).
+- Atajos de ventana y globales configurables: se graban apretando la
+  combinación; avisa si es reservada o si ya la usa otro atajo. Nuevos
+  atajos opcionales para stop, shuffle y limpiar consola.
+- Paso de volumen, umbral de "anterior" y calidad de audio (96 / 160 /
+  320 kbps, desde el próximo `play`).
+- Prompt, líneas guardadas, historial y hora en cada línea; ventana
+  siempre visible y recordar tamaño y posición.
+- Todo se aplica al instante y se guarda en `ajustes.json` (solo lo que
+  difiere de fábrica); un archivo roto nunca impide abrir la app.
+  Ctrl+Shift+F12 restaura todo.
+- `help` muestra los atajos vigentes (los configurados).
+
 ### Agregado (spec 006 — atajos globales)
 - Atajos que andan con la app de escritorio minimizada o en segundo
   plano: Ctrl+Alt+P pausa / reanudar, Ctrl+Alt+→ / ← siguiente /

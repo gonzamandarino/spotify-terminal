@@ -6,9 +6,6 @@
 //! le llega al usuario) y se puede editar a mano: cada clave se valida por
 //! separado y una inválida no arrastra a las demás.
 
-// TODO(spec 007, T9): sacar cuando la ventana use todos los ajustes.
-#![allow(dead_code)]
-
 use std::{
     collections::{BTreeMap, HashMap},
     fs, io,
@@ -554,7 +551,9 @@ pub(crate) fn load(dir: &Path) -> (Settings, Vec<String>) {
             return (Settings::default(), vec![warning(&text)]);
         }
     };
-    match serde_json::from_str::<Value>(&text) {
+    // El Bloc de notas y PowerShell 5.1 guardan UTF-8 con BOM.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    match serde_json::from_str::<Value>(text) {
         Ok(root) => Settings::from_json(&root),
         Err(e) => {
             let text = format!(
@@ -594,6 +593,7 @@ fn reserved(target: Target, combo: Combo) -> Option<&'static str> {
         Target::Window(_) if config::EDITING_SHORTCUTS.contains(&combo) => {
             Some("la usa la línea de entrada para editar")
         }
+        Target::Window(_) if is_menu_access(combo) => Some("abre un menú de la barra"),
         Target::Window(_) if !combo.has_command_modifier() && !matches!(combo.key, Key::F(_)) => {
             Some("sin Ctrl ni Alt taparía lo que se escribe")
         }
@@ -602,6 +602,14 @@ fn reserved(target: Target, combo: Combo) -> Option<&'static str> {
         }
         _ => None,
     }
+}
+
+/// `Alt`+letra de un menú de la barra.
+pub(crate) fn is_menu_access(combo: Combo) -> bool {
+    combo.alt
+        && !combo.ctrl
+        && !combo.shift
+        && matches!(combo.key, Key::Char(c) if config::MENU_ACCESS_KEYS.contains(&c))
 }
 
 /// Deja cada combinación en un solo atajo: primero los de `explicit` (los
@@ -892,6 +900,12 @@ fn parse_font(value: &Value) -> Result<String, String> {
         })
 }
 
+/// El prompt recortado, si sirve (1 a `config::PROMPT_MAX_CHARS`
+/// caracteres).
+pub(crate) fn valid_prompt(text: &str) -> Option<String> {
+    parse_prompt(&json!(text)).ok()
+}
+
 fn parse_prompt(value: &Value) -> Result<String, String> {
     let prompt = value.as_str().map(str::trim).unwrap_or_default();
     let chars = prompt.chars().count();
@@ -1136,6 +1150,12 @@ mod tests {
         // No se pisa al cargar.
         assert_eq!(fs::read_to_string(&path).unwrap(), "{ \"tema\": ");
 
+        // Con BOM (Bloc de notas, PowerShell 5.1) se lee igual.
+        fs::write(&path, "\u{feff}{\"consola\": {\"hora\": true}}").unwrap();
+        let (s, warnings) = load(&dir);
+        assert!(s.console.timestamps);
+        assert!(warnings.is_empty(), "{warnings:?}");
+
         let (s, warnings) = load_json("[1, 2]");
         assert_eq!(s, Settings::default());
         assert_eq!(warnings.len(), 1);
@@ -1190,6 +1210,11 @@ mod tests {
             s.check_combo(pause, combo("Ctrl+V")),
             ComboCheck::Reserved(_)
         ));
+        assert!(matches!(
+            s.check_combo(pause, combo("Alt+T")),
+            ComboCheck::Reserved(_)
+        ));
+        assert_eq!(s.check_combo(pause, combo("Alt+Shift+T")), ComboCheck::Ok);
         assert!(matches!(
             s.check_combo(pause, config::RESTORE_ALL_SHORTCUT),
             ComboCheck::Reserved(_)

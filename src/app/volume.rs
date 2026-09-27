@@ -41,15 +41,16 @@ impl Volume {
         self.muted = false;
     }
 
-    /// Sube `config::VOLUME_STEP` desde el nivel de antes del mute, hasta
-    /// 100, y saca del mute.
-    pub fn up(&mut self) {
-        self.set(self.level.saturating_add(config::VOLUME_STEP));
+    /// Sube `step` % desde el nivel de antes del mute, hasta 100, y saca
+    /// del mute. La CLI usa `config::VOLUME_STEP`; la app de escritorio, el
+    /// de sus ajustes (spec 007).
+    pub fn up(&mut self, step: u8) {
+        self.set(self.level.saturating_add(step));
     }
 
-    /// Baja `config::VOLUME_STEP`, hasta 0, y saca del mute.
-    pub fn down(&mut self) {
-        self.set(self.level.saturating_sub(config::VOLUME_STEP));
+    /// Baja `step` %, hasta 0, y saca del mute.
+    pub fn down(&mut self, step: u8) {
+        self.set(self.level.saturating_sub(step));
     }
 
     /// Silencia, o vuelve al nivel de antes.
@@ -132,14 +133,14 @@ mod tests {
     #[test]
     fn sube_y_baja_sin_salirse_de_0_a_100() {
         let mut volume = at(98);
-        volume.up();
+        volume.up(config::VOLUME_STEP);
         assert_eq!(volume.level(), 100);
-        volume.up();
+        volume.up(config::VOLUME_STEP);
         assert_eq!(volume.level(), 100);
         let mut volume = at(3);
-        volume.down();
+        volume.down(config::VOLUME_STEP);
         assert_eq!(volume.level(), 0);
-        volume.down();
+        volume.down(config::VOLUME_STEP);
         assert_eq!(volume.level(), 0);
         assert_eq!(at(150).level(), 100);
     }
@@ -155,7 +156,7 @@ mod tests {
         assert_eq!(volume, at(70));
         // `+`, `-` y fijar sacan del mute; `+`/`-` parten del nivel de antes.
         volume.toggle_mute();
-        volume.up();
+        volume.up(config::VOLUME_STEP);
         assert_eq!(volume, at(75));
         volume.toggle_mute();
         volume.set(20);

@@ -10,14 +10,14 @@ Comandos:
   play list <nombre>     lo mismo con playlists
   play <link>            tema, álbum o playlist por link, URI o ID
   play -s <…>            igual, pero arranca mezclado
-  pause                  pausa / reanudar            (Ctrl+Espacio)
-  next, n                siguiente tema               (Ctrl+→)
-  prev, p                anterior o reinicia el tema  (Ctrl+←)
+  pause                  pausa / reanudar
+  next, n                siguiente tema
+  prev, p                anterior o reinicia el tema
   shuffle, s             shuffle sí / no
   queue <tema>, a <tema> busca un tema y lo agrega a la cola
   vol, v                 muestra el volumen
   vol <0-100>            fija el volumen
-  vol + / vol -          sube / baja el volumen       (Ctrl+↑ / Ctrl+↓)
+  vol + / vol -          sube / baja el volumen
   mute, m                silencia / vuelve al volumen de antes
   stop                   corta la reproducción y vacía la cola
   login / logout         inicia / cierra la sesión de Spotify

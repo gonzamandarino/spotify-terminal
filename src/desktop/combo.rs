@@ -52,9 +52,6 @@ const NAMES: &[(Key, &[&str])] = &[
     (Key::Minus, &["-", "Minus"]),
 ];
 
-// TODO(spec 007, T5): sacar el `allow` cuando los atajos de ventana usen
-// `Combo` (lo de egui se usa recién ahí).
-#[allow(dead_code)]
 impl Key {
     /// Virtual-key code de Windows. Letras y dígitos son su código ASCII
     /// en mayúscula; `+` y `-` son las teclas de la fila principal.
@@ -170,7 +167,6 @@ pub(crate) struct Combo {
     pub(crate) key: Key,
 }
 
-#[allow(dead_code)] // TODO(spec 007, T5): ver arriba.
 impl Combo {
     pub(crate) const fn new(ctrl: bool, alt: bool, shift: bool, key: Key) -> Combo {
         Combo {

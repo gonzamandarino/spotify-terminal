@@ -9,10 +9,9 @@
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use super::combo::Combo;
+use super::{combo::Combo, settings::Settings};
 use crate::{
     app::engine::{GlobalAction, Input},
-    config,
     error::AppError,
 };
 
@@ -39,11 +38,13 @@ impl Shortcut {
     }
 }
 
-/// Atajos de `config::GLOBAL_SHORTCUTS`.
-pub(crate) fn configured() -> Vec<Shortcut> {
-    config::GLOBAL_SHORTCUTS
+/// Atajos globales de los ajustes (los que tienen combinación), en el
+/// orden de `GlobalAction::ALL`.
+pub(crate) fn from_settings(settings: &Settings) -> Vec<Shortcut> {
+    settings
+        .global_keys
         .iter()
-        .map(|&(combo, action)| Shortcut { combo, action })
+        .filter_map(|(&action, combo)| combo.map(|combo| Shortcut { combo, action }))
         .collect()
 }
 
@@ -106,6 +107,53 @@ pub(crate) fn spawn(
         failed,
         thread: Some((thread_id, thread)),
     })
+}
+
+/// Cambia los atajos registrados por `wanted` (spec 007).
+///
+/// - Pre: `current` son los registrados ahora (o `None`); `previous`, la
+///   lista con la que se registraron.
+/// - Post: `current` se suelta antes de registrar (sus combinaciones
+///   quedan libres para otras apps y para `wanted`). Una combinación de
+///   `wanted` que no estaba en `previous` y que Windows rechaza vuelve a la
+///   de `previous` para esa acción (o a ninguna), y va en la lista
+///   devuelta. Las que ya fallaban antes siguen en `failed`, sin volver a
+///   avisar.
+/// - Errores: `Internal` si no arranca el hilo.
+pub(crate) fn replace(
+    current: Option<Hotkeys>,
+    wanted: &[Shortcut],
+    previous: &[Shortcut],
+    inputs: &UnboundedSender<Input>,
+) -> Result<(Hotkeys, Vec<Failed>), AppError> {
+    drop(current);
+    let hotkeys = spawn(wanted.to_vec(), inputs.clone())?;
+    let (rejected, _): (Vec<Failed>, Vec<Failed>) = hotkeys
+        .failed
+        .iter()
+        .map(|f| Failed {
+            shortcut: f.shortcut,
+            reason: f.reason.clone(),
+        })
+        .partition(|f| !previous.contains(&f.shortcut));
+    if rejected.is_empty() {
+        return Ok((hotkeys, rejected));
+    }
+    drop(hotkeys);
+    let fallback: Vec<Shortcut> = wanted
+        .iter()
+        .filter_map(|&shortcut| {
+            if rejected.iter().any(|f| f.shortcut == shortcut) {
+                previous
+                    .iter()
+                    .find(|p| p.action == shortcut.action)
+                    .copied()
+            } else {
+                Some(shortcut)
+            }
+        })
+        .collect();
+    Ok((spawn(fallback, inputs.clone())?, rejected))
 }
 
 /// Fuera de Windows no hay atajos globales: todos van a `failed`.
@@ -287,7 +335,8 @@ mod tests {
 
     #[test]
     fn config_sin_combinaciones_repetidas_y_solo_volumen_repite() {
-        let all = configured();
+        let all = from_settings(&Settings::default());
+        assert_eq!(all.len(), GlobalAction::ALL.len());
         assert!(!all.is_empty());
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
@@ -318,5 +367,33 @@ mod tests {
         drop(first);
         let third = spawn(vec![rare], tx).unwrap();
         assert_eq!(third.active.len(), 1, "{:?}", third.failed);
+    }
+
+    /// Spec 007, AC-5: cambiar suelta la anterior; si la nueva está tomada,
+    /// vuelve a la anterior y avisa.
+    #[cfg(windows)]
+    #[test]
+    fn reemplazar_suelta_la_anterior_y_vuelve_si_la_nueva_esta_tomada() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let old = shortcut("Ctrl+Alt+Shift+F9", GlobalAction::Stop);
+        let new = shortcut("Ctrl+Alt+Shift+F10", GlobalAction::Stop);
+        let taken = shortcut("Ctrl+Alt+Shift+F11", GlobalAction::Stop);
+        let current = spawn(vec![old], tx.clone()).unwrap();
+
+        let (hotkeys, rejected) = replace(Some(current), &[new], &[old], &tx).unwrap();
+        assert!(rejected.is_empty());
+        assert_eq!(hotkeys.active, vec![new]);
+        // La anterior quedó libre.
+        let other = spawn(vec![old], tx.clone()).unwrap();
+        assert_eq!(other.active, vec![old], "{:?}", other.failed);
+        drop(other);
+
+        // Otra "app" tiene la que se pide: vuelve a la de antes.
+        let holder = spawn(vec![taken], tx.clone()).unwrap();
+        let (hotkeys, rejected) = replace(Some(hotkeys), &[taken], &[new], &tx).unwrap();
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0].shortcut, taken);
+        assert_eq!(hotkeys.active, vec![new]);
+        drop(holder);
     }
 }

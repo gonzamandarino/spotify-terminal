@@ -1,7 +1,7 @@
 # 007 - Customización desde una barra de menús
 
 ## Estado
-En implementación
+En verificación
 
 ## Contexto
 Hoy todo el look y el manejo de la app de escritorio (spec 004) está fijo
@@ -99,57 +99,57 @@ menús de customización.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — La barra de menús aparece en la barra de título, con los
+- [x] **AC-1** — La barra de menús aparece en la barra de título, con los
       siete menús; cada uno se abre con clic y con `Alt`+letra, se navega
       con flechas y se cierra con `Esc` o clic afuera. Arrastrar la barra
       (fuera de los menús), doble clic para maximizar y los botones de
       ventana siguen andando como en spec 004.
-- [ ] **AC-2** — **Tema:** elegir un tema predefinido o cambiar un color
+- [x] **AC-2** — **Tema:** elegir un tema predefinido o cambiar un color
       en "Editar colores…" cambia la ventana en el mismo frame (consola,
       barras, prompt, colores de éxito / aviso / error).
-- [ ] **AC-3** — **Fuente:** cambiar familia y tamaño se aplica al
+- [x] **AC-3** — **Fuente:** cambiar familia y tamaño se aplica al
       instante en toda la ventana. Solo se listan fuentes presentes en la
       PC. `Ctrl++`, `Ctrl+-`, `Ctrl+0` y `Ctrl+rueda` cambian el tamaño
       dentro de un rango en config (ej. 8–32 pt), sin pasarse.
-- [ ] **AC-4** — **Atajos de ventana:** se puede cambiar o quitar el
+- [x] **AC-4** — **Atajos de ventana:** se puede cambiar o quitar el
       atajo de cada acción; el nuevo anda enseguida y el viejo deja de
       hacer algo. Una combinación reservada para escribir se rechaza con
       aviso; una usada por otra acción pide confirmación.
-- [ ] **AC-5** — **Atajos globales:** cambiar uno libera el anterior (otra
+- [x] **AC-5** — **Atajos globales:** cambiar uno libera el anterior (otra
       app puede registrarlo) y registra el nuevo sin reiniciar. Si Windows
       lo rechaza (tomado por otra app), se avisa en la consola y queda el
       anterior.
-- [ ] **AC-6** — **Reproducción:** el paso de volumen y el umbral de
+- [x] **AC-6** — **Reproducción:** el paso de volumen y el umbral de
       "anterior" cambian el comportamiento al instante; la calidad de
       audio se aplica desde el próximo `play`, sin cortar lo que suena.
-- [ ] **AC-7** — **Consola y Ventana:** prompt, scrollback, historial,
+- [x] **AC-7** — **Consola y Ventana:** prompt, scrollback, historial,
       hora por línea, siempre visible y recordar tamaño / posición andan
       como dice su menú. Achicar el scrollback descarta las líneas más
       viejas que sobran.
-- [ ] **AC-8** — Los ajustes cambiados persisten: cerrar y abrir la app
+- [x] **AC-8** — Los ajustes cambiados persisten: cerrar y abrir la app
       los muestra igual. `ajustes.json` guarda solo lo que difiere del
       default y no se escribe a disco en cada paso de un cambio continuo
       (arrastrar el selector de color, `Ctrl+rueda`).
-- [ ] **AC-9** — Con `ajustes.json` inválido (JSON roto, clave
+- [x] **AC-9** — Con `ajustes.json` inválido (JSON roto, clave
       desconocida, color mal escrito, tamaño fuera de rango, atajo
       inexistente) la app abre, usa el default en lo inválido, avisa en la
       consola qué clave se ignoró y no pisa el archivo hasta que el
       usuario cambie algo.
-- [ ] **AC-10** — "Recargar desde el archivo" aplica un `ajustes.json`
+- [x] **AC-10** — "Recargar desde el archivo" aplica un `ajustes.json`
       editado a mano sin reiniciar.
-- [ ] **AC-11** — "Restaurar todo" y el atajo fijo `Ctrl+Shift+F12`
+- [x] **AC-11** — "Restaurar todo" y el atajo fijo `Ctrl+Shift+F12`
       vuelven todo al default (incluidos los atajos globales) y lo dejan
       guardado. Los "Restaurar …" de cada menú solo afectan a lo suyo.
-- [ ] **AC-12** — `help` lista los atajos vigentes (los configurados, no
+- [x] **AC-12** — `help` lista los atajos vigentes (los configurados, no
       los de fábrica).
 - [ ] **AC-13** — Nada se corta: cambiar cualquier ajuste mientras suena
       música no produce silencios ni saltos.
-- [ ] **AC-14** — Consumo: en reposo con la barra visible, CPU ~0 % (los
+- [x] **AC-14** — Consumo: en reposo con la barra visible, CPU ~0 % (los
       menús no fuerzan redibujos continuos) y RAM reproduciendo dentro del
       tope de spec 004 (≤ 100 MB), medido con
       `scripts/medir-consumo.ps1`. Cambiar de fuente varias veces no
       acumula memoria (se descarta la anterior).
-- [ ] **AC-15** — La CLI (`spotify-terminal.exe`) no cambia de
+- [x] **AC-15** — La CLI (`spotify-terminal.exe`) no cambia de
       comportamiento.
 
 ## Riesgos / casos de falla
@@ -230,6 +230,29 @@ están.
   el foco de egui no alcanza para navegar con flechas, se avisa antes de
   seguir (no se agrega una dependencia).
 
+### Cambios respecto del plan (al implementar)
+
+- El menú no devuelve un `Change` por cada ajuste: edita los `Settings`
+  directamente (sliders, checkboxes y selectores de color se atan a los
+  campos) y devuelve solo lo que no es un ajuste (`menu::Command`: abrir,
+  recargar, restaurar todo, limpiar, tamaño de ventana). `app.rs` compara
+  los ajustes antes y después del frame y aplica lo que cambió en un solo
+  lugar (`settings_changed`). Menos código y el mismo efecto.
+- `Hotkeys::replace` quedó como función libre `hotkeys::replace(current,
+  wanted, previous, inputs)`; `hotkeys::configured()` pasó a
+  `hotkeys::from_settings(&Settings)`.
+- `theme::apply` es `Theme::apply`: recuerda la fuente aplicada para no
+  releerla del disco si solo cambió un color.
+- El tamaño de letra se aplica como zoom de toda la ventana
+  (`set_zoom_factor`), no solo del texto: con letra grande las barras de
+  alto fijo cortaban el texto (ver `docs/decisiones.md`).
+- Se agregó `config::MENU_ACCESS_KEYS`: `Alt`+letra de un menú no se
+  acepta como atajo de ventana.
+- `ajustes.json` con BOM (Bloc de notas, PowerShell 5.1) se lee igual:
+  apareció al probar AC-9 a mano.
+- `help` ya no tiene los atajos fijos escritos en el texto; los lista de
+  los ajustes, más `Ctrl+Shift+F12`.
+
 ### Tests (unitarios, sin ventana)
 
 - `combo`: parseo y texto ida y vuelta (`"Ctrl+Alt+P"`, `"Ctrl+Shift+F12"`,
@@ -276,38 +299,100 @@ están.
 - [x] **T2** — `settings.rs` + defaults / rangos / presets / catálogo en
       `config.rs`: modelo, `load` tolerante, `save` atómico solo con
       diffs, `check_combo`, restaurar. Tests (AC-8, AC-9, AC-11 lógica).
-- [ ] **T3** — Barra de menús en la barra de título, vacía de acciones:
+- [x] **T3** — Barra de menús en la barra de título, vacía de acciones:
       abrir con clic y `Alt`+letra, flechas, `Esc`; arrastre, doble clic
       y botones de ventana intactos (AC-1). Medir CPU en reposo.
-- [ ] **T4** — Tema y fuente vivos: `theme::apply`, menús Tema y Fuente,
+- [x] **T4** — Tema y fuente vivos: `theme::apply`, menús Tema y Fuente,
       "Editar colores…", `Ctrl++`/`Ctrl+-`/`Ctrl+0`/`Ctrl+rueda`
       (AC-2, AC-3).
-- [ ] **T5** — Atajos de ventana configurables: tabla, grabar
+- [x] **T5** — Atajos de ventana configurables: tabla, grabar
       combinación, reservadas, conflictos (AC-4).
-- [ ] **T6** — Atajos globales configurables: `Hotkeys::replace` con
+- [x] **T6** — Atajos globales configurables: `Hotkeys::replace` con
       vuelta atrás; `help` con los atajos vigentes (AC-5, AC-12).
-- [ ] **T7** — Reproducción: `Input::Playback`, paso / umbral por
+- [x] **T7** — Reproducción: `Input::Playback`, paso / umbral por
       parámetro, calidad al próximo `play`; CLI con defaults (AC-6,
       AC-15).
-- [ ] **T8** — Menús Consola y Ventana: prompt, scrollback, historial,
+- [x] **T8** — Menús Consola y Ventana: prompt, scrollback, historial,
       hora, siempre visible, recordar tamaño / posición (AC-7).
-- [ ] **T9** — Persistencia viva: guardado diferido, guardar al cerrar,
+- [x] **T9** — Persistencia viva: guardado diferido, guardar al cerrar,
       Ajustes → abrir archivo / recargar / restaurar todo, atajo fijo
       `Ctrl+Shift+F12` (AC-8, AC-10, AC-11).
 - [ ] **T10** — Verificación manual con audio real (AC-13) y consumo con
       `scripts/medir-consumo.ps1` (AC-14); docs, contratos y changelog.
+      *(Hecho: consumo, docs, contratos y changelog. Falta escuchar
+      AC-13 con volumen: ver Notas de verificación.)*
 
 ## Definition of Done
 
 - [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y doc de arquitectura actualizados si
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y doc de arquitectura actualizados si
       el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas
-- [ ] Changelog actualizado
-- [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Decisiones de diseño relevantes documentadas
+- [x] Changelog actualizado
+- [x] Sin constantes/umbrales hardcodeados fuera de su lugar de config
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
+
+137 tests (`cargo test`), `cargo fmt --check` y `cargo clippy
+--all-targets -- -D warnings` limpios. Verificación manual con
+`spotify-desktop.exe` en release, con capturas de la ventana y teclas
+mandadas por SendKeys (2026-09-27):
+
+- **AC-1:** los siete menús en la barra de título, con la letra
+  subrayada. `Alt+T` / `Alt+A` / `Alt+F` / `Alt+J`... abren su menú; ↓ y
+  Enter eligen; Esc cierra. La letra de `Alt`+letra no llega a la línea
+  de entrada (bug encontrado y corregido al probar). Doble clic en el
+  espacio libre de la barra maximiza y restaura (`IsZoomed`); los botones
+  de ventana siguen igual. Con letra grande el título se oculta antes que
+  los menús.
+- **AC-2:** tema Claro / Alto contraste desde el menú, y el acento desde
+  "Editar colores…" con el selector: la ventana cambia en el mismo frame.
+- **AC-3:** Consolas → Courier New al instante; se listan solo las
+  instaladas (en esta PC, las cuatro del catálogo + la de egui).
+  `Ctrl++` / `Ctrl+0` cambian el tamaño; el rango se chequea en
+  `menu::tests::agrandar_y_achicar_sin_salirse_del_rango`.
+- **AC-4:** en el diálogo de atajos, stop de ventana → `Ctrl+F5` (anda y
+  sale en `help`); shuffle → `Ctrl+→` pide confirmación porque la usa
+  "siguiente"; shuffle → `P` se rechaza ("sin Ctrl ni Alt taparía lo que
+  se escribe"). Lógica en `settings::tests`.
+- **AC-5:** stop global `Ctrl+Alt+Enter` → `Ctrl+Alt+S` sin reiniciar
+  (`help` lo muestra). Soltar la anterior y volver a ella si Windows
+  rechaza la nueva: `hotkeys::tests::reemplazar_suelta_la_anterior_y_vuelve_si_la_nueva_esta_tomada`,
+  contra `RegisterHotKey` de verdad.
+- **AC-6:** `engine::tests::ajustes_de_reproduccion_cambian_paso_y_umbral`
+  y `calidad_nueva_desde_el_proximo_play`. A mano: con un tema sonando se
+  pasó a 320 kbps y siguió sonando; el `play` siguiente abrió el
+  reproductor nuevo sin errores.
+- **AC-7:** hora por línea y prompt (`λ`, `>`) a mano; siempre visible
+  prende y apaga `WS_EX_TOPMOST` y persiste al reabrir; tamaño y posición
+  se guardan al cerrar (Alt+F4) y la ventana reabre ahí. Achicar
+  scrollback / historial:
+  `app::tests::el_scrollback_y_el_historial_tienen_el_tope_de_los_ajustes`.
+- **AC-8:** tras elegir el tema Claro, `ajustes.json` tenía solo la
+  sección `tema`; al reabrir, el tema seguía. Guardado 1 s después del
+  último cambio (un solo repintado agendado, no por paso).
+- **AC-9:** con un archivo con color, tamaño, atajo reservado y clave
+  inválidos, la app abrió con lo válido aplicado (acento, prompt, atajo de
+  shuffle) y un aviso por cada clave; el archivo no se tocó.
+- **AC-10:** archivo editado a mano + Ajustes → Recargar: se aplicó sin
+  reiniciar y no se reescribió.
+- **AC-11:** `Ctrl+Shift+F12` dejó todo de fábrica (tema, fuente, atajo
+  global de stop, siempre visible) y el archivo solo con la geometría.
+  Restaurar por sección: `settings::tests::restaurar_una_seccion_o_todo`.
+- **AC-12:** `help` lista los atajos de ventana y globales configurados
+  (captura con `Ctrl+F5` y `Ctrl+Alt+S`).
+- **AC-13 (pendiente):** con un tema sonando se cambiaron tema, fuente y
+  tamaño: la barra de progreso siguió avanzando y no hubo errores. **No
+  se escuchó:** el volumen guardado estaba en 0 %. Falta que lo pruebes
+  con volumen.
+- **AC-14:** `scripts/medir-consumo.ps1 -Proceso spotify-desktop` 1 min en
+  reposo con la barra visible: CPU 0,00 % promedio y máximo, 26,8 MB.
+  Reproduciendo: 42,7 MB (160 kbps) y 45,1 MB (320 kbps). 20 cambios de
+  fuente: 33,9 → 34,1 MB.
+- **AC-15:** la CLI solo pasa los defaults de `config` a `up`/`down`/
+  `previous`/`connect`; `spotify-terminal whoami` y `--help` igual que
+  antes, y los tests de `ui::playback` pasan sin cambios.

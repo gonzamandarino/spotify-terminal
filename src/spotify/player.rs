@@ -22,7 +22,7 @@ use librespot_core::{
 use librespot_metadata::{Album, Metadata, Playlist};
 use librespot_playback::{
     audio_backend,
-    config::{AudioFormat, PlayerConfig},
+    config::{AudioFormat, Bitrate, PlayerConfig},
     mixer::{Mixer, MixerConfig, softmixer::SoftMixer},
     player::{self, PlayerEventChannel},
 };
@@ -64,13 +64,18 @@ impl Player {
     ///
     /// - Pre: `token` vigente de tipo `TokenKind::Audio` (con otro
     ///   Client ID la sesión conecta pero no carga audio: spike T2).
-    /// - Post: reproductor listo, sin nada cargado y con `volume`; la
+    /// - Post: reproductor listo, sin nada cargado, con `volume` y calidad
+    ///   `bitrate` (fija mientras viva: para otra, otro `connect`); la
     ///   sesión corre en su propio hilo.
     /// - Errores: sin dispositivo de salida → `NoAudioOutput` (se chequea
     ///   antes de conectar); Spotify rechaza el token → `SessionRejected`;
     ///   no se llega al servidor → `Network`.
     /// - No debe: empezar a reproducir.
-    pub async fn connect(token: &Token, volume: Volume) -> Result<Player, AppError> {
+    pub async fn connect(
+        token: &Token,
+        volume: Volume,
+        bitrate: Bitrate,
+    ) -> Result<Player, AppError> {
         // Sin esto, rodio hace panic en el hilo del reproductor al abrir la
         // salida y el error llega tarde y confuso.
         if cpal::default_host().default_output_device().is_none() {
@@ -90,7 +95,7 @@ impl Player {
             .map_err(|e| session_error(&e))?;
 
         let player_config = PlayerConfig {
-            bitrate: config::AUDIO_BITRATE,
+            bitrate,
             ..PlayerConfig::default()
         };
         let mixer = SoftMixer::open(MixerConfig::default())
