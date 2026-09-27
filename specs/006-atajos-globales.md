@@ -1,7 +1,7 @@
 # 006 - Atajos de teclado globales
 
 ## Estado
-En plan
+En implementación
 
 ## Contexto
 Los atajos de la app de escritorio (spec 004: `Ctrl+Espacio`, `Ctrl+→`,
@@ -19,10 +19,13 @@ Windows.
 - **¿Qué combinaciones?** → Respondido por vos: todas con `Ctrl+Alt`, y
   stop en `Enter` (se propuso `Fin`). Se probó `Ctrl+Shift` y se descartó:
   tapaba la selección de texto de las demás apps.
+  Pausa en `P`: `Ctrl+Alt+Espacio` ya estaba registrada por otra app en
+  esta PC (`RegisterHotKey` → error 1409; según vos, Claude). El resto
+  se probó igual y estaba libre.
 
   | Combinación | Acción | Igual que |
   |---|---|---|
-  | `Ctrl+Alt+Espacio` | pausa / reanudar | `pause` |
+  | `Ctrl+Alt+P` | pausa / reanudar | `pause` |
   | `Ctrl+Alt+→` | siguiente tema | `next` |
   | `Ctrl+Alt+←` | anterior (regla de 3 s) | `prev` |
   | `Ctrl+Alt+Enter` | stop (corta y vacía la cola) | `stop` |
@@ -67,7 +70,7 @@ Windows.
 
 ## Qué debe pasar (no cómo)
 1. Con la app minimizada o detrás de otra ventana y música sonando,
-   `Ctrl+Alt+Espacio` pausa; otra vez, reanuda. `Ctrl+Alt+→` pasa al
+   `Ctrl+Alt+P` pausa; otra vez, reanuda. `Ctrl+Alt+→` pasa al
    siguiente, `Ctrl+Alt+Enter` corta todo.
 2. Si una combinación no se puede usar, la app lo dice al abrir y sigue
    andando con las demás.
@@ -76,7 +79,7 @@ Windows.
 ## Criterios de aceptación
 
 - [ ] **AC-1** — Con la ventana minimizada y música sonando,
-      `Ctrl+Alt+Espacio` pausa y otra vez reanuda, sin cortes ni demora
+      `Ctrl+Alt+P` pausa y otra vez reanuda, sin cortes ni demora
       perceptible (< ~0,5 s).
 - [ ] **AC-2** — `Ctrl+Alt+→` / `Ctrl+Alt+←` pasan al siguiente / anterior
       (regla de 3 s de spec 003) con la ventana minimizada o con otra
@@ -120,10 +123,88 @@ Windows.
   confirmar. Si molesta, se cambia o se saca de la lista en config.
 
 ## Plan técnico
-*(lo completa el agente antes de implementar, se revisa antes de seguir)*
+
+- **Mecanismo:** `RegisterHotKey` de Windows (user32). Cuando se aprieta
+  una combinación registrada, Windows le manda un mensaje `WM_HOTKEY` a la
+  app, que estaba dormida esperando mensajes: no hay polling ni hook de
+  teclado. Se usa `windows-sys`, que ya es dependencia (0.52, la de
+  winit). Solo se suman features de la misma crate:
+  `Win32_UI_Input_KeyboardAndMouse` y `Win32_System_Threading`. No entra
+  `global-hotkey`: sumaría otra crate para ~60 líneas de Win32.
+- **Hilo propio "atajos"** (`src/desktop/hotkeys.rs`, nuevo, solo
+  Windows): registra las combinaciones con `hWnd = NULL`, así los
+  mensajes llegan a la cola de ese hilo, y espera con `GetMessageW`, que
+  bloquea sin gastar CPU. Con cada `WM_HOTKEY` manda el `Input`
+  correspondiente al motor por el mismo canal que usa la ventana. No
+  pasa por el loop de winit, así que anda igual con la ventana minimizada
+  y no depende de que se redibuje. El motor despierta a la ventana como
+  siempre, para la barra.
+  - `hotkeys::spawn(inputs) -> Result<Hotkeys, AppError>`: arranca el
+    hilo, espera a que termine de registrar y devuelve cuáles quedaron
+    activas y cuáles fallaron (con la combinación y la acción).
+  - `Drop for Hotkeys`: `PostThreadMessageW(WM_QUIT)` al hilo, que
+    desregistra todo (`UnregisterHotKey`) y termina; después, `join`.
+  - Pausa, siguiente, anterior y stop se registran con `MOD_NOREPEAT`
+    (mantener apretado = una vez). El volumen se registra sin esa opción:
+    mantener `Ctrl+Alt+↑` sube de a pasos, como `Ctrl+↑` en la ventana.
+- **Tipos y config:**
+  - `hotkeys::Action` (`TogglePause`, `Next`, `Prev`, `Stop`, `VolumeUp`,
+    `VolumeDown`) → `engine::Input`, y `hotkeys::Key` (`Space`, `Enter`,
+    flechas) → virtual-key de Windows y nombre para mostrar (`→`,
+    `Espacio`).
+  - `config::GLOBAL_SHORTCUTS: &[(Action, Key)]` con la tabla del spec.
+    El modificador (`Ctrl+Alt`) es un solo valor en config, igual para
+    todas.
+- **Motor** (`src/app/engine.rs`):
+  - `Input::Stop`, igual que `stop` pero sin escribir en la consola (sin
+    nada sonando no avisa: AC-8). Pausa, siguiente y anterior ya existen
+    como `Input`, pero hoy avisan "No suena nada" sin nada sonando. Con
+    un campo `quiet` en el control, los que vienen de un atajo global no
+    escriben nada.
+  - `Input::GlobalShortcuts(Vec<String>)`: la lista de combinaciones
+    activas ("Ctrl+Alt+→  siguiente"), que `help` agrega al final en una
+    sección "Atajos globales (con la app minimizada)". Sin ninguna activa,
+    la sección no aparece.
+- **Arranque** (`src/desktop/mod.rs`): después del motor,
+  `hotkeys::spawn(inputs.clone())`. Si alguna combinación falla, la
+  consola arranca con un aviso amarillo por cada una ("Ctrl+Alt+→ ya lo
+  usa otra app: sin atajo global para siguiente"). Si falla el hilo
+  entero, un aviso y la app sigue sin atajos globales. Al cerrar, los
+  `Hotkeys` se sueltan antes de esperar al motor.
+- **CLI:** sin cambios (AC-11).
+- **Tests:**
+  - `hotkeys`: acción → `Input`, nombre de cada combinación, que ninguna
+    combinación de `config::GLOBAL_SHORTCUTS` esté repetida, y un test
+    real en Windows. Registra una combinación que nadie usa
+    (`Ctrl+Alt+Shift+F24`), comprueba que un segundo registro falla
+    (AC-6), la suelta y comprueba que se puede registrar de nuevo (AC-7).
+  - `engine`: `Input::Stop` con y sin nada sonando (sin línea en la
+    consola), controles silenciosos sin nada sonando, `help` con y sin
+    atajos globales.
+  - A mano: AC-1 a AC-5 con la app minimizada y con otra app enfocada.
+    AC-2 y AC-5 prueban también que el driver de gráficos no rote la
+    pantalla con `Ctrl+Alt+flechas`. AC-6 abriendo una segunda ventana,
+    y AC-10 con la medición.
+- **Contratos / docs:** doc-comments de `hotkeys::spawn`, `Hotkeys`,
+  `Action`, `Key`, `Input::Stop`, `Input::GlobalShortcuts`. En
+  `docs/arquitectura.md`, el hilo "atajos" en el mapa y en "Hilos", y que
+  manda `Input` al motor como la ventana. En `docs/decisiones.md`,
+  `RegisterHotKey` en un hilo propio en vez de un hook de teclado, del
+  hook de mensajes de winit o de la crate `global-hotkey`. README (tabla
+  de atajos globales) y changelog.
 
 ## Tareas
 *(desglose del plan, se van tildando)*
+
+- [ ] T1 — `hotkeys::Action`/`Key`, config y tests de nombres y mapeo.
+- [ ] T2 — Hilo "atajos": registrar, loop de `GetMessageW`, soltar al
+      cerrar; test real de registro doble y liberación.
+- [ ] T3 — Motor: `Input::Stop`, controles silenciosos,
+      `Input::GlobalShortcuts` y sección en `help`, con tests.
+- [ ] T4 — `desktop::run`: arrancar el hilo, avisos de las que fallaron y
+      cierre ordenado.
+- [ ] T5 — Pruebas a mano de todos los AC + medición (AC-10).
+- [ ] T6 — Docs: arquitectura, decisiones, README, changelog.
 
 ## Definition of Done
 
