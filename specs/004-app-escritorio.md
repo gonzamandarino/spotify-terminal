@@ -1,10 +1,15 @@
 # 004 - App de escritorio con consola propia
 
 ## Estado
-En verificación
+Reabierto (parcial)
 
-Falta T10: probar a mano los AC que necesitan audio (AC-3 a AC-9, AC-12,
-AC-13) sin cortar la sesión que está sonando en la CLI.
+Se cierra a pedido de vos después de confirmar que la app reproduce
+(`play <nombre>` + elegir → suena). Quedan sin verificar a mano: AC-2
+(`login`/`logout` desde la ventana), AC-4 a AC-9 (links y `-s`, controles
+con música, cola, reemplazo/`stop`, barra "sonando ahora"), AC-10 (`exit`
+y cerrar con música sonando), AC-12 (consumo reproduciendo) y AC-13 (CLI a
+mano; sus tests pasan). La lógica de AC-5 a AC-8 está cubierta por los
+tests del motor con reproductor falso. Ver "Notas de verificación".
 
 ## Contexto
 Hoy el cliente es un comando de consola: cada `login`, `play`, `whoami` es
@@ -121,7 +126,7 @@ está instalado en la máquina de prueba.
       ventana dan el mismo resultado que en la CLI; los errores (sin
       `.env`, sin sesión, sin red) se muestran en rojo en la consola y la
       app sigue abierta.
-- [ ] **AC-3** — `play <nombre>` y `play list <nombre>` muestran los 5
+- [x] **AC-3** — `play <nombre>` y `play list <nombre>` muestran los 5
       resultados numerados; `2` + Enter reproduce el segundo, Enter solo
       el primero, Esc cancela.
 - [ ] **AC-4** — `play <link>` y `play -s <…>` funcionan como en la CLI
@@ -257,21 +262,22 @@ el del crate no soporta arrastrar ni cambiar el tamaño), `app.rs` y
 - [x] T8 — Fuente, ícono, `build.rs`, log de panics, `MessageBoxW`.
 - [x] T9 — `scripts/instalar-acceso-directo.ps1`.
 - [ ] T10 — Pruebas a mano de todos los AC + medición (AC-12).
-      Hechas las que no necesitan audio (ver Notas de verificación).
+      Parcial: las que no necesitan audio y la reproducción básica (ver
+      Notas de verificación); el resto queda pendiente.
 - [x] T11 — Docs: arquitectura, decisiones, README, changelog.
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y doc de arquitectura actualizados si
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y doc de arquitectura actualizados si
       el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas
-- [ ] Changelog actualizado
-- [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Decisiones de diseño relevantes documentadas
+- [x] Changelog actualizado
+- [x] Sin constantes/umbrales hardcodeados fuera de su lugar de config
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
 
@@ -285,8 +291,9 @@ porque la CLI estaba sonando:
   cerrar, arrastre), foco en la entrada, sin consola detrás.
 - **AC-2 (parcial):** `help` y `whoami` bien; errores en rojo sin cerrar.
   Falta `login`/`logout` desde la ventana.
-- **AC-3 (parcial):** `play list rock` → 5 playlists, prompt `1-5 ›`,
-  `9` avisa fuera de rango, Esc cancela. Falta elegir y que suene.
+- **AC-3:** `play list rock` → 5 playlists, prompt `1-5 ›`, `9` avisa
+  fuera de rango, Esc cancela. Elegir un resultado y que suene: confirmado
+  por vos con audio real ("sonó bien").
 - **AC-10 (parcial):** ↑/↓ y Tab bien a velocidad humana (con teclas
   simuladas todas en el mismo frame, Tab se procesaba antes que el texto;
   se corrigió que dos ↑ en un frame contaran como uno). Falta `exit` y
