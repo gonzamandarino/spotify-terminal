@@ -154,6 +154,8 @@ corregir la tabla.
 | `backend::Backend`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
 | `hotkeys::spawn`, `hotkeys::Hotkeys`, `hotkeys::Shortcut` (crate) | `src/desktop/hotkeys.rs` | doc-comment |
 | `combo::Combo`, `combo::Key` (crate; `Combo::from_str` con contrato) | `src/desktop/combo.rs` | doc-comment |
+| `settings::Settings` (`from_json`, `to_json`, `check_combo`, `assign`, `restore`), `settings::load`, `settings::save` (crate) | `src/desktop/settings.rs` | doc-comment |
+| `engine::PlaybackSettings` (crate) | `src/app/engine.rs` | doc-comment |
 | `engine::GlobalAction` (crate) | `src/app/engine.rs` | doc-comment |
 | `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |
 | `config::data_dir` | `src/config.rs` | doc-comment |

@@ -17,7 +17,10 @@ use std::{
 };
 
 use librespot_core::SpotifyUri;
-use librespot_playback::player::{PlayerEvent, PlayerEventChannel};
+use librespot_playback::{
+    config::Bitrate,
+    player::{PlayerEvent, PlayerEventChannel},
+};
 use rand::{SeedableRng, rngs::StdRng};
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -64,7 +67,7 @@ pub(crate) enum Input {
 }
 
 /// Lo que puede hacer un atajo global.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum GlobalAction {
     /// Como `pause`.
     TogglePause,
@@ -80,6 +83,15 @@ pub(crate) enum GlobalAction {
 }
 
 impl GlobalAction {
+    pub(crate) const ALL: [GlobalAction; 6] = [
+        GlobalAction::TogglePause,
+        GlobalAction::Next,
+        GlobalAction::Prev,
+        GlobalAction::Stop,
+        GlobalAction::VolumeUp,
+        GlobalAction::VolumeDown,
+    ];
+
     /// Para `help` y los avisos: "pausa / reanudar", "siguiente"...
     pub(crate) fn describe(self) -> &'static str {
         match self {
@@ -89,6 +101,30 @@ impl GlobalAction {
             GlobalAction::Stop => "stop",
             GlobalAction::VolumeUp => "subir volumen",
             GlobalAction::VolumeDown => "bajar volumen",
+        }
+    }
+}
+
+/// Ajustes de reproducción que el usuario cambia desde la app de
+/// escritorio (spec 007). La CLI usa siempre `default()`.
+///
+/// Invariante: cada valor está dentro de su rango de `config`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlaybackSettings {
+    /// Cuánto suben / bajan `vol +` / `vol -` y sus atajos, en %.
+    pub(crate) volume_step: u8,
+    /// Con más que esto sonando, "anterior" reinicia el tema.
+    pub(crate) previous_threshold: Duration,
+    /// Calidad del audio desde el próximo `play`.
+    pub(crate) bitrate: Bitrate,
+}
+
+impl Default for PlaybackSettings {
+    fn default() -> PlaybackSettings {
+        PlaybackSettings {
+            volume_step: config::VOLUME_STEP,
+            previous_threshold: config::PREVIOUS_RESTART_THRESHOLD,
+            bitrate: config::AUDIO_BITRATE,
         }
     }
 }

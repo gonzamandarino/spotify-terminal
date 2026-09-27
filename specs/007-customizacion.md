@@ -273,7 +273,7 @@ están.
 - [x] **T1** — `combo.rs`: `Combo` con parseo / texto / virtual-key /
       `egui::Key`, y `hotkeys` migrado a `Combo` sin cambiar
       comportamiento. Tests.
-- [ ] **T2** — `settings.rs` + defaults / rangos / presets / catálogo en
+- [x] **T2** — `settings.rs` + defaults / rangos / presets / catálogo en
       `config.rs`: modelo, `load` tolerante, `save` atómico solo con
       diffs, `check_combo`, restaurar. Tests (AC-8, AC-9, AC-11 lógica).
 - [ ] **T3** — Barra de menús en la barra de título, vacía de acciones:

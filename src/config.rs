@@ -8,7 +8,10 @@ use librespot_playback::config::Bitrate;
 
 use crate::{
     app::engine::GlobalAction,
-    desktop::combo::{Combo, Key},
+    desktop::{
+        combo::{Combo, Key},
+        settings::{Palette, WindowAction},
+    },
     error::AppError,
 };
 
@@ -166,6 +169,182 @@ pub mod theme {
     /// Tamaño de letra de la consola, en puntos.
     pub const FONT_SIZE: f32 = 14.0;
 }
+
+// --- Ajustes (spec 007) ---
+//
+// Los valores de arriba (colores, fuente, atajos, volumen, consola) son los
+// **defaults** de los ajustes que el usuario cambia desde la barra de menús
+// de la app de escritorio. Acá van además los rangos y catálogos.
+
+/// Archivo (en la carpeta de datos) con los ajustes que difieren del default.
+pub const SETTINGS_FILE: &str = "ajustes.json";
+
+/// Espera después del último cambio de un ajuste antes de guardarlo: un
+/// cambio continuo (arrastrar el selector de color, Ctrl+rueda) no escribe
+/// a disco en cada paso.
+pub const SETTINGS_SAVE_DELAY: Duration = Duration::from_secs(1);
+
+/// Tamaño de letra permitido y cuánto cambia con Agrandar / Achicar, en pt.
+pub const FONT_SIZE_MIN: f32 = 8.0;
+pub const FONT_SIZE_MAX: f32 = 32.0;
+pub const FONT_SIZE_STEP: f32 = 1.0;
+
+/// Paso de volumen permitido, en %.
+pub const VOLUME_STEP_MIN: u8 = 1;
+pub const VOLUME_STEP_MAX: u8 = 25;
+
+/// Umbral de "anterior reinicia el tema" permitido, en segundos (0 =
+/// siempre vuelve al tema anterior).
+pub const PREVIOUS_THRESHOLD_MAX_SECS: u64 = 30;
+
+/// Líneas de scrollback y comandos del historial permitidos.
+pub const SCROLLBACK_MIN: usize = 100;
+pub const SCROLLBACK_MAX: usize = 20_000;
+pub const HISTORY_MIN: usize = 10;
+pub const HISTORY_MAX: usize = 2_000;
+
+/// Símbolo del prompt por defecto y su largo máximo, en caracteres.
+pub const PROMPT_DEFAULT: &str = "♫ ›";
+pub const PROMPT_MAX_CHARS: usize = 8;
+
+/// Calidades de audio que se ofrecen, en kbps.
+pub const BITRATES_KBPS: &[u16] = &[96, 160, 320];
+
+/// Atajo fijo que vuelve todo a fábrica: no se puede reasignar ni quitar,
+/// por si un tema deja el menú ilegible.
+pub(crate) const RESTORE_ALL_SHORTCUT: Combo = Combo::new(true, false, true, Key::F(12));
+
+/// Combinaciones con Ctrl que la línea de entrada usa para editar
+/// (seleccionar todo, copiar, pegar, cortar, deshacer, rehacer): no se
+/// aceptan como atajo de ventana. Sin Ctrl ni Alt tampoco (salvo F1-F12),
+/// porque taparían lo que se escribe.
+pub(crate) const EDITING_SHORTCUTS: &[Combo] = &[
+    Combo::new(true, false, false, Key::Char('A')),
+    Combo::new(true, false, false, Key::Char('C')),
+    Combo::new(true, false, false, Key::Char('V')),
+    Combo::new(true, false, false, Key::Char('X')),
+    Combo::new(true, false, false, Key::Char('Z')),
+    Combo::new(true, false, false, Key::Char('Y')),
+];
+
+const fn ctrl(key: Key) -> Combo {
+    Combo::new(true, false, false, key)
+}
+
+/// Atajos de la ventana por defecto (spec 004 + zoom de spec 007). Las
+/// acciones que no están acá arrancan sin atajo.
+pub(crate) const WINDOW_SHORTCUTS: &[(Combo, WindowAction)] = &[
+    (ctrl(Key::Space), WindowAction::TogglePause),
+    (ctrl(Key::Right), WindowAction::Next),
+    (ctrl(Key::Left), WindowAction::Prev),
+    (ctrl(Key::Up), WindowAction::VolumeUp),
+    (ctrl(Key::Down), WindowAction::VolumeDown),
+    (ctrl(Key::Plus), WindowAction::FontBigger),
+    (ctrl(Key::Minus), WindowAction::FontSmaller),
+    (ctrl(Key::Char('0')), WindowAction::FontReset),
+];
+
+/// Fuente monoespaciada que se puede elegir: archivos en `%WINDIR%\Fonts`.
+/// Solo se ofrecen las que están instaladas.
+#[allow(dead_code)] // TODO(spec 007, T4): la usa el menú Fuente.
+pub(crate) struct FontEntry {
+    pub(crate) name: &'static str,
+    pub(crate) regular: &'static str,
+    /// Sin negrita propia, la negrita usa la normal.
+    pub(crate) bold: Option<&'static str>,
+}
+
+pub(crate) const FONT_CATALOG: &[FontEntry] = &[
+    FontEntry {
+        name: "Consolas",
+        regular: theme::CONSOLE_FONT,
+        bold: Some(theme::CONSOLE_FONT_BOLD),
+    },
+    FontEntry {
+        name: "Cascadia Mono",
+        regular: "CascadiaMono.ttf",
+        bold: None,
+    },
+    FontEntry {
+        name: "Courier New",
+        regular: "cour.ttf",
+        bold: Some("courbd.ttf"),
+    },
+    FontEntry {
+        name: "Lucida Console",
+        regular: "lucon.ttf",
+        bold: None,
+    },
+];
+
+/// La monoespaciada que trae egui (siempre está). También es la que queda
+/// si la elegida no está instalada.
+pub const BUILTIN_FONT: &str = "egui";
+
+/// Fuente por defecto: la de la consola de Windows.
+pub const DEFAULT_FONT: &str = "Consolas";
+
+/// Temas predefinidos. El primero es el default.
+#[allow(dead_code)] // TODO(spec 007, T4): la usa el menú Tema.
+pub(crate) const THEME_PRESETS: &[(&str, Palette)] = &[
+    ("Spotify oscuro", SPOTIFY_DARK),
+    (
+        "Claro",
+        Palette {
+            background: [0xF5, 0xF5, 0xF5],
+            panel: [0xFF, 0xFF, 0xFF],
+            border: [0xD0, 0xD0, 0xD0],
+            accent: [0x15, 0x88, 0x3E],
+            text: [0x20, 0x20, 0x20],
+            text_strong: [0x00, 0x00, 0x00],
+            secondary: [0x6A, 0x6A, 0x6A],
+            warning: [0x9A, 0x60, 0x00],
+            error: [0xC6, 0x28, 0x28],
+            close_hover: theme::CLOSE_HOVER,
+        },
+    ),
+    (
+        "Alto contraste",
+        Palette {
+            background: [0x00, 0x00, 0x00],
+            panel: [0x00, 0x00, 0x00],
+            border: [0xFF, 0xFF, 0xFF],
+            accent: [0x00, 0xFF, 0x7F],
+            text: [0xFF, 0xFF, 0xFF],
+            text_strong: [0xFF, 0xFF, 0xFF],
+            secondary: [0xC0, 0xC0, 0xC0],
+            warning: [0xFF, 0xFF, 0x00],
+            error: [0xFF, 0x55, 0x55],
+            close_hover: theme::CLOSE_HOVER,
+        },
+    ),
+];
+
+/// Tema de spec 004 (los colores de `theme`).
+pub(crate) const SPOTIFY_DARK: Palette = Palette {
+    background: theme::BACKGROUND,
+    panel: theme::PANEL,
+    border: theme::BORDER,
+    accent: theme::ACCENT,
+    text: theme::TEXT,
+    text_strong: theme::TEXT_STRONG,
+    secondary: theme::SECONDARY,
+    warning: theme::WARNING,
+    error: theme::ERROR,
+    close_hover: theme::CLOSE_HOVER,
+};
+
+const _: () = assert!(
+    FONT_SIZE_MIN <= theme::FONT_SIZE
+        && theme::FONT_SIZE <= FONT_SIZE_MAX
+        && VOLUME_STEP_MIN <= VOLUME_STEP
+        && VOLUME_STEP <= VOLUME_STEP_MAX
+        && PREVIOUS_RESTART_THRESHOLD.as_secs() <= PREVIOUS_THRESHOLD_MAX_SECS
+        && SCROLLBACK_MIN <= SCROLLBACK_LINES
+        && SCROLLBACK_LINES <= SCROLLBACK_MAX
+        && HISTORY_MIN <= HISTORY_LEN
+        && HISTORY_LEN <= HISTORY_MAX
+);
 
 /// Configuración resuelta para esta máquina.
 ///

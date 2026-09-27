@@ -6,6 +6,7 @@
 mod app;
 pub(crate) mod combo;
 pub(crate) mod hotkeys;
+pub(crate) mod settings;
 mod theme;
 mod window;
 
