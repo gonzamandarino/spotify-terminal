@@ -7,6 +7,9 @@ en `CLAUDE.md`.
 
 ## Mapa de módulos y flujo de datos
 
+El crate es una librería (`src/lib.rs`) con los módulos de abajo, y un
+binario: la CLI (`src/main.rs`).
+
 ```
 main ──> ui::cli (parseo de subcomandos → Command)
   │
@@ -25,8 +28,9 @@ main ──> ui::cli (parseo de subcomandos → Command)
   │         │      metadata de álbum/playlist (librespot-metadata)
   │         └──> hilos de librespot: reproductor + salida de audio (rodio/WASAPI)
   │
-  └──> ui::playback::play_queue ──> spotify::player (play/preload/pause/
-                                     restart/stop, eventos del reproductor)
+  └──> ui::playback::play_queue ──> app::queue::Queue (qué suena después)
+                                 ├──> spotify::player (play/preload/pause/
+                                 │    restart/stop, eventos del reproductor)
                                  └──> spotify::web::search (tecla `a`, como
                                       future dentro del loop, sin bloquearlo)
 
@@ -53,8 +57,8 @@ error   <── usado por todos (AppError con mensajes para el usuario)
   controla durante `play`.
 - **Modo raw de la terminal:** `ui::RawMode` (lo usan `select` y
   `playback`); se restaura al soltarse o ante un panic.
-- **Cola de reproducción:** `ui::playback::Queue` vive mientras dura
-  `play_queue` y es la única dueña de qué suena después: orden de la lista
+- **Cola de reproducción:** `app::queue::Queue` (sin I/O, testeable sola)
+  vive mientras dura `play_queue` y es la única dueña de qué suena después: orden de la lista
   (con o sin shuffle), temas encolados (`up_next`), historial para
   "anterior" (`timeline`) y el `play_request_id` vigente. Es nuestra, no
   de Spotify: la Web API no la ve.
@@ -85,5 +89,6 @@ corregir la tabla.
 | `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
 | `player::Player` (incl. `restart`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
 | `playback::play_queue` (teclas, cola, shuffle), `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
+| `queue::Queue`, `queue::Step`, `queue::Clock` (crate) | `src/app/queue.rs` | doc-comment |
 | `cli::parse`, `cli::Command`, `cli::USAGE` | `src/ui/cli.rs` | doc-comment |
 | `select::choose` | `src/ui/select.rs` | doc-comment |

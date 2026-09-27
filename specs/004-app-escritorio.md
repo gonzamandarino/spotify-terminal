@@ -227,7 +227,7 @@ está instalado en la máquina de prueba.
 
 ## Tareas
 
-- [ ] T1 — `lib.rs` + mover `Queue`/`Clock`/`Step` a `app::queue` (con
+- [x] T1 — `lib.rs` + mover `Queue`/`Clock`/`Step` a `app::queue` (con
       sus tests); la CLI sigue igual (AC-13). Commit aparte.
 - [ ] T2 — Trait `Playback` sobre `Player` para poder testear el motor.
 - [ ] T3 — `app::shell`: parseo de línea, alias, `Tab`, con tests.

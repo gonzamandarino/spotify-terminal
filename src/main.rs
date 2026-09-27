@@ -1,21 +1,18 @@
-mod config;
-mod error;
-mod spotify;
-mod ui;
-
 use std::process::ExitCode;
 
-use config::Config;
-use error::AppError;
 use librespot_core::SpotifyUri;
-use spotify::{
-    auth::{self, TokenKind},
-    player::Player,
-    web::WebClient,
-};
-use ui::{
-    cli::{self, Command},
-    playback, select,
+use spotify_terminal::{
+    config::Config,
+    error::AppError,
+    spotify::{
+        auth::{self, TokenKind},
+        player::Player,
+        web::WebClient,
+    },
+    ui::{
+        cli::{self, Command},
+        playback, select,
+    },
 };
 
 // Un solo hilo para main: acá solo corren el login, la Web API y la UI. La
