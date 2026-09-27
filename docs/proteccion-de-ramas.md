@@ -10,20 +10,29 @@
 - `pre-push`: bloquea push a ramas protegidas.
 - Cada clon nuevo debe correr `git config core.hooksPath .githooks`.
 
-## GitHub (a configurar cuando exista el remoto)
+## GitHub: ruleset `main` (activo desde 2026-09-27)
 Los hooks locales se pueden saltear; la protección real está en GitHub.
-Settings → Branches → Add rule, para cada rama protegida:
-- Require a pull request before merging
-- Require approvals: 1 (o 0 si el único dueño no puede autoaprobar su propio PR — ver nota abajo)
-- Require review from Code Owners (usa `.github/CODEOWNERS`)
-- Dismiss stale approvals when new commits are pushed
-- Do not allow bypassing the above settings
-- Restrict force pushes y deletions
+Settings → Rules → Rulesets → ruleset `main` (Active), target: la rama
+por defecto. Reglas:
+- Restrict deletions
+- Block force pushes
+- Require a pull request before merging, con **0 approvals** (ver nota)
+- Require status checks to pass: `version` (GitHub Actions), el de
+  `version-check.yml`. Como solo corre en PRs, también bloquea cualquier
+  push directo a `main`.
 
-Con un solo dueño, GitHub no deja aprobar tu propio PR si el autor sos vos.
-Si los PRs los abre el agente con tu cuenta, esto es un problema: opciones
-(a) usar un token/cuenta distinta para el agente, o (b) dejar approvals en 0
-y confiar en "Require a pull request" + que mergees vos a mano.
+Para crearlo de nuevo (otro repo o si se borra): Settings → Rules →
+Rulesets → New ruleset → New branch ruleset → Enforcement: Active →
+Target branches: Add target → Include default branch → tildar las reglas
+de arriba → Create. El check `version` solo aparece en "Add checks"
+después de haber corrido una vez en algún PR.
+
+`lint` (spec-lint) **no** es requerido a propósito: solo corre en PRs que
+tocan `specs/**` y en los demás el PR quedaría esperándolo.
+
+Con un solo dueño, GitHub no deja aprobar tu propio PR si el autor sos vos,
+y los PRs los abre el agente con tu cuenta: por eso approvals en 0, y la
+revisión es que vos mergeás a mano.
 
 ## Notificaciones de PRs por Telegram
 El workflow `.github/workflows/notificar-pr.yml` avisa por Telegram cuando se
@@ -51,9 +60,8 @@ criterio de aceptación sin tildar. No es un check requerido por defecto.
 `.github/workflows/version-check.yml` corre en cada PR a `main`: si el PR
 cambia lo que se distribuye (`src/`, `Cargo.toml`, `Cargo.lock`, `.cargo/`,
 `dist/`), exige versión nueva en `Cargo.toml` y `Cargo.lock`, que no esté
-publicada y su sección `## [X.Y.Z]` en `CHANGELOG.md`. Conviene marcarlo
-como check requerido (Settings → Branches → Require status checks →
-"Chequeo de versión / version").
+publicada y su sección `## [X.Y.Z]` en `CHANGELOG.md`. Es check requerido
+en el ruleset `main` (ver arriba).
 
 Al mergear, `.github/workflows/release.yml` publica el Release `vX.Y.Z` si
 esa versión todavía no tiene tag. El tag lo crea el workflow con

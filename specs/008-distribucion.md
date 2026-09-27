@@ -481,7 +481,7 @@ de Releases) separada de "Desarrollar" (lo actual).
       desde el repo (AC-11). *(tui-agent)*
 - [x] T10 — `dist/LEEME.txt`, README "Usar" / "Desarrollar", test de
       consistencia de textos (AC-13). *(docs-agent)*
-- [ ] T11 — `.github/workflows/release.yml`; corrida con
+- [x] T11 — `.github/workflows/release.yml`; corrida con
       `workflow_dispatch` y revisión del zip (contenido exacto, sin `.env`
       ni tokens, AC-10 en CI). *(pr-agent)*
 - [x] T12 — Docs: contratos, `arquitectura.md`, `decisiones.md`,
@@ -558,3 +558,17 @@ de Releases) separada de "Desarrollar" (lo actual).
   exactamente los 5 archivos de la lista.
 - T4: el texto del 403 (`USER_NOT_REGISTERED_MESSAGE`) es el que reporta
   la comunidad; se confirma en T1c antes de tildar AC-7.
+
+**Release real (2026-09-27, después del merge):**
+
+- El flujo cambió después de cerrar este spec: el Release ya no se
+  dispara con un tag a mano sino al mergear a `main` una versión sin tag
+  (ver "Versiones y releases" en `CLAUDE.md`). El tag a mano sigue.
+- Corrida `36346478521` de `release.yml` (merge del PR #9): `check` 5 s,
+  `build` 13 min 48 s, `release` 8 s. Publicó
+  https://github.com/gonzamandarino/spotify-terminal/releases/tag/v0.1.0
+  con `spotify-terminal-v0.1.0-windows-x64.zip` (6.471.507 bytes).
+- AC-10 en CI: `verificar-dependencias.ps1` listó solo DLL de Windows en
+  los dos `.exe` y pasó.
+- AC-8 (parcial): la publicación anda. Falta probar que un tag que no
+  coincide con `Cargo.toml` hace fallar el workflow.
