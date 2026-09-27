@@ -1,5 +1,5 @@
-//! Barra de menús de la app de escritorio (spec 007), en la barra de
-//! título como en VS Code: Tema, Fuente, Atajos, Reproducción, Consola,
+//! Barra de menús de la app de escritorio (spec 007), en un renglón bajo
+//! la barra de título: Tema, Fuente, Atajos, Reproducción, Consola,
 //! Ventana y Ajustes, más los diálogos de colores y de atajos.
 //!
 //! Edita los `Settings` que le pasa la ventana y devuelve lo que no es un
@@ -157,16 +157,14 @@ impl Menus {
         }
     }
 
-    /// Dibuja la barra en `ui` (el espacio entre el ícono y los botones de
-    /// la ventana). Devuelve lo pedido y dónde termina el último menú.
+    /// Dibuja la barra en `ui` (su renglón). Devuelve lo pedido.
     pub(super) fn bar(
         &mut self,
         ui: &mut Ui,
         settings: &mut Settings,
         fonts: &[&str],
-    ) -> (Vec<Command>, f32) {
+    ) -> Vec<Command> {
         let mut commands = Vec::new();
-        let mut right = ui.max_rect().left();
         let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
         MenuBar::new().config(config).ui(ui, |ui| {
             for (index, title) in TITLES.iter().enumerate() {
@@ -191,7 +189,6 @@ impl Menus {
                         _ => settings_menu(ui, &mut commands, &mut first),
                     }
                 });
-                right = response.rect.right();
                 if open {
                     self.open = None;
                     Popup::open_id(ui.ctx(), Popup::default_response_id(&response));
@@ -202,7 +199,7 @@ impl Menus {
                 }
             }
         });
-        (commands, right)
+        commands
     }
 
     fn theme_menu(

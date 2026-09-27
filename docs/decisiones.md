@@ -253,16 +253,17 @@ entradas viejas — se marcan reemplazadas.
   escriben el Bloc de notas y PowerShell 5.1).
 - **Estado:** Vigente (spec 007)
 
-## 2026-09-27 — Barra de menús dentro de la barra de título
+## 2026-09-27 — Barra de menús en un renglón bajo la barra de título
 - **Decisión:** los menús de customización (Tema, Fuente, Atajos,
-  Reproducción, Consola, Ventana, Ajustes) van en la barra de título
-  propia, entre el ícono y el título, como en VS Code. Se abren con clic
-  o `Alt`+letra subrayada; `Alt`+esas letras no se aceptan como atajo de
-  ventana. Usa los menús que ya trae egui (sin dependencias).
-- **Alternativa descartada:** una franja aparte debajo del título (le
-  saca alto a la consola).
-- **Consecuencias:** si el ancho no alcanza, el título se oculta antes
-  que los menús.
+  Reproducción, Consola, Ventana, Ajustes) van en un renglón propio
+  debajo de la barra de título; arriba sigue ♫ + "spotify-terminal" +
+  botones de ventana. Se abren con clic o `Alt`+letra subrayada;
+  `Alt`+esas letras no se aceptan como atajo de ventana. Usa los menús
+  que ya trae egui (sin dependencias).
+- **Alternativa descartada:** los menús dentro de la barra de título,
+  entre el ícono y el título (como VS Code). Fue la primera versión;
+  se cambió a pedido tuyo al verla.
+- **Consecuencias:** la consola tiene un renglón menos de alto.
 - **Estado:** Vigente (spec 007)
 
 ## 2026-09-27 — El tamaño de letra es un zoom de toda la ventana

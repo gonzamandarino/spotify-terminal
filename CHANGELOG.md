@@ -3,8 +3,8 @@
 ## [Sin publicar]
 
 ### Agregado (spec 007 — customización)
-- Barra de menús en la barra de título de la app de escritorio, como en
-  VS Code: Tema, Fuente, Atajos, Reproducción, Consola, Ventana y
+- Barra de menús en un renglón debajo de la barra de título de la app de
+  escritorio: Tema, Fuente, Atajos, Reproducción, Consola, Ventana y
   Ajustes. Se abren con clic o `Alt`+letra y se navegan con flechas.
 - Temas predefinidos (Spotify oscuro, Claro, Alto contraste) y editor de
   cada color; fuente (las monoespaciadas instaladas) y tamaño como zoom

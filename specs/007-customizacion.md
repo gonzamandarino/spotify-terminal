@@ -22,11 +22,11 @@ menús de customización.
   el tamaño y los colores los pone la terminal (PowerShell / conhost), no
   la app; no hay dónde poner una barra de menús. La CLI no cambia de
   comportamiento.
-- **¿Dónde va la barra?** → Asumido: dentro de la barra de título propia,
-  a la derecha del ícono ♫, como hace VS Code (una sola franja: ícono,
-  menús, título, botones de ventana). Motivo: no le saca otra franja de
-  alto a la consola. Si el ancho no alcanza, el título se oculta antes
-  que los menús.
+- **¿Dónde va la barra?** → Respondido por vos (después de verlo): en
+  un renglón propio debajo de la barra de título. Arriba queda la barra de
+  título de spec 004 (♫, "spotify-terminal", botones de ventana) y abajo
+  los menús. *(Antes asumido: los menús dentro de la barra de título,
+  entre el ícono y el título, como VS Code; se cambió a pedido tuyo.)*
 - **¿Qué menús?** → Asumido (ajustable al revisar):
 
   | Menú | Qué tiene |
@@ -99,11 +99,12 @@ menús de customización.
 
 ## Criterios de aceptación
 
-- [x] **AC-1** — La barra de menús aparece en la barra de título, con los
+- [x] **AC-1** — La barra de menús aparece en un renglón propio debajo
+      de la barra de título (que sigue con ♫ y "spotify-terminal"), con los
       siete menús; cada uno se abre con clic y con `Alt`+letra, se navega
       con flechas y se cierra con `Esc` o clic afuera. Arrastrar la barra
-      (fuera de los menús), doble clic para maximizar y los botones de
-      ventana siguen andando como en spec 004.
+      de título, doble clic para maximizar y los botones de ventana siguen
+      andando como en spec 004.
 - [x] **AC-2** — **Tema:** elegir un tema predefinido o cambiar un color
       en "Editar colores…" cambia la ventana en el mismo frame (consola,
       barras, prompt, colores de éxito / aviso / error).
@@ -287,7 +288,7 @@ están.
   `menu`; `DesktopApp` pasa a ser dueña de los ajustes; flujo
   menú → `Change` → motor / hotkeys / tema.
 - `docs/decisiones.md`: ajustes en JSON (sin TOML), solo diffs; menú en la
-  barra de título; calidad desde el próximo `play`; atajo fijo de
+  renglón bajo la barra de título; calidad desde el próximo `play`; atajo fijo de
   restaurar; fuentes solo monoespaciadas de un catálogo.
 - `docs/glosario.md`: "ajustes", "atajo de ventana" vs. "atajo global".
 
@@ -299,7 +300,7 @@ están.
 - [x] **T2** — `settings.rs` + defaults / rangos / presets / catálogo en
       `config.rs`: modelo, `load` tolerante, `save` atómico solo con
       diffs, `check_combo`, restaurar. Tests (AC-8, AC-9, AC-11 lógica).
-- [x] **T3** — Barra de menús en la barra de título, vacía de acciones:
+- [x] **T3** — Barra de menús (en su renglón, bajo el título), vacía de acciones:
       abrir con clic y `Alt`+letra, flechas, `Esc`; arrastre, doble clic
       y botones de ventana intactos (AC-1). Medir CPU en reposo.
 - [x] **T4** — Tema y fuente vivos: `theme::apply`, menús Tema y Fuente,
@@ -342,13 +343,13 @@ están.
 `spotify-desktop.exe` en release, con capturas de la ventana y teclas
 mandadas por SendKeys (2026-09-27):
 
-- **AC-1:** los siete menús en la barra de título, con la letra
-  subrayada. `Alt+T` / `Alt+A` / `Alt+F` / `Alt+J`... abren su menú; ↓ y
+- **AC-1:** los siete menús con la letra subrayada; primero dentro de
+  la barra de título y, a pedido tuyo, en un renglón propio debajo de
+  ella (se volvió a probar así). `Alt+T` / `Alt+A` / `Alt+F` / `Alt+J`... abren su menú; ↓ y
   Enter eligen; Esc cierra. La letra de `Alt`+letra no llega a la línea
   de entrada (bug encontrado y corregido al probar). Doble clic en el
   espacio libre de la barra maximiza y restaura (`IsZoomed`); los botones
-  de ventana siguen igual. Con letra grande el título se oculta antes que
-  los menús.
+  de ventana siguen igual.
 - **AC-2:** tema Claro / Alto contraste desde el menú, y el acento desde
   "Editar colores…" con el selector: la ventana cambia en el mismo frame.
 - **AC-3:** Consolas → Courier New al instante; se listan solo las

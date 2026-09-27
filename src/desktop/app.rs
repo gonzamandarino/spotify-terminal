@@ -1,5 +1,5 @@
-//! Consola de la app de escritorio: barra de título propia (con la barra de
-//! menús de spec 007), historial de salida, línea de entrada y barra de
+//! Consola de la app de escritorio: barra de título propia, renglón de
+//! menús (spec 007), historial de salida, línea de entrada y barra de
 //! "sonando ahora". No sabe nada de Spotify: manda lo escrito al motor
 //! (`app::engine`) y muestra lo que vuelve.
 //!
@@ -42,6 +42,7 @@ use crate::{
 };
 
 const TITLE_HEIGHT: f32 = 36.0;
+const MENU_HEIGHT: f32 = 26.0;
 const INPUT_HEIGHT: f32 = 34.0;
 const NOW_HEIGHT: f32 = 64.0;
 /// Ancho del borde de la ventana que sirve para cambiarle el tamaño.
@@ -598,42 +599,20 @@ impl DesktopApp {
         let max = close.translate(Vec2::new(-button.x, 0.0));
         let min = max.translate(Vec2::new(-button.x, 0.0));
 
-        // Menús entre el ícono y los botones, como en VS Code.
-        let menu_rect = Rect::from_min_max(
-            Pos2::new(icon.right() + 10.0, rect.top()),
-            Pos2::new(min.left(), rect.bottom()),
-        );
-        let fonts = &self.fonts;
-        let (commands, menus_right) = ui
-            .scope_builder(
-                UiBuilder::new()
-                    .max_rect(menu_rect)
-                    .layout(Layout::left_to_right(Align::Center)),
-                |ui| self.menus.bar(ui, &mut self.settings, fonts),
-            )
-            .inner;
-        self.commands.extend(commands);
-
-        // Título centrado en la ventana si entra; si no, en lo que queda;
-        // si tampoco, no va (los menús tienen prioridad).
+        // Título después del ícono, cortado con "…" si no entra.
+        let x = icon.right() + 8.0;
         let title = one_line(
             ui,
             config::WINDOW_TITLE,
             self.strong(13.0),
             color(p.text),
-            f32::INFINITY,
+            (min.left() - 16.0 - x).max(0.0),
         );
-        let (left, right) = (menus_right + 16.0, min.left() - 16.0);
-        let width = title.size().x;
-        if width <= right - left {
-            let centered = rect.center().x - width / 2.0;
-            let x = centered.clamp(left, right - width);
-            ui.painter().galley(
-                Pos2::new(x, mid - title.size().y / 2.0),
-                title,
-                color(p.text),
-            );
-        }
+        ui.painter().galley(
+            Pos2::new(x, mid - title.size().y / 2.0),
+            title,
+            color(p.text),
+        );
 
         if title_button(ui, &p, close, "cerrar", TitleIcon::Close).clicked() {
             ctx.send_viewport_cmd(ViewportCommand::Close);
@@ -649,6 +628,20 @@ impl DesktopApp {
         if title_button(ui, &p, min, "minimizar", TitleIcon::Minimize).clicked() {
             ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
         }
+    }
+
+    /// Renglón de menús, debajo de la barra de título.
+    fn menu_row(&mut self, ui: &mut Ui) {
+        let fonts = &self.fonts;
+        let commands = ui
+            .scope_builder(
+                UiBuilder::new()
+                    .max_rect(ui.max_rect())
+                    .layout(Layout::left_to_right(Align::Center)),
+                |ui| self.menus.bar(ui, &mut self.settings, fonts),
+            )
+            .inner;
+        self.commands.extend(commands);
     }
 
     fn console(&self, ui: &mut Ui) {
@@ -955,6 +948,15 @@ impl Content for DesktopApp {
             .exact_size(TITLE_HEIGHT)
             .frame(Frame::new().fill(color(p.panel)))
             .show_inside(ui, |ui| self.title_bar(ui));
+        Panel::top("menus")
+            .exact_size(MENU_HEIGHT)
+            .frame(
+                Frame::new()
+                    .fill(color(p.panel))
+                    .inner_margin(Margin::symmetric(8, 0))
+                    .stroke(Stroke::new(1.0_f32, color(p.border))),
+            )
+            .show_inside(ui, |ui| self.menu_row(ui));
         Panel::bottom("sonando")
             .exact_size(NOW_HEIGHT)
             .frame(

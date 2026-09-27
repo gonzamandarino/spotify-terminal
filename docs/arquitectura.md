@@ -49,7 +49,8 @@ error   <── usado por todos (AppError con mensajes para el usuario)
 bin/desktop ──> desktop::run
                   ├──> desktop::settings::load (ajustes.json → Settings)
                   ├──> desktop::window (winit + softbuffer, dibujo por CPU con
-                  │      egui_software_backend; barra de título propia)
+                  │      egui_software_backend; barra de título propia
+                  │      y renglón de menús debajo)
                   │      └──> desktop::app::DesktopApp (consola: salida,
                   │             entrada, historial, Tab, barra "sonando";
                   │             dueña de los Settings vivos)

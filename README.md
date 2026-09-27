@@ -117,7 +117,7 @@ sin efecto. Se cambian desde el menú Atajos.
 
 ### Personalizar
 
-Arriba, en la barra de título, están los menús (se abren con clic o con
+Arriba, debajo de la barra de título, están los menús (se abren con clic o con
 `Alt`+la letra subrayada):
 
 | Menú | Qué se cambia |
