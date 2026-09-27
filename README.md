@@ -3,38 +3,37 @@
 Cliente de Spotify liviano para la terminal, en Rust. El audio lo reproduce
 `librespot` dentro del mismo proceso: no hace falta la app oficial abierta.
 
-Requiere **Spotify Premium**. Probado en Windows 10.
+Requiere **Spotify Premium** y Windows 10/11 de 64 bits.
 
-## Prerequisitos
+## Usar
 
-1. [rustup](https://rustup.rs/) con el toolchain `stable-x86_64-pc-windows-msvc`.
-2. Build Tools de Visual Studio con la carga "Desarrollo para el escritorio
-   con C++" (el linker de MSVC).
-3. Una app en el [Spotify Developer Dashboard](https://developer.spotify.com/dashboard):
-   - Redirect URI: `http://127.0.0.1:8898/login`
-   - API: Web API
-   - Copiá el **Client ID** (no hace falta el client secret).
+1. Bajá `spotify-terminal-vX.Y.Z-windows-x64.zip` de
+   [Releases](https://github.com/gonzamandarino/spotify-terminal/releases)
+   y descomprimilo donde quieras. No hace falta instalar nada.
+2. Abrí `spotify-desktop.exe` (si aparece "Windows protegió su PC":
+   "Más información" → "Ejecutar de todas formas"; los `.exe` no están
+   firmados).
+3. La primera vez te guía para crear tu app en el
+   [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+   y te pide su **Client ID** (cada uno usa el suyo: Spotify limita cada
+   app a 5 cuentas). Después autorizás dos veces en el navegador y listo.
 
-## Configuración
+`crear-accesos-directos.cmd` crea accesos directos en el escritorio y el
+menú Inicio. `setup` cambia el Client ID; `version` muestra la versión.
+Todo lo que guarda la app está en `%APPDATA%\spotify-terminal\`. El
+`LEEME.txt` del zip tiene los detalles.
 
-```powershell
-Copy-Item .env.example .env
-# editá .env y poné SPOTIFY_CLIENT_ID=<tu Client ID>
-```
-
-`.env` no se commitea. Los tokens se guardan en
-`%APPDATA%\spotify-terminal\` (fuera del repo).
-
-## Uso
+### CLI
 
 ```powershell
-cargo build --release
-.\target\release\spotify-terminal.exe login    # la primera vez: autoriza dos veces en el navegador
-.\target\release\spotify-terminal.exe whoami
-.\target\release\spotify-terminal.exe play never gonna give you up
-.\target\release\spotify-terminal.exe play list rock nacional
-.\target\release\spotify-terminal.exe play https://open.spotify.com/album/<ID>
-.\target\release\spotify-terminal.exe logout
+spotify-terminal.exe setup      # configura o cambia el Client ID (también se pide solo si falta)
+spotify-terminal.exe login      # la primera vez: autoriza dos veces en el navegador
+spotify-terminal.exe whoami
+spotify-terminal.exe play never gonna give you up
+spotify-terminal.exe play list rock nacional
+spotify-terminal.exe play https://open.spotify.com/album/<ID>
+spotify-terminal.exe logout
+spotify-terminal.exe --version
 ```
 
 `play <nombre>` busca temas y `play list <nombre>` (o `play playlist`)
@@ -73,12 +72,6 @@ API el tuyo; ver `docs/decisiones.md`.
 los mismos comandos, sin el nombre del programa, y la música sigue mientras
 se escribe.
 
-```powershell
-cargo build --release
-.\scripts\instalar-acceso-directo.ps1   # accesos directos en el escritorio y el menú Inicio
-.\target\release\spotify-desktop.exe   # o doble clic
-```
-
 | Comando | Qué hace |
 |---|---|
 | `play …` | igual que en la CLI (`play <nombre>`, `play list <nombre>`, links, `-s`) |
@@ -92,6 +85,8 @@ cargo build --release
 | `vol <0-100>`, `vol +`, `vol -` | fija / sube / baja el volumen (Ctrl+↑ / Ctrl+↓) |
 | `mute`, `m` | silencia / vuelve al volumen de antes |
 | `login`, `logout`, `whoami`, `help` | como en la CLI |
+| `setup` | muestra la guía y pide un Client ID nuevo (Esc cancela) |
+| `version` | versión de la app |
 | `clear` / `exit` | limpia la consola / cierra |
 
 Después de una búsqueda, se elige con el número y Enter (Enter solo = el
@@ -135,12 +130,53 @@ Todo se aplica al instante y se guarda en
 fábrica; se puede editar a mano y recargar desde el menú). **Ctrl+Shift+F12**
 vuelve todo a fábrica y no se puede cambiar.
 
-La app busca el `.env` en la carpeta desde donde arranca (el acceso directo
-arranca en la del repo). Si algo falla al abrir la ventana, se muestra un
-cuadro de error; un panic queda anotado en
-`%APPDATA%\spotify-terminal\desktop-panic.log`.
+Si algo falla al abrir la ventana, se muestra un cuadro de error; un panic
+queda anotado en `%APPDATA%\spotify-terminal\desktop-panic.log`.
 
-## Medir consumo
+## Desarrollar
+
+### Prerequisitos
+
+1. [rustup](https://rustup.rs/) con el toolchain `stable-x86_64-pc-windows-msvc`.
+2. Build Tools de Visual Studio con la carga "Desarrollo para el escritorio
+   con C++" (el linker de MSVC).
+3. Una app en el [Spotify Developer Dashboard](https://developer.spotify.com/dashboard):
+   - Redirect URI: `http://127.0.0.1:8898/login`
+   - API: Web API
+   - Copiá el **Client ID** (no hace falta el client secret).
+
+### Configuración
+
+```powershell
+Copy-Item .env.example .env
+# editá .env y poné SPOTIFY_CLIENT_ID=<tu Client ID>
+```
+
+`.env` no se commitea. El Client ID se toma de la variable de entorno
+`SPOTIFY_CLIENT_ID`, si no del `.env` de la carpeta desde donde arranca el
+programa, y si no de `%APPDATA%\spotify-terminal\client-id.txt` (el que
+guarda `setup`). Los tokens se guardan en `%APPDATA%\spotify-terminal\`
+(fuera del repo).
+
+```powershell
+cargo build --release
+.\scripts\instalar-acceso-directo.ps1   # accesos directos (arrancan en el repo, para el .env)
+.\target\release\spotify-desktop.exe
+```
+
+Los `.exe` se enlazan con el runtime de C estático (`.cargo/config.toml`):
+no dependen de `vcruntime140.dll`.
+
+### Publicar una versión
+
+Subí `version` en `Cargo.toml`, actualizá `CHANGELOG.md` y pusheá un tag
+igual: `git tag v0.2.0; git push origin v0.2.0`. El workflow
+`.github/workflows/release.yml` compila, corre los chequeos, arma el zip y
+lo publica en el Release del tag (falla si el tag no coincide con
+`Cargo.toml`). Para revisar el zip sin publicar: "Run workflow" en la
+pestaña Actions.
+
+### Medir consumo
 
 ```powershell
 # en otra terminal, con play corriendo:
@@ -149,7 +185,7 @@ cuadro de error; un panic queda anotado en
 .\scripts\medir-consumo.ps1 -Minutos 10 -Proceso spotify-desktop
 ```
 
-## Desarrollo
+### Spec-Driven Development
 
 El proyecto sigue Spec-Driven Development: ninguna feature sin spec en
 `specs/` (ver `CLAUDE.md`). Todo commit pasa:
