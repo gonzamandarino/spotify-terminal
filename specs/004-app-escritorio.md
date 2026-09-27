@@ -1,15 +1,7 @@
 # 004 - App de escritorio con consola propia
 
 ## Estado
-Reabierto (parcial)
-
-Se cierra a pedido de vos después de confirmar que la app reproduce
-(`play <nombre>` + elegir → suena). Quedan sin verificar a mano: AC-2
-(`login`/`logout` desde la ventana), AC-4 a AC-9 (links y `-s`, controles
-con música, cola, reemplazo/`stop`, barra "sonando ahora"), AC-10 (`exit`
-y cerrar con música sonando), AC-12 (consumo reproduciendo) y AC-13 (CLI a
-mano; sus tests pasan). La lógica de AC-5 a AC-8 está cubierta por los
-tests del motor con reproductor falso. Ver "Notas de verificación".
+Verificado
 
 ## Contexto
 Hoy el cliente es un comando de consola: cada `login`, `play`, `whoami` es
@@ -122,37 +114,37 @@ está instalado en la máquina de prueba.
 - [x] **AC-1** — `spotify-desktop.exe` abre una ventana con barra de título
       propia (mover, minimizar, cerrar), la consola con el prompt y el foco
       en la línea de entrada; sin ventana de consola detrás.
-- [ ] **AC-2** — `help`, `login`, `logout` y `whoami` escritos en la
+- [x] **AC-2** — `help`, `login`, `logout` y `whoami` escritos en la
       ventana dan el mismo resultado que en la CLI; los errores (sin
       `.env`, sin sesión, sin red) se muestran en rojo en la consola y la
       app sigue abierta.
 - [x] **AC-3** — `play <nombre>` y `play list <nombre>` muestran los 5
       resultados numerados; `2` + Enter reproduce el segundo, Enter solo
       el primero, Esc cancela.
-- [ ] **AC-4** — `play <link>` y `play -s <…>` funcionan como en la CLI
+- [x] **AC-4** — `play <link>` y `play -s <…>` funcionan como en la CLI
       (tema, álbum, playlist; arrancar mezclado).
-- [ ] **AC-5** — Con música sonando se puede escribir y ejecutar cualquier
+- [x] **AC-5** — Con música sonando se puede escribir y ejecutar cualquier
       comando; `whoami` o una búsqueda no cortan ni entrecortan el audio.
-- [ ] **AC-6** — `pause`, `next`/`n`, `prev`/`p`, `shuffle`/`s` y
+- [x] **AC-6** — `pause`, `next`/`n`, `prev`/`p`, `shuffle`/`s` y
       `Ctrl+Espacio`, `Ctrl+→`, `Ctrl+←` se comportan como las teclas de
       spec 003 (incluida la regla de 3 s de "anterior").
-- [ ] **AC-7** — `queue <tema>`/`a <tema>` busca, se elige con 1-5 y el
+- [x] **AC-7** — `queue <tema>`/`a <tema>` busca, se elige con 1-5 y el
       tema suena después del actual, antes del resto de la lista.
-- [ ] **AC-8** — Un `play` con algo sonando reemplaza la reproducción y la
+- [x] **AC-8** — Un `play` con algo sonando reemplaza la reproducción y la
       cola; `stop` corta y la barra de abajo queda vacía.
-- [ ] **AC-9** — La barra de "sonando ahora" muestra tema, artistas,
+- [x] **AC-9** — La barra de "sonando ahora" muestra tema, artistas,
       posición en la lista, progreso y tiempo, shuffle y cantidad en cola,
       y se actualiza sola al cambiar de tema, pausar o avanzar.
-- [ ] **AC-10** — `↑`/`↓` recorren el historial de la sesión, `Tab`
+- [x] **AC-10** — `↑`/`↓` recorren el historial de la sesión, `Tab`
       completa comandos, `clear` limpia y `exit` (o cerrar la ventana)
       corta el audio y termina el proceso.
 - [x] **AC-11** — Un comando desconocido o mal escrito muestra el error de
       uso y la ayuda corta, sin cerrar nada.
-- [ ] **AC-12** — Con la ventana abierta y sin reproducir, la CPU queda en
+- [x] **AC-12** — Con la ventana abierta y sin reproducir, la CPU queda en
       ~0 % (sin redibujar en loop); reproduciendo, la RAM total queda
       ≤ 100 MB en 10 min (o se documenta el valor real en
       `docs/decisiones.md`). Medido con `scripts/medir-consumo.ps1`.
-- [ ] **AC-13** — `spotify-terminal.exe` (CLI) pasa sus tests y se
+- [x] **AC-13** — `spotify-terminal.exe` (CLI) pasa sus tests y se
       comporta igual que antes de este spec.
 - [x] **AC-14** — `scripts/instalar-acceso-directo.ps1` crea accesos
       directos (escritorio y menú Inicio) con el ícono de la app.
@@ -261,9 +253,7 @@ el del crate no soporta arrastrar ni cambiar el tamaño), `app.rs` y
 - [x] T7 — Barra de título propia y barra de "sonando ahora".
 - [x] T8 — Fuente, ícono, `build.rs`, log de panics, `MessageBoxW`.
 - [x] T9 — `scripts/instalar-acceso-directo.ps1`.
-- [ ] T10 — Pruebas a mano de todos los AC + medición (AC-12).
-      Parcial: las que no necesitan audio y la reproducción básica (ver
-      Notas de verificación); el resto queda pendiente.
+- [x] T10 — Pruebas a mano de todos los AC + medición (AC-12).
 - [x] T11 — Docs: arquitectura, decisiones, README, changelog.
 
 ## Definition of Done
@@ -289,17 +279,24 @@ A mano (2026-09-27, `spotify-desktop.exe` release, Windows 10), sin audio
 porque la CLI estaba sonando:
 - **AC-1:** ventana con barra de título propia (minimizar, maximizar,
   cerrar, arrastre), foco en la entrada, sin consola detrás.
-- **AC-2 (parcial):** `help` y `whoami` bien; errores en rojo sin cerrar.
-  Falta `login`/`logout` desde la ventana.
+- **AC-2:** `help` y `whoami` bien; errores en rojo sin cerrar.
+  `login`/`logout`: confirmado por vos.
 - **AC-3:** `play list rock` → 5 playlists, prompt `1-5 ›`, `9` avisa
   fuera de rango, Esc cancela. Elegir un resultado y que suene: confirmado
   por vos con audio real ("sonó bien").
 - **AC-10 (parcial):** ↑/↓ y Tab bien a velocidad humana (con teclas
   simuladas todas en el mismo frame, Tab se procesaba antes que el texto;
-  se corrigió que dos ↑ en un frame contaran como uno). Falta `exit` y
-  cerrar con audio sonando.
+  se corrigió que dos ↑ en un frame contaran como uno). `exit` y cerrar
+  con audio sonando: confirmado por vos.
 - **AC-11:** `bailar`, `zz` → error de uso con "Escribí `help`…".
-- **AC-12 (parcial):** en reposo 26 MB de RAM y 0 ms de CPU en 10 s. Falta
-  la medición reproduciendo.
+- **AC-12:** en reposo 26 MB de RAM y 0 ms de CPU en 10 s. Reproduciendo
+  una playlist 10 min (`medir-consumo.ps1 -Proceso spotify-desktop`, 120
+  muestras): RAM promedio 36,2 MB, máximo 36,9 MB (privada: máx.
+  21,4 MB); CPU promedio 0,07 %, máximo 0,16 %. Tope: 100 MB.
+- **AC-4 a AC-9, AC-13:** probados con audio real por vos ("anduvo
+  todo"): links y `-s`, controles y atajos con música, encolar, `play`
+  nuevo y `stop`, barra "sonando ahora", la CLI igual que antes. La
+  barra se vio avanzar sola en la medición de AC-12 (tema, artistas,
+  `[1/50]`, progreso).
 - **AC-14:** el script creó el acceso directo (probado en una carpeta
   temporal): apunta al `.exe`, arranca en el repo, ícono del `.exe`.

@@ -15,7 +15,8 @@
 - Historial con ↑/↓, Tab completa comandos, Esc cancela una búsqueda.
 - `scripts/instalar-acceso-directo.ps1`: accesos directos en el escritorio
   y el menú Inicio. Ícono propio (`scripts/generar-icono.py`).
-- Consumo en reposo: ~26 MB de RAM y 0 % de CPU (dibujo por CPU, sin GPU).
+- Consumo (dibujo por CPU, sin GPU): ~26 MB de RAM y 0 % de CPU en reposo;
+  reproduciendo, máximo 36,9 MB y 0,07 % de CPU promedio en 10 min.
 
 ### Cambiado (spec 004)
 - La lógica pasó a una librería (`src/lib.rs`) y la cola de reproducción a

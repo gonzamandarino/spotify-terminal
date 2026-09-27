@@ -145,7 +145,8 @@ entradas viejas — se marcan reemplazadas.
   (OpenGL) ocupaba **120 MB** en reposo: el driver de NVIDIA carga
   `nvgpucomp64.dll` (~106 MB) y `nvoglv64.dll` (~47 MB). Por CPU:
   **19 MB**. Con la consola completa: 26 MB en reposo y 0 ms de CPU en
-  10 s.
+  10 s; reproduciendo 10 min, máximo 36,9 MB y 0,07 % de CPU promedio
+  (AC-12).
 - **Costos:** `egui_software_backend` es joven (0.0.3) y fija egui en 0.34.
   Cada redibujo cuesta CPU (con caché por zonas: solo se rehace lo que
   cambió). Por eso el cursor de texto no titila (titilar redibujaba todo
