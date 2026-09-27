@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.1] - 2026-09-27
+
+### Cambiado (spec 009 — Personalización y tamaño de letra)
+- La barra de menús de la app de escritorio queda con tres menús:
+  **Personalización** (`Alt+P`), **Reproducción** (`Alt+R`) y **Ajustes**
+  (`Alt+A`, antes `Alt+J`). Tema, Fuente, Atajos, Consola y Ventana son
+  ahora submenús de Personalización; → abre un submenú y ← vuelve.
+- `Alt+T`, `Alt+F`, `Alt+C`, `Alt+V` y `Alt+J` se pueden usar como atajos
+  de ventana; `Alt+P` ya no (si un atajo guardado la usaba, vuelve a
+  fábrica con un aviso).
+
+### Corregido (spec 009)
+- El tamaño de letra agrandaba toda la ventana (barras, menús, márgenes)
+  en vez de la letra, y con letra grande la consola desaparecía. Ahora
+  cambia solo el texto de la consola, la entrada y la barra "sonando";
+  las barras crecen lo justo para que el texto entre y la ventana no
+  cambia de tamaño.
+
 ## [0.1.0] - 2026-09-27
 
 ### Agregado (spec 008 — distribución)

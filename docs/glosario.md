@@ -8,6 +8,9 @@ concepto nuevo — no antes, no de antemano especulando.
   desde la barra de menús (spec 007): tema, fuente, atajos, reproducción,
   consola y ventana. Se guardan en `ajustes.json`; los valores de
   `config.rs` son los de fábrica.
+- **Tamaño de letra** — el del texto de la consola, la línea de entrada
+  y la barra "sonando" (spec 009). Los menús, diálogos y la barra de
+  título tienen letra fija.
 - **Atajo de ventana** — combinación que anda solo con la ventana de la
   app enfocada (ej. Ctrl+→). Ver también **atajo global**.
 - **Atajo global** — combinación registrada en Windows que anda con la app

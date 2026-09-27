@@ -233,8 +233,7 @@ fn apply(command: &ViewportCommand, window: &Window, event_loop: &ActiveEventLoo
             WindowLevel::AlwaysOnBottom => window::WindowLevel::AlwaysOnBottom,
             WindowLevel::Normal => window::WindowLevel::Normal,
         }),
-        // La app lo manda en puntos lógicos de Windows (sin el zoom del
-        // tamaño de letra), no en puntos de egui.
+        // La app lo manda en puntos lógicos de Windows.
         ViewportCommand::InnerSize(size) => {
             let _ = window.request_inner_size(LogicalSize::new(size.x, size.y));
         }

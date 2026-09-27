@@ -264,7 +264,8 @@ entradas viejas — se marcan reemplazadas.
   entre el ícono y el título (como VS Code). Fue la primera versión;
   se cambió a pedido tuyo al verla.
 - **Consecuencias:** la consola tiene un renglón menos de alto.
-- **Estado:** Vigente (spec 007)
+- **Estado:** Vigente (spec 007); los siete menús se juntaron en tres en
+  spec 009 (ver "Menú Personalización con submenús").
 
 ## 2026-09-27 — El tamaño de letra es un zoom de toda la ventana
 - **Decisión:** el tamaño de letra de los ajustes se aplica como zoom de
@@ -273,7 +274,8 @@ entradas viejas — se marcan reemplazadas.
   para que `Ctrl++`/`Ctrl+-`/`Ctrl+0` sean atajos configurables.
 - **Alternativa descartada:** cambiar solo el tamaño del texto (las
   barras de alto fijo lo cortaban con letra grande).
-- **Estado:** Vigente (spec 007)
+- **Estado:** Reemplazada por "El tamaño de letra cambia el texto, no la
+  UI" (2026-09-27, spec 009).
 
 ## 2026-09-27 — La calidad de audio cambia desde el próximo `play`
 - **Decisión:** librespot fija la calidad al crear el reproductor. Al
@@ -371,3 +373,34 @@ entradas viejas — se marcan reemplazadas.
   el tag puede no coincidir con `Cargo.toml`); versionar con cada merge
   aunque sea de docs (Releases vacíos).
 - **Estado:** Vigente
+
+## 2026-09-27 — Menú Personalización con submenús
+- **Decisión:** la barra de menús queda con Personalización,
+  Reproducción y Ajustes (`Alt+P` / `Alt+R` / `Alt+A`). Tema, Fuente,
+  Atajos, Consola y Ventana pasan a ser submenús de Personalización, con
+  el mismo contenido. egui abre un submenú con el mouse o Enter; se suma
+  → para abrirlo y ← para cerrarlo y volver a su botón (en un slider o en
+  el campo del prompt, las flechas siguen siendo de ellos).
+- **Motivo:** menos cosas en la barra, pedido tuyo (spec 009).
+- **Alternativa descartada:** un diálogo "Personalización" con pestañas
+  (más código nuevo; los submenús reusan los menús de spec 007).
+- **Consecuencias:** `Alt+T`/`F`/`C`/`V`/`J` quedan libres como atajo
+  de ventana y `Alt+P` pasa a estar reservada; un `ajustes.json` con un
+  atajo de ventana en `Alt+P` vuelve a fábrica en ese atajo, con aviso.
+- **Estado:** Vigente (spec 009)
+
+## 2026-09-27 — El tamaño de letra cambia el texto, no la UI
+- **Decisión:** el tamaño de letra de los ajustes cambia solo el texto
+  de la consola, la línea de entrada y la barra "sonando", en las mismas
+  proporciones de antes. La barra de título, la de menús, los menús
+  desplegados y los diálogos tienen letra fija
+  (`config::layout::UI_FONT_SIZE`). "Sonando" y la entrada crecen con la
+  letra para que no se corte (`desktop::layout::bars`); si la ventana no
+  da, bajan hasta lo justo para el texto y la consola se achica, sin que
+  nada se superponga.
+- **Motivo:** el zoom de toda la ventana (spec 007) agrandaba la UI
+  entera: con 32 pt las barras ocupaban más que la ventana mínima y la
+  consola desaparecía (spec 009).
+- **Alternativa descartada:** seguir con el zoom y agrandar la ventana
+  mínima (la UI seguiría creciendo en vez de la letra).
+- **Estado:** Vigente (spec 009)

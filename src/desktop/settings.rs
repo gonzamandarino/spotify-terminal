@@ -1133,6 +1133,32 @@ mod tests {
     }
 
     #[test]
+    fn letras_de_los_menus_de_spec_009() {
+        // Un archivo de 0.1.0 con Alt+P (antes libre) y Alt+T (antes de
+        // Tema): Alt+P ahora abre Personalización y vuelve a fábrica con
+        // aviso; Alt+T quedó libre y se respeta. El tamaño de letra se lee
+        // igual que antes (AC-8).
+        let (s, warnings) = load_json(
+            r#"{
+                "fuente": {"tamaño": 20.0},
+                "atajos_ventana": {"stop": "Alt+P", "shuffle": "Alt+T"}
+            }"#,
+        );
+        let d = Settings::default();
+        assert_eq!(s.appearance.font_size, 20.0);
+        assert_eq!(
+            s.combo(Target::Window(WindowAction::Stop)),
+            d.combo(Target::Window(WindowAction::Stop))
+        );
+        assert_eq!(
+            s.combo(Target::Window(WindowAction::Shuffle)),
+            Some(combo("Alt+T"))
+        );
+        assert_eq!(warnings.len(), 1, "{warnings:#?}");
+        assert!(warnings[0].contains("atajos_ventana.stop"), "{warnings:#?}");
+    }
+
+    #[test]
     fn archivo_roto_o_ausente() {
         let dir = std::env::temp_dir().join(format!("spt-ajustes-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -1211,10 +1237,14 @@ mod tests {
             ComboCheck::Reserved(_)
         ));
         assert!(matches!(
-            s.check_combo(pause, combo("Alt+T")),
+            s.check_combo(pause, combo("Alt+P")),
             ComboCheck::Reserved(_)
         ));
-        assert_eq!(s.check_combo(pause, combo("Alt+Shift+T")), ComboCheck::Ok);
+        assert_eq!(s.check_combo(pause, combo("Alt+Shift+P")), ComboCheck::Ok);
+        // Letras de los menús de antes de spec 009: libres.
+        for free in ["Alt+T", "Alt+F", "Alt+C", "Alt+V", "Alt+J"] {
+            assert_eq!(s.check_combo(pause, combo(free)), ComboCheck::Ok, "{free}");
+        }
         assert!(matches!(
             s.check_combo(pause, config::RESTORE_ALL_SHORTCUT),
             ComboCheck::Reserved(_)

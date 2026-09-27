@@ -108,21 +108,22 @@ enfocada:
 | Ctrl+Alt+↑ / Ctrl+Alt+↓ | sube / baja el volumen |
 
 Si otra app ya usa alguno, la consola lo avisa al abrir y ese atajo queda
-sin efecto. Se cambian desde el menú Atajos.
+sin efecto. Se cambian desde Personalización → Atajos.
 
 ### Personalizar
 
-Arriba, debajo de la barra de título, están los menús (se abren con clic o con
-`Alt`+la letra subrayada):
+Arriba, debajo de la barra de título, están los menús **Personalización**,
+**Reproducción** y **Ajustes** (se abren con clic o con `Alt`+la letra
+subrayada; en Personalización, → abre un submenú y ← vuelve):
 
 | Menú | Qué se cambia |
 |---|---|
-| Tema | temas predefinidos (Spotify oscuro, Claro, Alto contraste) y cada color |
-| Fuente | Consolas, Cascadia Mono, Courier New, Lucida Console (las instaladas) o la de la app; tamaño (también Ctrl++ / Ctrl+- / Ctrl+0 y Ctrl+rueda); negrita |
-| Atajos | los de la ventana y los globales: clic y apretá la combinación nueva |
+| Personalización → Tema | temas predefinidos (Spotify oscuro, Claro, Alto contraste) y cada color |
+| Personalización → Fuente | Consolas, Cascadia Mono, Courier New, Lucida Console (las instaladas) o la de la app; tamaño de la letra de la consola, la entrada y la barra "sonando" (también Ctrl++ / Ctrl+- / Ctrl+0 y Ctrl+rueda); negrita |
+| Personalización → Atajos | los de la ventana y los globales: clic y apretá la combinación nueva |
+| Personalización → Consola | símbolo del prompt, líneas guardadas, historial, hora en cada línea |
+| Personalización → Ventana | siempre visible, recordar tamaño y posición |
 | Reproducción | paso de volumen, cuándo "anterior" reinicia el tema, calidad de audio (desde el próximo `play`) |
-| Consola | símbolo del prompt, líneas guardadas, historial, hora en cada línea |
-| Ventana | siempre visible, recordar tamaño y posición |
 | Ajustes | abrir / recargar `ajustes.json`, restaurar todo |
 
 Todo se aplica al instante y se guarda en

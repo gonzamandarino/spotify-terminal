@@ -58,10 +58,15 @@ bin/desktop ──> desktop::run
                   │      └──> desktop::app::DesktopApp (consola: salida,
                   │             entrada, historial, Tab, barra "sonando";
                   │             dueña de los Settings vivos)
-                  │               ├──> desktop::menu (barra de menús y
+                  │               ├──> desktop::menu (barra de menús:
+                  │               │      Personalización ▸ submenús,
+                  │               │      Reproducción, Ajustes; y
                   │               │      diálogos: editan Settings)
-                  │               ├──> desktop::theme (Settings → estilo,
-                  │               │      fuente y zoom de egui)
+                  │               ├──> desktop::theme (Settings → estilo
+                  │               │      y fuente de egui)
+                  │               ├──> desktop::layout (altos de
+                  │               │      "sonando" y la entrada según
+                  │               │      el tamaño de letra)
                   │               ├──> desktop::settings::save (diferido)
                   │               └──> desktop::hotkeys::replace (al
                   │                      cambiar un atajo global)
@@ -209,6 +214,7 @@ corregir la tabla.
 | `engine::PlaybackSettings` (crate) | `src/app/engine.rs` | doc-comment |
 | `menu::Menus` (`keyboard`, `bar`, `dialogs`, `wants_keyboard`), `menu::Command` | `src/desktop/menu.rs` | doc-comment |
 | `theme::Theme::apply`, `theme::installed_fonts` | `src/desktop/theme.rs` | doc-comment |
+| `layout::bars`, `layout::scale` | `src/desktop/layout.rs` | doc-comment |
 | `engine::GlobalAction` (crate) | `src/app/engine.rs` | doc-comment |
 | `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |
 | `config::data_dir` | `src/config.rs` | doc-comment |

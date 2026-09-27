@@ -26,6 +26,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::{
     combo,
     hotkeys::{self, Hotkeys},
+    layout,
     menu::{self, Command, Menus},
     settings::{self, Geometry, Palette, Settings, Target, WindowAction},
     theme::{Theme, bold, color, installed_fonts, mono},
@@ -38,13 +39,15 @@ use crate::{
         shell,
         volume::Volume,
     },
-    config::{self, theme::FONT_SIZE},
+    config::{
+        self,
+        layout::{CONSOLE_MARGIN_BOTTOM, CONSOLE_MARGIN_TOP, MENU_HEIGHT, TITLE_HEIGHT},
+        theme::FONT_SIZE,
+    },
 };
 
-const TITLE_HEIGHT: f32 = 36.0;
-const MENU_HEIGHT: f32 = 26.0;
-const INPUT_HEIGHT: f32 = 34.0;
-const NOW_HEIGHT: f32 = 64.0;
+/// Espacio entre renglones de la consola.
+const CONSOLE_ROW_GAP: f32 = 4.0;
 /// Ancho del borde de la ventana que sirve para cambiarle el tamaño.
 const GRIP: f32 = 5.0;
 
@@ -226,6 +229,13 @@ impl DesktopApp {
 
     /// Fuente del título y del tema que suena: negrita si así está en los
     /// ajustes.
+    /// `base` (un tamaño pensado para la letra por defecto) llevado al
+    /// tamaño de letra de los ajustes: texto de la consola, la entrada y
+    /// "sonando" (spec 009).
+    fn text_size(&self, base: f32) -> f32 {
+        base * layout::scale(self.settings.appearance.font_size)
+    }
+
     fn strong(&self, size: f32) -> FontId {
         if self.settings.appearance.bold_titles {
             bold(size)
@@ -652,14 +662,17 @@ impl DesktopApp {
             .auto_shrink(false)
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 4.0;
+                ui.spacing_mut().item_spacing.y = CONSOLE_ROW_GAP;
                 for (stamp, line) in &self.lines {
                     let mut job = LayoutJob::default();
                     if stamps {
                         job.append(
                             &format!("{stamp} "),
                             0.0,
-                            egui::TextFormat::simple(mono(FONT_SIZE - 2.0), color(p.secondary)),
+                            egui::TextFormat::simple(
+                                mono(self.text_size(FONT_SIZE - 2.0)),
+                                color(p.secondary),
+                            ),
                         );
                     }
                     match line {
@@ -667,19 +680,28 @@ impl DesktopApp {
                             job.append(
                                 &format!("{prompt} "),
                                 0.0,
-                                egui::TextFormat::simple(self.strong(FONT_SIZE), color(p.accent)),
+                                egui::TextFormat::simple(
+                                    self.strong(self.text_size(FONT_SIZE)),
+                                    color(p.accent),
+                                ),
                             );
                             job.append(
                                 text,
                                 0.0,
-                                egui::TextFormat::simple(mono(FONT_SIZE), color(p.text_strong)),
+                                egui::TextFormat::simple(
+                                    mono(self.text_size(FONT_SIZE)),
+                                    color(p.text_strong),
+                                ),
                             );
                         }
                         ConsoleLine::Out(kind, text) => {
                             job.append(
                                 text,
                                 0.0,
-                                egui::TextFormat::simple(mono(FONT_SIZE), line_color(&p, *kind)),
+                                egui::TextFormat::simple(
+                                    mono(self.text_size(FONT_SIZE)),
+                                    line_color(&p, *kind),
+                                ),
                             );
                         }
                     }
@@ -693,13 +715,24 @@ impl DesktopApp {
         let p = self.palette();
         let (prompt, prompt_color) = self.prompt_text();
         let menus_have_keyboard = self.menus.wants_keyboard(ui.ctx());
-        let strong = self.strong(FONT_SIZE);
+        let strong = self.strong(self.text_size(FONT_SIZE));
+        let font = mono(self.text_size(FONT_SIZE));
+        let busy_font = mono(self.text_size(FONT_SIZE - 3.0));
         ui.horizontal_centered(|ui| {
             ui.label(RichText::new(prompt).font(strong).color(prompt_color));
             let busy = match self.prompt {
-                Prompt::Busy(what) => Some(what),
+                Prompt::Busy(what) => Some(format!("⋯ {what}  (Esc cancela)")),
                 _ => None,
             };
+            // Lugar para el aviso de ocupado, a la derecha.
+            let busy_width = busy.as_ref().map_or(0.0, |text| {
+                let galley = ui.painter().layout_no_wrap(
+                    text.clone(),
+                    busy_font.clone(),
+                    color(p.secondary),
+                );
+                galley.size().x + ui.spacing().item_spacing.x
+            });
             let hint = match self.prompt {
                 Prompt::Ready => "escribí un comando · help",
                 Prompt::Choose(_) => "número y Enter · Enter = el primero · Esc cancela",
@@ -711,10 +744,14 @@ impl DesktopApp {
                 // Tab no saca el foco: lo usa `complete`.
                 .lock_focus(true)
                 .frame(Frame::NONE)
-                .font(mono(FONT_SIZE))
+                .font(font.clone())
                 .text_color(color(p.text_strong))
-                .hint_text(RichText::new(hint).color(color(p.secondary).gamma_multiply(0.7)))
-                .desired_width(ui.available_width() - if busy.is_some() { 260.0 } else { 0.0 });
+                .hint_text(
+                    RichText::new(hint)
+                        .font(font)
+                        .color(color(p.secondary).gamma_multiply(0.7)),
+                )
+                .desired_width(ui.available_width() - busy_width);
             let response = ui.add(edit);
             if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                 self.submit();
@@ -724,11 +761,11 @@ impl DesktopApp {
             if !menus_have_keyboard {
                 response.request_focus();
             }
-            if let Some(what) = busy {
+            if let Some(text) = busy {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(
-                        RichText::new(format!("⋯ {what}  (Esc cancela)"))
-                            .small()
+                        RichText::new(text)
+                            .font(busy_font)
                             .color(color(p.secondary)),
                     );
                 });
@@ -739,30 +776,41 @@ impl DesktopApp {
     fn now_bar(&self, ui: &mut Ui) {
         let p = self.palette();
         let rect = ui.max_rect().shrink2(Vec2::new(16.0, 0.0));
+        let t = |base: f32| self.text_size(base);
         let painter = ui.painter();
         let volume = self.volume.map(|v| volume_chip(&p, v));
         let Some(now) = &self.now else {
-            painter.text(
-                rect.left_center(),
-                Align2::LEFT_CENTER,
-                "Nada sonando · escribí  play <nombre>",
-                mono(13.0),
-                color(p.secondary),
-            );
+            let mut right = rect.right();
             if let Some((text, chip_color)) = volume {
-                painter.text(
+                let chip = painter.text(
                     rect.right_center(),
                     Align2::RIGHT_CENTER,
                     text,
-                    mono(12.0),
+                    mono(t(12.0)),
                     chip_color,
                 );
+                right = chip.left() - t(14.0);
             }
+            // Cortado con "…" si con letra grande no entra antes del volumen.
+            let idle = one_line(
+                ui,
+                "Nada sonando · escribí  play <nombre>",
+                mono(t(13.0)),
+                color(p.secondary),
+                (right - rect.left()).max(0.0),
+            );
+            painter.galley(
+                Pos2::new(rect.left(), rect.center().y - idle.size().y / 2.0),
+                idle,
+                color(p.secondary),
+            );
             return;
         };
 
         // Fila de arriba: estado, tema — artistas, e indicadores a la derecha.
-        let top = rect.top() + 20.0;
+        // Las dos filas, centradas en la barra (con la letra por defecto,
+        // a 20 del borde de arriba y 18 del de abajo, como en 0.1.0).
+        let top = rect.center().y - t(12.0);
         let mut chips = Vec::new();
         if !now.position.trim().is_empty() {
             chips.push((now.position.trim().to_string(), color(p.secondary)));
@@ -783,10 +831,10 @@ impl DesktopApp {
                 Pos2::new(right, top),
                 Align2::RIGHT_CENTER,
                 text,
-                mono(12.0),
+                mono(t(12.0)),
                 *chip_color,
             );
-            right = r.left() - 14.0;
+            right = r.left() - t(14.0);
         }
 
         let (state_icon, state_color) = match now.state {
@@ -798,7 +846,7 @@ impl DesktopApp {
             Pos2::new(rect.left(), top),
             Align2::LEFT_CENTER,
             state_icon,
-            bold(14.0),
+            bold(t(14.0)),
             state_color,
         );
         let title = if now.title.is_empty() {
@@ -806,12 +854,12 @@ impl DesktopApp {
         } else {
             now.title.as_str()
         };
-        let x = icon.right() + 10.0;
+        let x = icon.right() + t(10.0);
         let max_width = (right - x).max(0.0);
         let title_galley = one_line(
             ui,
             title,
-            self.strong(14.0),
+            self.strong(t(14.0)),
             color(p.text_strong),
             max_width,
         );
@@ -826,7 +874,7 @@ impl DesktopApp {
             let galley = one_line(
                 ui,
                 &artists,
-                mono(13.0),
+                mono(t(13.0)),
                 color(p.secondary),
                 (max_width - title_width).max(0.0),
             );
@@ -838,25 +886,25 @@ impl DesktopApp {
         }
 
         // Fila de abajo: tiempo, barra de progreso y duración.
-        let bottom = rect.bottom() - 18.0;
+        let bottom = rect.center().y + t(14.0);
         let elapsed = now.clock.elapsed().min(now.duration);
         let left = painter.text(
             Pos2::new(rect.left(), bottom),
             Align2::LEFT_CENTER,
             clock_text(elapsed),
-            mono(11.0),
+            mono(t(11.0)),
             color(p.secondary),
         );
         let right = painter.text(
             Pos2::new(rect.right(), bottom),
             Align2::RIGHT_CENTER,
             clock_text(now.duration),
-            mono(11.0),
+            mono(t(11.0)),
             color(p.secondary),
         );
         let track = Rect::from_min_max(
-            Pos2::new(left.right() + 12.0, bottom - 2.0),
-            Pos2::new(right.left() - 12.0, bottom + 2.0),
+            Pos2::new(left.right() + t(12.0), bottom - 2.0),
+            Pos2::new(right.left() - t(12.0), bottom + 2.0),
         );
         painter.rect_filled(track, 2.0, color(p.border));
         if now.duration > Duration::ZERO {
@@ -946,6 +994,14 @@ impl Content for DesktopApp {
         let rect = ui.max_rect();
         ui.painter().rect_filled(rect, 0.0, color(p.background));
 
+        let content_font = mono(self.text_size(FONT_SIZE));
+        let console_row = ctx.fonts_mut(|f| f.row_height(&content_font)) + CONSOLE_ROW_GAP;
+        let bars = layout::bars(
+            self.settings.appearance.font_size,
+            console_row,
+            rect.height(),
+        );
+
         Panel::top("titulo")
             .exact_size(TITLE_HEIGHT)
             .frame(Frame::new().fill(color(p.panel)))
@@ -960,7 +1016,7 @@ impl Content for DesktopApp {
             )
             .show_inside(ui, |ui| self.menu_row(ui));
         Panel::bottom("sonando")
-            .exact_size(NOW_HEIGHT)
+            .exact_size(bars.now)
             .frame(
                 Frame::new()
                     .fill(color(p.panel))
@@ -968,15 +1024,15 @@ impl Content for DesktopApp {
             )
             .show_inside(ui, |ui| self.now_bar(ui));
         Panel::bottom("entrada")
-            .exact_size(INPUT_HEIGHT)
+            .exact_size(bars.input)
             .frame(Frame::new().inner_margin(Margin::symmetric(14, 0)))
             .show_inside(ui, |ui| self.input_row(ui));
         CentralPanel::default()
             .frame(Frame::new().inner_margin(Margin {
                 left: 14,
                 right: 6,
-                top: 10,
-                bottom: 4,
+                top: CONSOLE_MARGIN_TOP,
+                bottom: CONSOLE_MARGIN_BOTTOM,
             }))
             .show_inside(ui, |ui| self.console(ui));
         self.menus.dialogs(&ctx, &mut self.settings);
@@ -1017,9 +1073,9 @@ fn window_level(always_on_top: bool) -> WindowLevel {
     }
 }
 
-/// Posición (px físicos) y tamaño (puntos lógicos de Windows, sin el zoom
-/// del tamaño de letra) de la ventana, o `None` si está maximizada o
-/// minimizada (no se anota: al reabrir queda la de antes).
+/// Posición (px físicos) y tamaño (puntos lógicos de Windows) de la
+/// ventana, o `None` si está maximizada o minimizada (no se anota: al
+/// reabrir queda la de antes). No depende del tamaño de letra (spec 009).
 fn window_geometry(ctx: &egui::Context) -> Option<Geometry> {
     let info = ctx.input(|i| i.viewport().clone());
     if info.maximized == Some(true) || info.minimized == Some(true) {

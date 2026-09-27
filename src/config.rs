@@ -186,6 +186,30 @@ pub const WINDOW_TITLE: &str = "spotify-terminal";
 pub const WINDOW_SIZE: [f32; 2] = [920.0, 580.0];
 pub const WINDOW_MIN_SIZE: [f32; 2] = [520.0, 320.0];
 
+/// Altos de las barras de la ventana, en puntos, con la letra por defecto
+/// (`theme::FONT_SIZE`). Con letra más grande, "sonando" y la entrada
+/// crecen en proporción; la barra de título y la de menús no (spec 009).
+pub mod layout {
+    pub const TITLE_HEIGHT: f32 = 36.0;
+    pub const MENU_HEIGHT: f32 = 26.0;
+    pub const NOW_HEIGHT: f32 = 64.0;
+    pub const INPUT_HEIGHT: f32 = 34.0;
+    /// Lo mínimo en que entra el texto de "sonando" (dos renglones) y de la
+    /// entrada con la letra por defecto; con otra letra, en proporción.
+    /// Si la ventana no da para los altos de arriba, bajan hasta acá.
+    pub const NOW_TIGHT_HEIGHT: f32 = 44.0;
+    pub const INPUT_TIGHT_HEIGHT: f32 = 22.0;
+    /// Renglones de consola que se intentan dejar a la vista antes de
+    /// achicar las barras.
+    pub const CONSOLE_MIN_ROWS: f32 = 3.0;
+    /// Margen de arriba y abajo de la consola.
+    pub const CONSOLE_MARGIN_TOP: i8 = 10;
+    pub const CONSOLE_MARGIN_BOTTOM: i8 = 4;
+    /// Letra de menús y diálogos: fija, no sigue el tamaño de letra de los
+    /// ajustes (spec 009).
+    pub const UI_FONT_SIZE: f32 = 14.0;
+}
+
 /// Líneas que guarda la consola; las más viejas se descartan.
 pub const SCROLLBACK_LINES: usize = 2_000;
 
@@ -261,10 +285,10 @@ pub const PROMPT_MAX_CHARS: usize = 8;
 /// Calidades de audio que se ofrecen, en kbps.
 pub const BITRATES_KBPS: &[u16] = &[96, 160, 320];
 
-/// Letra subrayada de cada menú de la barra, en orden: Tema, Fuente,
-/// Atajos, Reproducción, Consola, Ventana, Ajustes. `Alt`+letra abre el
-/// menú, así que `Alt`+esas letras no se aceptan como atajo de ventana.
-pub(crate) const MENU_ACCESS_KEYS: [char; 7] = ['T', 'F', 'A', 'R', 'C', 'V', 'J'];
+/// Letra subrayada de cada menú de la barra, en orden: Personalización,
+/// Reproducción, Ajustes (spec 009). `Alt`+letra abre el menú, así que
+/// `Alt`+esas letras no se aceptan como atajo de ventana.
+pub(crate) const MENU_ACCESS_KEYS: [char; 3] = ['P', 'R', 'A'];
 
 /// Atajo fijo que vuelve todo a fábrica: no se puede reasignar ni quitar,
 /// por si un tema deja el menú ilegible.

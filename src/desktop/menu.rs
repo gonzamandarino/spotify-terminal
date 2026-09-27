@@ -1,6 +1,7 @@
 //! Barra de menús de la app de escritorio (spec 007), en un renglón bajo
-//! la barra de título: Tema, Fuente, Atajos, Reproducción, Consola,
-//! Ventana y Ajustes, más los diálogos de colores y de atajos.
+//! la barra de título: Personalización (con los submenús Tema, Fuente,
+//! Atajos, Consola y Ventana, spec 009), Reproducción y Ajustes, más los
+//! diálogos de colores y de atajos.
 //!
 //! Edita los `Settings` que le pasa la ventana y devuelve lo que no es un
 //! ajuste (`Command`). No aplica nada por su cuenta: la ventana compara los
@@ -9,8 +10,10 @@
 use std::time::Duration;
 
 use egui::{
-    Button, Color32, Context, Event, Grid, Key, MenuBar, Popup, PopupCloseBehavior, RichText,
-    Slider, Stroke, TextFormat, Ui, containers::menu::MenuConfig, text::LayoutJob,
+    Button, Color32, Context, Event, FocusDirection, Grid, Id, Key, MenuBar, Popup,
+    PopupCloseBehavior, RichText, Slider, Stroke, TextFormat, Ui,
+    containers::menu::{MenuConfig, MenuState, SubMenu, SubMenuButton},
+    text::LayoutJob,
 };
 
 use super::{
@@ -37,15 +40,13 @@ pub(super) enum Command {
 }
 
 /// Títulos de los menús; la letra subrayada es `config::MENU_ACCESS_KEYS`.
-const TITLES: [&str; 7] = [
-    "Tema",
-    "Fuente",
-    "Atajos",
-    "Reproducción",
-    "Consola",
-    "Ventana",
-    "Ajustes",
-];
+const TITLES: [&str; 3] = ["Personalización", "Reproducción", "Ajustes"];
+
+/// Submenús de Personalización, en orden.
+const SUBMENUS: [&str; 5] = ["Tema", "Fuente", "Atajos", "Consola", "Ventana"];
+
+/// Ancho mínimo de un menú desplegado.
+const MENU_MIN_WIDTH: f32 = 260.0;
 
 /// Estado de la barra entre frames.
 #[derive(Default)]
@@ -55,6 +56,8 @@ pub(super) struct Menus {
     /// Dar el foco al primer ítem del menú recién abierto con el teclado,
     /// para seguir con flechas y Enter.
     focus_first: bool,
+    /// Lo mismo para el submenú recién abierto con el teclado (→ o Enter).
+    focus_sub: bool,
     colors_open: bool,
     keys_open: bool,
     /// Atajo que espera la próxima combinación que se apriete.
@@ -171,7 +174,7 @@ impl Menus {
                 let text = underlined(ui, title, config::MENU_ACCESS_KEYS[index]);
                 let open = self.open == Some(index);
                 let (response, _) = egui::containers::menu::MenuButton::new(text).ui(ui, |ui| {
-                    ui.set_min_width(260.0);
+                    ui.set_min_width(MENU_MIN_WIDTH);
                     let mut focus = std::mem::take(&mut self.focus_first);
                     let mut first = |response: egui::Response| {
                         if std::mem::take(&mut focus) {
@@ -180,12 +183,14 @@ impl Menus {
                         response
                     };
                     match index {
-                        0 => self.theme_menu(ui, settings, &mut first),
-                        1 => font_menu(ui, settings, fonts, &mut first),
-                        2 => self.keys_menu(ui, settings, &mut first),
-                        3 => playback_menu(ui, settings, &mut first),
-                        4 => self.console_menu(ui, settings, &mut commands, &mut first),
-                        5 => window_menu(ui, settings, &mut commands, &mut first),
+                        0 => self.personalization_menu(
+                            ui,
+                            settings,
+                            fonts,
+                            &mut commands,
+                            &mut first,
+                        ),
+                        1 => playback_menu(ui, settings, &mut first),
                         _ => settings_menu(ui, &mut commands, &mut first),
                     }
                 });
@@ -200,6 +205,86 @@ impl Menus {
             }
         });
         commands
+    }
+
+    /// Personalización: un submenú por cada uno de `SUBMENUS`. Los menús de
+    /// egui abren un submenú con el mouse o Enter; acá se suma → para
+    /// abrirlo (con el foco en su primer ítem) y ← para cerrarlo y volver
+    /// a su botón, como en los menús de Windows. En un slider o en el
+    /// texto del prompt, ← y → siguen siendo de ellos (`uses_arrows`).
+    fn personalization_menu(
+        &mut self,
+        ui: &mut Ui,
+        settings: &mut Settings,
+        fonts: &[&str],
+        commands: &mut Vec<Command>,
+        first: &mut impl FnMut(egui::Response) -> egui::Response,
+    ) {
+        let (right, left) = ui.input(|i| {
+            (
+                i.key_pressed(Key::ArrowRight),
+                i.key_pressed(Key::ArrowLeft),
+            )
+        });
+        let ctx = ui.ctx().clone();
+        let focused = ctx.memory(|m| m.focused());
+        let mut focus = std::mem::take(&mut self.focus_sub);
+        for (index, name) in SUBMENUS.iter().enumerate() {
+            let (response, popup) = SubMenuButton::new(*name).ui(ui, |ui| {
+                ui.set_min_width(MENU_MIN_WIDTH);
+                let mut sub_first = |response: egui::Response| {
+                    if std::mem::take(&mut focus) {
+                        response.request_focus();
+                    }
+                    response
+                };
+                match index {
+                    0 => self.theme_menu(ui, settings, &mut sub_first),
+                    1 => font_menu(ui, settings, fonts, &mut sub_first),
+                    2 => self.keys_menu(ui, settings, &mut sub_first),
+                    3 => self.console_menu(ui, settings, commands, &mut sub_first),
+                    _ => window_menu(ui, settings, commands, &mut sub_first),
+                }
+            });
+            let response = if index == 0 {
+                first(response)
+            } else {
+                response
+            };
+            let submenu = SubMenu::id_from_widget_id(response.id);
+            if response.has_focus() {
+                let open = MenuState::from_ui(ui, |state, _| state.open_item);
+                if right && open != Some(submenu) {
+                    // egui olvida el submenú abierto si no se dibujó el
+                    // frame anterior: se lo marca como visto para que dure
+                    // hasta el próximo, en el que se dibuja.
+                    MenuState::mark_shown(&ctx, submenu);
+                    MenuState::from_ui(ui, |state, _| state.open_item = Some(submenu));
+                    // Sin el salto de foco de egui hacia la derecha.
+                    ctx.memory_mut(|m| m.move_focus(FocusDirection::None));
+                    self.focus_sub = true;
+                    ctx.request_repaint();
+                } else if response.clicked() && !response.clicked_by(egui::PointerButton::Primary) {
+                    // Enter: egui lo abre; el foco, a su primer ítem.
+                    self.focus_sub = true;
+                    ctx.request_repaint();
+                }
+            }
+            // ← con el foco dentro de este submenú: cerrarlo y volver a su
+            // botón (no a donde egui encuentre algo a la izquierda).
+            let inside = popup.as_ref().is_some_and(|popup| {
+                focused
+                    .filter(|&id| !uses_arrows(&ctx, id))
+                    .and_then(|id| ctx.read_response(id))
+                    .is_some_and(|r| popup.response.rect.contains_rect(r.rect))
+            });
+            if left && inside {
+                MenuState::from_ui(ui, |state, _| state.open_item = None);
+                ctx.memory_mut(|m| m.move_focus(FocusDirection::None));
+                response.request_focus();
+                ctx.request_repaint();
+            }
+        }
     }
 
     fn theme_menu(
@@ -260,13 +345,13 @@ impl Menus {
         ui.horizontal(|ui| {
             ui.label("Símbolo del prompt");
             let draft = self.prompt.get_or_insert_with(|| console.prompt.clone());
-            let response = first(
+            let response = first(keeps_arrows(
                 ui.add(
                     egui::TextEdit::singleline(draft)
                         .desired_width(80.0)
                         .char_limit(config::PROMPT_MAX_CHARS),
                 ),
-            );
+            ));
             if response.changed() {
                 if let Some(prompt) = settings::valid_prompt(draft) {
                     console.prompt = prompt;
@@ -276,21 +361,25 @@ impl Menus {
                 self.prompt = None;
             }
         });
-        ui.add(
-            Slider::new(
-                &mut console.scrollback,
-                config::SCROLLBACK_MIN..=config::SCROLLBACK_MAX,
-            )
-            .logarithmic(true)
-            .text("líneas guardadas"),
+        keeps_arrows(
+            ui.add(
+                Slider::new(
+                    &mut console.scrollback,
+                    config::SCROLLBACK_MIN..=config::SCROLLBACK_MAX,
+                )
+                .logarithmic(true)
+                .text("líneas guardadas"),
+            ),
         );
-        ui.add(
-            Slider::new(
-                &mut console.history,
-                config::HISTORY_MIN..=config::HISTORY_MAX,
-            )
-            .logarithmic(true)
-            .text("comandos en el historial"),
+        keeps_arrows(
+            ui.add(
+                Slider::new(
+                    &mut console.history,
+                    config::HISTORY_MIN..=config::HISTORY_MAX,
+                )
+                .logarithmic(true)
+                .text("comandos en el historial"),
+            ),
         );
         ui.checkbox(&mut console.timestamps, "Hora en cada línea");
         ui.separator();
@@ -462,11 +551,13 @@ fn font_menu(
     }
     ui.separator();
     let size = &mut settings.appearance.font_size;
-    ui.add(
-        Slider::new(size, config::FONT_SIZE_MIN..=config::FONT_SIZE_MAX)
-            .step_by(f64::from(config::FONT_SIZE_STEP))
-            .suffix(" pt")
-            .text("tamaño"),
+    keeps_arrows(
+        ui.add(
+            Slider::new(size, config::FONT_SIZE_MIN..=config::FONT_SIZE_MAX)
+                .step_by(f64::from(config::FONT_SIZE_STEP))
+                .suffix(" pt")
+                .text("tamaño"),
+        ),
     );
     for (action, text) in [
         (WindowAction::FontBigger, "Agrandar"),
@@ -630,6 +721,22 @@ fn colors_dialog(ui: &mut Ui, settings: &mut Settings) {
     }
 }
 
+/// Marca `response` (un slider o un campo de texto) como un widget que usa
+/// ← y → para sí: esas flechas no cierran su submenú.
+fn keeps_arrows(response: egui::Response) -> egui::Response {
+    response
+        .ctx
+        .data_mut(|d| d.insert_temp(response.id.with(USES_ARROWS), true));
+    response
+}
+
+fn uses_arrows(ctx: &Context, id: Id) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(id.with(USES_ARROWS)))
+        .unwrap_or(false)
+}
+
+const USES_ARROWS: &str = "usa-flechas";
+
 /// El atajo de ventana de `action` como texto, o nada.
 fn shortcut_hint(settings: &Settings, action: WindowAction) -> String {
     settings
@@ -698,6 +805,15 @@ mod tests {
         let mut letters = config::MENU_ACCESS_KEYS.to_vec();
         letters.dedup();
         assert_eq!(letters.len(), TITLES.len());
+    }
+
+    #[test]
+    fn personalizacion_junta_los_menus_de_antes() {
+        assert_eq!(TITLES[0], "Personalización");
+        assert_eq!(SUBMENUS, ["Tema", "Fuente", "Atajos", "Consola", "Ventana"]);
+        for sub in SUBMENUS {
+            assert!(!TITLES.contains(&sub), "{sub} sigue en la barra");
+        }
     }
 
     #[test]
