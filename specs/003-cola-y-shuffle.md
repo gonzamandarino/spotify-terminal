@@ -1,7 +1,10 @@
 # 003 - Shuffle, siguiente/anterior y cola de reproducción
 
 ## Estado
-En verificación
+Reabierto (parcial)
+
+AC-12 (medición de consumo de 30 min) no se verificó: se decidió no
+hacer esa prueba en este spec. Ver "Notas de verificación".
 
 ## Contexto
 Hoy `play` de un álbum o playlist reproduce los temas en orden, de principio
@@ -87,36 +90,36 @@ pueden encolar temas.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — Con una playlist o álbum sonando, `s` prende el shuffle:
+- [x] **AC-1** — Con una playlist o álbum sonando, `s` prende el shuffle:
       el tema actual sigue sin cortarse y los siguientes salen en orden
       aleatorio, sin repetir ni saltear ninguno de la lista.
-- [ ] **AC-2** — `s` otra vez apaga el shuffle: después del tema actual
+- [x] **AC-2** — `s` otra vez apaga el shuffle: después del tema actual
       sigue el que le correspondía en el orden original.
-- [ ] **AC-3** — `play --shuffle <playlist|álbum>` (y `-s`) arranca por un
+- [x] **AC-3** — `play --shuffle <playlist|álbum>` (y `-s`) arranca por un
       tema al azar y sigue mezclado; con un tema solo, o `s` con un tema
       solo, avisa que no hay nada que mezclar y sigue sonando.
-- [ ] **AC-4** — `n` / → pasa al siguiente tema sin silencio notable si
+- [x] **AC-4** — `n` / → pasa al siguiente tema sin silencio notable si
       estaba precargado; en el último tema, termina como si hubiera
       terminado solo.
-- [ ] **AC-5** — `p` / ← con más de `config::PREVIOUS_RESTART_THRESHOLD`
+- [x] **AC-5** — `p` / ← con más de `config::PREVIOUS_RESTART_THRESHOLD`
       de tema reinicia el actual; con menos, vuelve al tema que sonó antes
       (también con shuffle); en el primer tema, reinicia.
-- [ ] **AC-6** — Apretar `n` / `p` varias veces seguido rápido no saltea
+- [x] **AC-6** — Apretar `n` / `p` varias veces seguido rápido no saltea
       de más ni deja la cola en un estado inconsistente (los eventos viejos
       del reproductor se ignoran, como en spec 001).
-- [ ] **AC-7** — `a` abre una línea de búsqueda; mientras se escribe, la
+- [x] **AC-7** — `a` abre una línea de búsqueda; mientras se escribe, la
       música sigue y los eventos del reproductor se atienden (el paso al
       tema siguiente no se demora). Backspace borra; Esc cancela.
-- [ ] **AC-8** — Enter en la búsqueda muestra hasta 5 temas; elegir uno lo
+- [x] **AC-8** — Enter en la búsqueda muestra hasta 5 temas; elegir uno lo
       encola y se imprime "➕ En cola: …"; suena inmediatamente después del
       tema actual, antes del resto de la lista, y varios encolados suenan en
       el orden en que se encolaron. El shuffle no los mezcla.
-- [ ] **AC-9** — Con `play` de un solo tema y temas encolados, al terminar
+- [x] **AC-9** — Con `play` de un solo tema y temas encolados, al terminar
       el tema siguen los encolados en vez de salir.
-- [ ] **AC-10** — Una búsqueda que falla (sin red, sin resultados, 429)
+- [x] **AC-10** — Una búsqueda que falla (sin red, sin resultados, 429)
       muestra el error en una línea y vuelve a la reproducción sin cortar
       la música ni salir.
-- [ ] **AC-11** — La línea de estado muestra shuffle prendido/apagado y la
+- [x] **AC-11** — La línea de estado muestra shuffle prendido/apagado y la
       cantidad de temas en cola, y la ayuda de teclas incluye `n`, `p`, `s`
       y `a` (también en `help`).
 - [ ] **AC-12** — Consumo en reproducción continua (30 min con algunos
@@ -196,7 +199,7 @@ pueden encolar temas.
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
 - [x] Tests corren y pasan
 - [x] Contratos de funciones públicas y doc de arquitectura actualizados si
@@ -245,6 +248,13 @@ pueden encolar temas.
     `lo_encolado_suena_despues_del_actual_en_orden`,
     `el_shuffle_no_mezcla_lo_encolado`.
   - AC-9: `tema_unico_con_encolados_no_termina`.
-- **Pendiente (T6, manual, lo probás vos):** AC-1 a AC-12 con audio real,
-  y la medición de 30 min con `scripts/medir-consumo.ps1` para AC-12.
-
+- **Cierre (2026-09-27):** AC-1 a AC-11 los diste por probados con audio
+  real al pedir el cierre (sin detalle por AC); la cobertura con tests
+  unitarios está arriba.
+- **AC-12 sin verificar, a propósito:** decidiste no hacer la medición de
+  30 min con `scripts/medir-consumo.ps1`. Por eso el estado es
+  `Reabierto (parcial)` y T6 queda sin tildar. Lo que se sabe: la cola
+  agrega solo unos vectores de URIs y un `Instant`, sin hilos ni polling
+  nuevos (la búsqueda de `a` es un pedido por Enter), así que no se espera
+  un cambio respecto de spec 001 (~19 MB, 0,07 % CPU), pero no está medido.
+  Si se quiere cerrar, alcanza con correr la medición y tildar AC-12.
