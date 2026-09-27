@@ -99,7 +99,7 @@ ventana. El análisis del audio (copiar muestras, una FFT de 1024 puntos
 - [x] **AC-4** — **Barras:** espectro en N bandas (config) de graves a
       agudos, con caída suave. Un tono de 1 kHz levanta la banda que
       contiene 1 kHz más que las demás; silencio → todas en cero (test).
-- [ ] **AC-5** — **Vinilo:** gira a las rpm de config mientras suena y se
+- [x] **AC-5** — **Vinilo:** gira a las rpm de config mientras suena y se
       detiene en pausa; lleva la tapa del disco del tema que suena y la
       cambia con el tema. Sin tapa (falla la descarga, tema sin tapa)
       gira un disco sin imagen, sin avisos en la consola.
@@ -229,7 +229,7 @@ rama (junto con spec 009).
 - [x] **T5** — Tapas: URL en `TrackInfo`, descarga y decodificación en el
       motor, `Input::Covers` / `Output::Cover`, textura en la ventana.
       Vinilo (AC-5).
-- [ ] **T6** — Medir el desfase con audio real y compensarlo si hace
+- [x] **T6** — Medir el desfase con audio real y compensarlo si hace
       falta (AC-10).
 - [ ] **T7** — Verificación con audio real y consumo por PID con cada
       modo (AC-8, AC-9).
@@ -283,7 +283,27 @@ reproducir, y consumo en release por PID:
   `una_tapa_que_llega_tarde_o_falla_no_se_manda`,
   `queue::tests::la_tapa_mas_cercana_a_300`, `cover::tests::*`. Vinilo
   sin tema: disco con etiqueta del acento y una marca (captura).
-- **Pendiente (necesita audio real):** AC-5 (tapa real girando y
-  cambiando con el tema), AC-8 (CPU/RAM reproduciendo con cada modo, 20
-  cambios de tema con Vinilo), AC-9 (sin cortes, tuyo), AC-10 (desfase,
-  T6: medir y fijar `config::viz::LATENCY`).
+
+Con audio real (2026-09-27, a pedido tuyo, volumen 10 %, release):
+
+- **AC-5:** con Vinilo, 20 `play` de temas de distintos discos (Thriller,
+  Abbey Road, Rumours, Nevermind, Back in Black): la tapa de cada uno
+  aparece en la etiqueta, girada, y cambia con el tema (capturas).
+  Quieto en pausa: `viz::tests::solo_pide_cuadros_mientras_suena` (el
+  ángulo solo avanza sonando).
+- **T6 / desfase:** instrumento temporal (no quedó en el código) en
+  `TapSink::write` anotando muestras escritas vs. tiempo: en régimen, las
+  muestras entran a la salida en promedio **335 ms** antes de sonar
+  (entre 134 y 595 ms según el momento), coherente con los 26 paquetes de
+  ~580 muestras que guarda la salida rodio de librespot (~342 ms).
+  `config::viz::LATENCY` = 340 ms.
+- **Pendiente:**
+  - **AC-8:** la primera corrida midió Onda y Barras sin música (el
+    álbum de prueba no existe en Spotify) y dio 0,5 / 5,9 / 8,1 % para
+    Onda / Barras / Vinilo sin estar sonando; aislado después (Barras
+    elegido por menú, sin música) dio 0,00 %, así que no se pudo
+    atribuir. 20 cambios de tema con Vinilo: 40,9 → 43,9 MB (no alcanza
+    para saber si se estabiliza). La segunda corrida (con música, pausa
+    y 40 cambios) no arrancó: Windows no le dio el foco a la ventana
+    mientras usabas la PC y el script se frena antes de mandar teclas.
+  - **AC-9 y AC-10:** tuyos, con audio.

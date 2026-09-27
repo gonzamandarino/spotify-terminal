@@ -283,8 +283,10 @@ pub mod viz {
     pub const COVER_MAX_BYTES: usize = 2 * 1024 * 1024;
     /// Cuánto se atrasa el dibujo respecto de las muestras que entran a
     /// la salida de audio (que las toca después de su buffer). Medido en
-    /// spec 010, T6.
-    pub const LATENCY: Duration = Duration::ZERO;
+    /// spec 010, T6: la salida de librespot (rodio) guarda hasta 26
+    /// paquetes de ~580 muestras (~340 ms); con música, las muestras
+    /// entraban en promedio 335 ms antes de sonar (entre 134 y 595).
+    pub const LATENCY: Duration = Duration::from_millis(340);
     /// Tope de `LATENCY`: el buffer de muestras guarda esto de más.
     pub const LATENCY_MAX: Duration = Duration::from_millis(500);
     /// Muestras que guarda el buffer: lo analizado más el atraso.
