@@ -113,7 +113,10 @@ impl WebClient {
                 .get(RETRY_AFTER)
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse().ok());
-            return Err(status_error(status, retry_after, action));
+            // El cuerpo solo importa para distinguir un 403; si no se
+            // puede leer, se sigue con el código.
+            let body = response.text().await.unwrap_or_default();
+            return Err(status_error(status, retry_after, &body, action));
         }
         response
             .json::<T>()
@@ -253,11 +256,22 @@ fn format_duration(ms: u64) -> String {
 /// - 401 → `SessionRejected` (token revocado o inválido: hay que reloguearse).
 /// - 429 → `RateLimited` con los segundos de `Retry-After` (o
 ///   `config::DEFAULT_RETRY_AFTER` si no vino).
+/// - 403 con `config::USER_NOT_REGISTERED_MESSAGE` en `body` →
+///   `UserNotAllowed` (la cuenta no está en *User Management* de la app
+///   del Client ID).
 /// - 5xx → `Spotify` indicando que es un problema de Spotify.
 /// - resto → `Spotify` con el código y la operación (`action`).
-fn status_error(status: StatusCode, retry_after: Option<u64>, action: &str) -> AppError {
+fn status_error(
+    status: StatusCode,
+    retry_after: Option<u64>,
+    body: &str,
+    action: &str,
+) -> AppError {
     match status {
         StatusCode::UNAUTHORIZED => AppError::SessionRejected(format!("{status} al {action}")),
+        StatusCode::FORBIDDEN if body.contains(config::USER_NOT_REGISTERED_MESSAGE) => {
+            AppError::UserNotAllowed
+        }
         StatusCode::TOO_MANY_REQUESTS => {
             AppError::RateLimited(retry_after.unwrap_or(config::DEFAULT_RETRY_AFTER.as_secs()))
         }
@@ -291,7 +305,7 @@ mod tests {
 
     #[test]
     fn codigos_http_se_traducen() {
-        let e = |status, retry| status_error(status, retry, "probar");
+        let e = |status, retry| status_error(status, retry, "", "probar");
         assert!(matches!(
             e(StatusCode::UNAUTHORIZED, None),
             AppError::SessionRejected(_)
@@ -310,6 +324,20 @@ mod tests {
         ));
         assert!(matches!(
             e(StatusCode::FORBIDDEN, None),
+            AppError::Spotify(_)
+        ));
+    }
+
+    #[test]
+    fn forbidden_de_usuario_no_habilitado() {
+        let body = r#"{"error":{"status":403,"message":"Check settings on developer.spotify.com/dashboard, the user may not be registered."}}"#;
+        assert!(matches!(
+            status_error(StatusCode::FORBIDDEN, None, body, "probar"),
+            AppError::UserNotAllowed
+        ));
+        // El mismo texto con otro código no es este caso.
+        assert!(matches!(
+            status_error(StatusCode::BAD_REQUEST, None, body, "probar"),
             AppError::Spotify(_)
         ));
     }

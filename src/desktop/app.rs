@@ -240,6 +240,7 @@ impl DesktopApp {
             Prompt::Ready => (self.settings.console.prompt.clone(), color(p.accent)),
             Prompt::Choose(n) => (format!("1-{n} ›"), color(p.warning)),
             Prompt::Busy(_) => ("… ›".into(), color(p.secondary)),
+            Prompt::ClientId => ("Client ID ›".into(), color(p.warning)),
         }
     }
 
@@ -703,6 +704,7 @@ impl DesktopApp {
                 Prompt::Ready => "escribí un comando · help",
                 Prompt::Choose(_) => "número y Enter · Enter = el primero · Esc cancela",
                 Prompt::Busy(_) => "",
+                Prompt::ClientId => "pegá el Client ID y Enter · Esc cancela",
             };
             let edit = TextEdit::singleline(&mut self.input)
                 .id(self.input_id)

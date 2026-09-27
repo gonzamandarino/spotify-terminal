@@ -1,10 +1,11 @@
-use std::process::ExitCode;
+use std::{io, process::ExitCode};
 
 use librespot_core::SpotifyUri;
 use spotify_terminal::{
     app::volume::Volume,
-    config::Config,
+    config::{self, ClientIdSource, Config},
     error::AppError,
+    setup::{self, Applied},
     spotify::{
         auth::{self, TokenKind},
         player::Player,
@@ -35,30 +36,29 @@ async fn main() -> ExitCode {
 
 async fn run() -> Result<(), AppError> {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let config = Config::load()?;
 
+    // `help`, `version`, `setup` y `logout` no necesitan Client ID; el resto
+    // lo pide con la guía si falta (spec 008).
     match cli::parse(&args)? {
         Command::Help => println!("{}", cli::USAGE),
-        Command::Login => {
-            for kind in TokenKind::ALL {
-                auth::get_valid_token(&config, kind).await?;
-                println!("Acceso de {} listo.", kind.label());
-            }
-            println!("Sesión guardada en {}.", config.data_dir.display());
-        }
+        Command::Version => println!("spotify-terminal {}", config::VERSION),
+        Command::Setup => setup_command().await?,
         Command::Logout => {
-            if auth::logout(&config)? {
+            if auth::logout(&config::data_dir()?)? {
                 println!("Sesión cerrada.");
             } else {
                 println!("No había una sesión guardada.");
             }
         }
+        Command::Login => login(&config_or_setup()?).await?,
         Command::Whoami => {
+            let config = config_or_setup()?;
             let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
             let user = web.current_user().await?;
             println!("{} ({}), plan: {}", user.name(), user.id, user.plan());
         }
         Command::Play { target, shuffle } => {
+            let config = config_or_setup()?;
             let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
             play(&config, &web, &target, shuffle).await?;
         }
@@ -67,6 +67,7 @@ async fn run() -> Result<(), AppError> {
             query,
             shuffle,
         } => {
+            let config = config_or_setup()?;
             let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
             let hits = web.search(kind, &query).await?;
             if hits.is_empty() {
@@ -83,6 +84,70 @@ async fn run() -> Result<(), AppError> {
         }
     }
     Ok(())
+}
+
+/// Configuración para un comando que usa la Web API. Si no hay Client ID,
+/// muestra la guía, lo pide por la terminal, lo guarda y sigue (spec 008).
+///
+/// - Errores: los de `Config::load`; cancelar la guía → `MissingClientId`.
+fn config_or_setup() -> Result<Config, AppError> {
+    match Config::load() {
+        Err(AppError::MissingClientId { saved_invalid }) => {
+            if ask_client_id(saved_invalid)?.is_none() {
+                return Err(AppError::MissingClientId { saved_invalid });
+            }
+            println!();
+            Config::load()
+        }
+        other => other,
+    }
+}
+
+/// `setup`: muestra el Client ID actual, la guía y pide uno nuevo; al
+/// guardarlo sigue con el login (salvo que `.env` / la variable lo tapen).
+async fn setup_command() -> Result<(), AppError> {
+    if let Ok(current) = Config::load() {
+        let from = match current.client_id_source {
+            ClientIdSource::Env => "variable de entorno o .env",
+            ClientIdSource::SavedFile => "guardado",
+        };
+        println!("Client ID actual: {} ({from}).\n", current.web_client_id);
+    }
+    let Some(applied) = ask_client_id(false)? else {
+        println!("Cancelado: el Client ID no cambió.");
+        return Ok(());
+    };
+    println!("Client ID guardado.");
+    if let Some(notice) = applied.notice() {
+        println!("{notice}");
+        return Ok(());
+    }
+    println!();
+    login(&Config::load()?).await
+}
+
+/// Pide los dos tokens (audio y Web API), autorizando si hace falta.
+async fn login(config: &Config) -> Result<(), AppError> {
+    for kind in TokenKind::ALL {
+        auth::get_valid_token(config, kind).await?;
+        println!("Acceso de {} listo.", kind.label());
+    }
+    println!("Sesión guardada en {}.", config.data_dir.display());
+    Ok(())
+}
+
+/// Guía + pedido interactivo del Client ID. `None` si el usuario canceló.
+fn ask_client_id(saved_invalid: bool) -> Result<Option<Applied>, AppError> {
+    if saved_invalid {
+        println!(
+            "⚠ El Client ID guardado ({}) no es válido: hay que cargarlo de nuevo.\n",
+            config::CLIENT_ID_FILE
+        );
+    }
+    println!("{}\n", config::setup_guide());
+    let id =
+        setup::prompt(&mut io::stdin().lock(), &mut io::stdout()).map_err(AppError::Terminal)?;
+    id.map(|id| setup::apply(&id)).transpose()
 }
 
 /// Reproduce un tema, álbum o playlist con los controles de `playback`

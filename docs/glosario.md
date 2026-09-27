@@ -12,3 +12,14 @@ concepto nuevo — no antes, no de antemano especulando.
   app enfocada (ej. Ctrl+→). Ver también **atajo global**.
 - **Atajo global** — combinación registrada en Windows que anda con la app
   minimizada o con otra app enfocada (ej. Ctrl+Alt+P, spec 006).
+- **Client ID (propio)** — identificador de la app que cada usuario crea
+  en el Spotify Developer Dashboard; se usa para el token de la Web API.
+  No es secreto (con PKCE no hay client secret). Se carga con `setup` y
+  queda en `client-id.txt` (spec 008). No confundir con el Client ID de
+  librespot, fijo en `config.rs`, que se usa para el audio.
+- **Modo desarrollo** — estado de toda app nueva del Dashboard: hasta 5
+  cuentas, cargadas a mano en **User Management**, y deja de andar si su
+  dueño pierde Premium. Por eso cada usuario usa su propio Client ID.
+- **User Management** — sección de una app del Dashboard donde su dueño
+  habilita a otras cuentas (modo desarrollo). Una cuenta no habilitada
+  recibe 403 de la Web API.

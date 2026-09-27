@@ -16,11 +16,14 @@ escritorio (`src/bin/desktop.rs` → `spotify-desktop.exe`, spec 004).
 ```
 main ──> ui::cli (parseo de subcomandos → Command)
   │
+  ├──> setup (guía + pedido del Client ID si falta, y `setup`) ──> config
+  │
   ├──> ui::select (lista numerada de resultados de búsqueda → índice elegido)
   │
   ├──> spotify::auth ──> librespot-oauth ──> accounts.spotify.com
   │         │   TokenKind::Audio (Client ID librespot)
-  │         │   TokenKind::Web   (Client ID propio, .env)
+  │         │   TokenKind::Web   (Client ID propio: env / .env / client-id.txt;
+  │         │                     antes del login lo chequea en /api/token)
   │         └──> caches %APPDATA%\spotify-terminal\token-{audio,web}.json
   │
   ├──> spotify::web::WebClient (token Web) ──> api.spotify.com/v1
@@ -39,7 +42,8 @@ main ──> ui::cli (parseo de subcomandos → Command)
                                  └──> spotify::web::search (tecla `a`, como
                                       future dentro del loop, sin bloquearlo)
 
-config  <── usado por todos (constantes, rutas, umbrales)
+config  <── usado por todos (constantes, rutas, umbrales, resolución del
+            Client ID; lee client-id.txt con setup::read_saved)
 error   <── usado por todos (AppError con mensajes para el usuario)
 ```
 
@@ -74,6 +78,7 @@ bin/desktop ──> desktop::run
                          └──> app::backend::Backend (costura para tests)
                                 └── SpotifyBackend ──> spotify::auth / web /
                                                        player (como la CLI)
+                                                       y setup (Client ID)
 ```
 
 ## Hilos
@@ -137,6 +142,25 @@ bin/desktop ──> desktop::run
   después del último cambio (`config::SETTINGS_SAVE_DELAY`) y al cerrar.
   Los valores de `config.rs` son los defaults; la CLI usa siempre esos.
 
+- **Client ID propio (spec 008):** solo `setup` escribe `client-id.txt`
+  (escritura atómica) y es el único que borra `token-web.json` fuera de
+  `auth`, cuando cambia el Client ID en uso. `Config::load` lo resuelve en
+  cada uso (variable de entorno > `.env` > `client-id.txt`), así un
+  `setup` rige sin reiniciar. En la app de escritorio, el motor decide
+  cuándo pedirlo (al abrir sin Client ID o con `setup`); en la CLI,
+  `main` (comandos que usan la Web API, o `setup`).
+
+## Distribución (spec 008)
+
+`.github/workflows/release.yml`, al pushear un tag `vX.Y.Z` igual a la
+versión de `Cargo.toml` (o a mano, sin publicar): fmt, clippy, tests,
+`cargo build --release --locked` con CRT estático (`.cargo/config.toml`),
+`scripts/verificar-dependencias.ps1` (sin DLL del runtime de C) y
+`scripts/armar-zip.ps1` (lista explícita: los dos `.exe`,
+`dist/LEEME.txt`, `dist/crear-accesos-directos.cmd`,
+`scripts/instalar-acceso-directo.ps1`). Un segundo job, el único con
+permiso de escritura, crea el Release con el zip.
+
 ## Reglas estructurales
 - `spotify::web` solo recibe tokens `Web` y `spotify::player` solo `Audio`
   (con el token cruzado, la Web API da 429 y el audio no carga).
@@ -162,7 +186,8 @@ corregir la tabla.
 
 | Función/módulo | Archivo | Contrato en |
 |---|---|---|
-| `Config::load`, constantes | `src/config.rs` | doc-comment |
+| `Config::load`, `ClientIdSource`, `resolve_client_id`, `env_client_id`, `setup_guide`, constantes | `src/config.rs` | doc-comment |
+| `setup::validate`, `setup::read_saved`, `setup::save`, `setup::apply`, `setup::prompt`, `setup::ClientId`, `setup::Applied` | `src/setup.rs` | doc-comment |
 | `AppError` (una variante por caso) | `src/error.rs` | doc-comment |
 | `auth::get_valid_token`, `auth::logout`, `auth::Token`, `auth::TokenKind` | `src/spotify/auth.rs` | doc-comment |
 | `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
@@ -172,7 +197,7 @@ corregir la tabla.
 | `volume::Volume` (`load`, `save`, `output`) | `src/app/volume.rs` | doc-comment |
 | `shell::parse_line`, `shell::complete`, `shell::ShellCommand`, `shell::VolumeCommand` (crate) | `src/app/shell.rs` | doc-comment |
 | `engine::spawn`, `engine::Input`, `engine::Output`, `engine::Engine` (crate) | `src/app/engine.rs` | doc-comment |
-| `backend::Backend`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
+| `backend::Backend` (incl. `client_id_status`, `set_client_id`), `backend::ClientIdStatus`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
 | `hotkeys::spawn`, `hotkeys::replace`, `hotkeys::from_settings`, `hotkeys::Hotkeys`, `hotkeys::Shortcut` (crate) | `src/desktop/hotkeys.rs` | doc-comment |
 | `combo::Combo`, `combo::Key` (crate; `Combo::from_str` con contrato) | `src/desktop/combo.rs` | doc-comment |
 | `settings::Settings` (`from_json`, `to_json`, `check_combo`, `assign`, `restore`), `settings::load`, `settings::save` (crate) | `src/desktop/settings.rs` | doc-comment |

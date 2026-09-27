@@ -1,0 +1,118 @@
+spotify-terminal
+================
+
+Cliente de Spotify liviano: una ventana con consola (spotify-desktop.exe)
+y una versión para la terminal (spotify-terminal.exe).
+
+
+REQUISITOS
+----------
+
+- Windows 10 u 11 de 64 bits.
+- Una cuenta de Spotify Premium (sin Premium, Spotify no deja reproducir
+  desde otras apps).
+- Nada más: no hace falta instalar nada.
+
+
+QUÉ HAY EN EL ZIP
+-----------------
+
+  spotify-desktop.exe          la app con ventana (la de todos los días)
+  spotify-terminal.exe         la misma app para usar desde una terminal
+  crear-accesos-directos.cmd   crea accesos directos en el escritorio y
+                               en el menú Inicio
+  instalar-acceso-directo.ps1  lo que usa el .cmd de arriba
+  LEEME.txt                    este archivo
+
+Descomprimí el zip en la carpeta que quieras (por ejemplo
+C:\Programas\spotify-terminal) y abrí spotify-desktop.exe. Si querés
+accesos directos, hacé doble clic en crear-accesos-directos.cmd.
+
+
+AVISO DE WINDOWS ("Windows protegió su PC")
+-------------------------------------------
+
+Los .exe no están firmados (un certificado cuesta plata todos los años),
+así que la primera vez Windows SmartScreen puede mostrar el aviso
+"Windows protegió su PC". Para abrirla igual:
+
+  1. Tocá "Más información".
+  2. Tocá "Ejecutar de todas formas".
+
+Pasa una sola vez por cada versión.
+
+
+PRIMER USO: TU CLIENT ID DE SPOTIFY
+-----------------------------------
+
+Spotify solo deja que una app de este tipo la usen hasta 5 cuentas, así
+que cada persona crea su propia "app" en el Dashboard de Spotify (es
+gratis y se hace una sola vez). La primera vez que abrís spotify-terminal
+te muestra estos mismos pasos y te pide el Client ID:
+
+  1. Entrá a https://developer.spotify.com/dashboard con tu cuenta de
+     Spotify (Premium) y aceptá los términos si te los pide.
+  2. Tocá "Create app". Nombre y descripción: cualquiera (por ejemplo
+     "spotify-terminal").
+  3. En "Redirect URIs" pegá exactamente
+         http://127.0.0.1:8898/login
+     y tocá "Add".
+  4. En "Which API/SDKs are you planning to use?" marcá "Web API".
+  5. Aceptá los términos y tocá "Save".
+  6. En la app recién creada, copiá el "Client ID" (32 letras y números)
+     y pegalo en spotify-terminal.
+  7. Se inicia sesión: el navegador se abre dos veces (una para el audio
+     y otra para buscar y ver tu cuenta) y en las dos tocás "Aceptar".
+     Listo: desde ahí ya no te pide nada más.
+
+Para cambiar el Client ID más adelante: escribí "setup" en la consola de
+la app (o "spotify-terminal setup" en una terminal). Al guardarlo se
+inicia sesión de nuevo con el Client ID nuevo.
+
+Si algo sale mal, el mensaje te dice qué hacer. Los casos comunes:
+- "Spotify no reconoce el Client ID": lo copiaste mal; usá "setup".
+- "Spotify no habilita tu cuenta": estás usando el Client ID de otra
+  persona que no te agregó en "User Management"; creá tu propia app.
+- El navegador muestra "INVALID_CLIENT: Invalid redirect URI" y la app
+  se queda esperando: la Redirect URI del paso 3 no está o está distinta.
+  Corregila en el Dashboard, cerrá la app y abrila de nuevo.
+
+
+USO BÁSICO
+----------
+
+En la consola de la app:
+
+  play <nombre>        busca temas y elegís uno
+  play list <nombre>   lo mismo con playlists
+  pause / next / prev  controles
+  help                 todos los comandos y atajos
+  version              qué versión tenés (útil si reportás un problema)
+
+
+DÓNDE QUEDAN TUS DATOS Y CÓMO BORRARLOS
+---------------------------------------
+
+Todo lo que guarda la app (Client ID, sesión de Spotify, volumen y
+ajustes) está en:
+
+    %APPDATA%\spotify-terminal
+
+(pegalo en la barra de direcciones del Explorador). Para borrar todo:
+cerrá la app, borrá esa carpeta y la carpeta donde descomprimiste el zip,
+y los accesos directos si los creaste. Si además querés sacarle el acceso
+a Spotify, andá a https://www.spotify.com/account/apps/ y quitá la app.
+
+La app no manda datos a ningún lado salvo a Spotify.
+
+
+LIMITACIONES CONOCIDAS
+----------------------
+
+- Una app del Dashboard en modo desarrollo admite hasta 5 cuentas y deja
+  de andar si su dueño pierde Premium. Por eso cada uno usa la suya.
+- El audio usa el mismo acceso que librespot (un cliente no oficial de
+  Spotify). Si Spotify lo bloquea algún día, deja de sonar y esta app no
+  lo puede evitar.
+- Spotify cambia sus reglas cada tanto; si los pasos del Dashboard no
+  coinciden con lo que ves, fijate si hay una versión nueva.

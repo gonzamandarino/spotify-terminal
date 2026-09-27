@@ -2,6 +2,27 @@
 
 ## [Sin publicar]
 
+### Agregado (spec 008 — distribución)
+- Zip para Windows en GitHub Releases: se descomprime y se usa, sin Rust
+  ni Build Tools (los `.exe` ya no dependen de `vcruntime140.dll`).
+- La primera vez, la CLI y la app de escritorio explican cómo crear tu
+  app en el Spotify Developer Dashboard y piden el Client ID; se guarda en
+  `%APPDATA%\spotify-terminal\client-id.txt` y sigue directo con el login.
+  Ya no hace falta un `.env` ni abrir la app desde una carpeta en
+  particular (`.env` y la variable de entorno siguen andando y tienen
+  prioridad).
+- Comando `setup` (CLI y app de escritorio) para cambiar el Client ID;
+  al guardarlo sigue directo con el login.
+- `spotify-terminal --version` y `version` en la app de escritorio.
+- Mensajes claros para un Client ID que Spotify no reconoce (se detecta
+  antes de abrir el navegador) y para una cuenta no habilitada en la app
+  del Dashboard de otra persona.
+- `crear-accesos-directos.cmd` en el zip; el script de accesos directos
+  usa la carpeta del zip si está ahí.
+
+### Cambiado (spec 008)
+- `logout` anda aunque no haya Client ID configurado.
+
 ### Agregado (spec 007 — customización)
 - Barra de menús en un renglón debajo de la barra de título de la app de
   escritorio: Tema, Fuente, Atajos, Reproducción, Consola, Ventana y

@@ -299,3 +299,58 @@ entradas viejas — se marcan reemplazadas.
   cada archivo para saber su nombre cuesta RAM y arranque; las
   proporcionales desarman las columnas de la consola).
 - **Estado:** Vigente (spec 007)
+
+## 2026-09-27 — Cada usuario usa su propio Client ID (camino A)
+- **Decisión:** la app no trae un Client ID; la primera vez guía para
+  crear una app en el Developer Dashboard y pide el suyo (`setup`).
+- **Motivo:** desde feb 2026 una app en modo desarrollo admite 5 cuentas
+  cargadas a mano y se cae para todos si su dueño pierde Premium; el
+  *Extended Quota Mode* pide empresa y 250.000 usuarios activos por mes.
+  Como reproducir ya exige Premium, crear la app no agrega requisitos.
+- **Alternativa descartada:** Client ID compartido (camino B): 5 personas
+  como máximo y un único punto de falla.
+- **Estado:** Vigente (spec 008)
+
+## 2026-09-27 — Client ID en `client-id.txt`, no en `ajustes.json`
+- **Decisión:** `setup` lo guarda en `%APPDATA%\spotify-terminal\client-id.txt`
+  (texto plano, escritura atómica). Prioridad: variable de entorno
+  `SPOTIFY_CLIENT_ID`, `.env`, `client-id.txt`; así el flujo de
+  desarrollo con `.env` no cambia.
+- **Motivo:** cambiarlo no personaliza la app, cambia de cuenta de
+  desarrollador (y borra el token de la Web API); `ajustes.json` solo
+  guarda lo que difiere de fábrica y la CLI no lo lee. No es secreto: con
+  PKCE no hay client secret.
+- **Estado:** Vigente (spec 008)
+
+## 2026-09-27 — Chequeo del Client ID antes de abrir el navegador
+- **Decisión:** antes del login interactivo de la Web API se canjea un
+  código falso en `/api/token`: `invalid_client` → el Client ID no
+  existe (`InvalidClientId`); cualquier otra respuesta sigue al login.
+- **Motivo:** con un Client ID inexistente Spotify muestra el error en el
+  navegador y nunca llama al callback: la app se quedaba esperando. Es un
+  pedido más, solo en el login interactivo (nunca en el refresh).
+- **Alternativa descartada:** `GET /authorize` (sin sesión en el
+  navegador responde 303 al login para cualquier Client ID). La Redirect
+  URI mal registrada no se puede detectar así; la guía insiste en
+  copiarla exacta.
+- **Estado:** Vigente (spec 008)
+
+## 2026-09-27 — Distribución: zip portable, sin instalador ni firma
+- **Decisión:** un `.zip` con los dos `.exe`, `LEEME.txt` y el script de
+  accesos directos (más un `.cmd` que lo llama con `-ExecutionPolicy
+  Bypass`), publicado en GitHub Releases por `release.yml` al pushear un
+  tag `vX.Y.Z` igual a la versión de `Cargo.toml`. El zip se arma desde
+  una lista explícita de archivos (`scripts/armar-zip.ps1`).
+- **Motivo:** proyecto chico: un instalador (MSI/MSIX) o autoupdate es
+  más mantenimiento que valor. Los `.exe` no se firman (el certificado se
+  paga todos los años); el LEEME explica cómo pasar SmartScreen.
+- **Estado:** Vigente (spec 008)
+
+## 2026-09-27 — Runtime de C estático (`+crt-static`)
+- **Decisión:** `.cargo/config.toml` enlaza el CRT dentro del `.exe` para
+  `x86_64-pc-windows-msvc`, también al compilar en local.
+- **Motivo:** sin eso los `.exe` piden `vcruntime140.dll` y las
+  `api-ms-win-crt-*`, que una PC sin Build Tools ni Visual C++
+  Redistributable puede no tener. Cuesta ~200 KB por `.exe`.
+  `scripts/verificar-dependencias.ps1` lo chequea en CI.
+- **Estado:** Vigente (spec 008)

@@ -7,8 +7,9 @@ use tokio::runtime::Handle;
 
 use super::volume::Volume;
 use crate::{
-    config::Config,
+    config::{self, Config},
     error::AppError,
+    setup::{self, Applied, ClientId},
     spotify::{
         auth::{self, Token, TokenKind},
         player::{Player, Resolved},
@@ -60,19 +61,38 @@ impl Playback for Player {
     }
 }
 
+/// Si hay un Client ID configurado (ver `Config::load`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ClientIdStatus {
+    Ready,
+    /// No hay en ninguna fuente; `saved_invalid`: el guardado no es válido.
+    Missing {
+        saved_invalid: bool,
+    },
+}
+
 /// Operaciones contra Spotify que el motor lanza como tareas de fondo.
 ///
 /// Contrato común: cada llamada carga la configuración de nuevo (así un
-/// `.env` corregido sirve sin reiniciar) y pide un token vigente; si hace
-/// falta autorizar en el navegador, esa espera no bloquea el hilo del motor.
-/// Los errores son los de `auth`, `web` y `player`, sin reintentos.
+/// `.env` corregido o un Client ID recién cargado con `setup` sirven sin
+/// reiniciar) y pide un token vigente; si hace falta autorizar en el
+/// navegador, esa espera no bloquea el hilo del motor. Los errores son los
+/// de `auth`, `web` y `player`, sin reintentos.
 pub(crate) trait Backend {
     type Player: Playback;
+
+    /// Si hay Client ID. Otro error de configuración cuenta como `Ready`:
+    /// se muestra cuando se use.
+    fn client_id_status(&self) -> ClientIdStatus;
+
+    /// Guarda `id` y lo deja en uso (ver [`setup::apply`]).
+    fn set_client_id(&self, id: &ClientId) -> Result<Applied, AppError>;
 
     /// Pide los dos tokens (audio y Web API), autorizando si hace falta.
     async fn login(&self) -> Result<(), AppError>;
 
-    /// Borra la sesión guardada. `true` si había alguna.
+    /// Borra la sesión guardada (no necesita Client ID). `true` si había
+    /// alguna.
     fn logout(&self) -> Result<bool, AppError>;
 
     async fn current_user(&self) -> Result<User, AppError>;
@@ -112,6 +132,19 @@ impl SpotifyBackend {
 impl Backend for SpotifyBackend {
     type Player = Player;
 
+    fn client_id_status(&self) -> ClientIdStatus {
+        match Config::load() {
+            Err(AppError::MissingClientId { saved_invalid }) => {
+                ClientIdStatus::Missing { saved_invalid }
+            }
+            _ => ClientIdStatus::Ready,
+        }
+    }
+
+    fn set_client_id(&self, id: &ClientId) -> Result<Applied, AppError> {
+        setup::apply(id)
+    }
+
     async fn login(&self) -> Result<(), AppError> {
         for kind in TokenKind::ALL {
             Self::token(kind).await?;
@@ -120,7 +153,7 @@ impl Backend for SpotifyBackend {
     }
 
     fn logout(&self) -> Result<bool, AppError> {
-        auth::logout(&Config::load()?)
+        auth::logout(&config::data_dir()?)
     }
 
     async fn current_user(&self) -> Result<User, AppError> {
