@@ -233,7 +233,7 @@ rama (junto con spec 009).
       falta (AC-10).
 - [ ] **T7** — Verificación con audio real y consumo por PID con cada
       modo (AC-8, AC-9).
-- [ ] **T8** — Contratos, decisiones, arquitectura, glosario, README,
+- [x] **T8** — Contratos, decisiones, arquitectura, glosario, README,
       changelog y versión `0.2.0`.
 
 ## Definition of Done
