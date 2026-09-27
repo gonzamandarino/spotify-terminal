@@ -16,13 +16,36 @@ pub enum AppError {
     #[error("{0}")]
     Usage(String),
 
-    /// Falta `SPOTIFY_CLIENT_ID` o está vacío.
+    /// No hay Client ID en ninguna fuente (ver `Config::load`).
+    /// `saved_invalid`: el guardado existe pero no es válido. La CLI y la
+    /// app de escritorio lo atajan y muestran la guía; este mensaje queda
+    /// para donde no se puede preguntar.
     #[error(
-        "falta SPOTIFY_CLIENT_ID.\n\
-         Copiá .env.example a .env y poné el Client ID de tu app del \
-         Spotify Developer Dashboard (https://developer.spotify.com/dashboard)."
+        "{}no hay un Client ID de Spotify configurado.\n\
+         Corré `spotify-terminal setup` (o `setup` en la app de escritorio) y \
+         seguí los pasos.",
+        if *saved_invalid { "el Client ID guardado no es válido: " } else { "" }
     )]
-    MissingClientId,
+    MissingClientId { saved_invalid: bool },
+
+    /// Spotify no reconoce el Client ID configurado (`invalid_client`).
+    #[error(
+        "Spotify no reconoce el Client ID configurado.\n\
+         Revisá que sea el de tu app del Developer Dashboard y cargalo de nuevo \
+         con `setup`."
+    )]
+    InvalidClientId,
+
+    /// La Web API respondió 403 porque la cuenta no está habilitada en la
+    /// app del Dashboard de este Client ID.
+    #[error(
+        "Spotify no habilita tu cuenta en la app del Developer Dashboard de este \
+         Client ID.\n\
+         Si la app es de otra persona, tiene que agregarte en \"User Management\" \
+         (hasta 5 cuentas). Si no, creá tu propia app y cargá su Client ID con \
+         `setup`."
+    )]
+    UserNotAllowed,
 
     #[error("el archivo .env tiene un formato inválido: {0}")]
     EnvFile(#[from] dotenvy::Error),

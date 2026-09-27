@@ -9,6 +9,7 @@ pub const USAGE: &str = "\
 Uso: spotify-terminal <comando>
 
 Comandos:
+  setup         Configura (o cambia) el Client ID de tu app de Spotify
   login         Inicia sesión en Spotify (o confirma que la sesión guardada sirve)
   logout        Borra la sesión guardada
   whoami        Muestra el usuario logueado y su plan
@@ -22,6 +23,7 @@ Comandos:
                 (spotify:track:ID, spotify:album:ID, spotify:playlist:ID),
                 link de open.spotify.com o ID de tema.
                 -s / --shuffle: arranca mezclado, desde un tema al azar.
+  version       Muestra la versión (también --version / -V)
 
 Durante la reproducción:
   espacio       pausa / reanudar
@@ -34,6 +36,9 @@ Durante la reproducción:
 /// Subcomando pedido, ya validado.
 #[derive(Debug, PartialEq)]
 pub enum Command {
+    /// Mostrar la guía y cargar un Client ID nuevo.
+    Setup,
+    Version,
     Login,
     Logout,
     Whoami,
@@ -60,7 +65,8 @@ const SHUFFLE_FLAGS: [&str; 2] = ["-s", "--shuffle"];
 
 /// Interpreta los argumentos (sin el nombre del programa).
 ///
-/// - Post: sin argumentos o con `help`/`-h`/`--help` → `Command::Help`.
+/// - Post: sin argumentos o con `help`/`-h`/`--help` → `Command::Help`;
+///   `version`/`--version`/`-V` → `Command::Version`.
 ///   `play` con un solo argumento que es URI, link o ID → `Command::Play`;
 ///   `play list|playlist <texto>` → búsqueda de playlists; cualquier otro
 ///   texto después de `play` (una o varias palabras) → búsqueda de temas.
@@ -78,6 +84,8 @@ pub fn parse(args: &[String]) -> Result<Command, AppError> {
 pub fn parse_command(args: &[String]) -> Result<Command, String> {
     let (command, expected_args) = match args.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => return Ok(Command::Help),
+        Some("setup") => (Command::Setup, 1),
+        Some("version" | "--version" | "-V") => (Command::Version, 1),
         Some("login") => (Command::Login, 1),
         Some("logout") => (Command::Logout, 1),
         Some("whoami") => (Command::Whoami, 1),
@@ -194,6 +202,10 @@ mod tests {
         assert_eq!(parse(&args(&["login"])).unwrap(), Command::Login);
         assert_eq!(parse(&args(&["logout"])).unwrap(), Command::Logout);
         assert_eq!(parse(&args(&["whoami"])).unwrap(), Command::Whoami);
+        assert_eq!(parse(&args(&["setup"])).unwrap(), Command::Setup);
+        for version in ["version", "--version", "-V"] {
+            assert_eq!(parse(&args(&[version])).unwrap(), Command::Version);
+        }
         assert_eq!(
             parse(&args(&["play", ID])).unwrap(),
             Command::Play {
@@ -208,6 +220,8 @@ mod tests {
         for bad in [
             &["bailar"][..],
             &["login", "extra"],
+            &["setup", "0123456789abcdef0123456789abcdef"],
+            &["--version", "extra"],
             &["play"],
             &["play", "  "],
             &["play", "-s"],

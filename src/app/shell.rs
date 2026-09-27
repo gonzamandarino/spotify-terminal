@@ -21,16 +21,18 @@ Comandos:
   mute, m                silencia / vuelve al volumen de antes
   stop                   corta la reproducción y vacía la cola
   login / logout         inicia / cierra la sesión de Spotify
+  setup                  configura o cambia el Client ID de tu app de Spotify
   whoami                 usuario y plan
   clear                  limpia la consola
+  version                versión de la app
   exit                   cierra la app
 
 ↑ ↓ historial · Tab completa · Esc cancela una búsqueda o elección";
 
 /// Nombres de comando, para completar con Tab.
-const NAMES: [&str; 15] = [
+const NAMES: [&str; 17] = [
     "play", "pause", "next", "prev", "shuffle", "queue", "stop", "vol", "mute", "login", "logout",
-    "whoami", "clear", "help", "exit",
+    "setup", "whoami", "version", "clear", "help", "exit",
 ];
 
 /// Una línea de la consola, ya interpretada.
@@ -51,7 +53,8 @@ pub(crate) enum ShellCommand {
     Mute,
     Clear,
     Exit,
-    /// `login`, `logout`, `whoami`, `play …` (nunca `Command::Help`).
+    /// `login`, `logout`, `setup`, `version`, `whoami`, `play …` (nunca
+    /// `Command::Help`).
     Cli(Command),
 }
 

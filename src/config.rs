@@ -13,6 +13,7 @@ use crate::{
         settings::{Palette, WindowAction},
     },
     error::AppError,
+    setup::{self, SavedClientId},
 };
 
 /// Client ID para la sesión de audio (el de librespot). Con uno propio,
@@ -88,6 +89,54 @@ const WEB_CLIENT_ID_VAR: &str = "SPOTIFY_CLIENT_ID";
 /// Carpeta de la app dentro de la de configuración del usuario
 /// (`%APPDATA%` en Windows).
 const APP_DIR_NAME: &str = "spotify-terminal";
+
+// --- Distribución (spec 008) ---
+
+/// Versión de la app (la de `Cargo.toml`); el tag del Release tiene que
+/// coincidir.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Archivo (en la carpeta de datos) con el Client ID que cargó `setup`.
+pub const CLIENT_ID_FILE: &str = "client-id.txt";
+
+/// Largo de un Client ID de Spotify (hexadecimal).
+pub const CLIENT_ID_LEN: usize = 32;
+
+/// Donde se crea la app propia.
+pub const DASHBOARD_URL: &str = "https://developer.spotify.com/dashboard";
+
+/// Endpoint de canje de tokens, usado para chequear el Client ID antes de
+/// abrir el navegador (ver `spotify::auth`).
+pub const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
+
+/// Código de error de `TOKEN_URL` para un Client ID que no existe (T1 de
+/// spec 008: `{"error":"invalid_client","error_description":"Failed to get client"}`).
+pub const INVALID_CLIENT_ERROR: &str = "invalid_client";
+
+/// Texto del cuerpo de un 403 de la Web API cuando la cuenta no está en
+/// *User Management* de la app del Client ID. Pendiente de confirmar en
+/// T1c de spec 008 (es el que reporta la comunidad).
+pub const USER_NOT_REGISTERED_MESSAGE: &str = "the user may not be registered";
+
+/// Pasos para crear la app en el Developer Dashboard. Único lugar donde
+/// están: si Spotify cambia el Dashboard, se corrige acá (y en
+/// `dist/LEEME.txt`, que un test compara).
+pub fn setup_guide() -> String {
+    format!(
+        "Para usar spotify-terminal necesitás un Client ID propio de Spotify \
+         (gratis, se hace una sola vez):\n\
+         \n\
+         1. Entrá a {DASHBOARD_URL} con tu cuenta de Spotify (Premium) y \
+         aceptá los términos si te los pide.\n\
+         2. Tocá \"Create app\". Nombre y descripción: cualquiera (por ejemplo \
+         \"spotify-terminal\").\n\
+         3. En \"Redirect URIs\" pegá exactamente {REDIRECT_URI} y tocá \"Add\".\n\
+         4. En \"Which API/SDKs are you planning to use?\" marcá \"Web API\".\n\
+         5. Aceptá los términos y tocá \"Save\".\n\
+         6. En la app recién creada, copiá el \"Client ID\" (32 letras y \
+         números) y pegalo acá."
+    )
+}
 
 // --- Volumen (spec 005) ---
 
@@ -349,38 +398,60 @@ const _: () = assert!(
         && HISTORY_LEN <= HISTORY_MAX
 );
 
+/// De dónde salió el Client ID en uso.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientIdSource {
+    /// `SPOTIFY_CLIENT_ID`, de la variable de entorno o de `.env`.
+    Env,
+    /// `CLIENT_ID_FILE`, guardado por `setup`.
+    SavedFile,
+}
+
 /// Configuración resuelta para esta máquina.
 ///
 /// Invariante: `web_client_id` nunca está vacío ni tiene espacios alrededor.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Client ID de tu app del Spotify Developer Dashboard (Web API).
     pub web_client_id: String,
+    pub client_id_source: ClientIdSource,
     /// Carpeta de datos locales (caches de token). Está fuera del repo.
     pub data_dir: PathBuf,
 }
 
 impl Config {
-    /// Carga `.env` (si existe) y resuelve rutas locales.
+    /// Resuelve el Client ID y las rutas locales. Prioridad: variable de
+    /// entorno `SPOTIFY_CLIENT_ID`, después la misma clave en `.env` (de la
+    /// carpeta actual), después `CLIENT_ID_FILE` en la carpeta de datos.
     ///
-    /// - Post: `Config` que cumple la invariante, o `MissingClientId` si falta
-    ///   o está vacío `SPOTIFY_CLIENT_ID`.
+    /// - Post: `Config` que cumple la invariante, o
+    ///   `MissingClientId { saved_invalid }` si no hay ninguno
+    ///   (`saved_invalid`: el archivo existe pero no es válido).
     /// - No debe: crear carpetas ni archivos.
     pub fn load() -> Result<Config, AppError> {
-        // `.env` es opcional (la variable puede venir del entorno); un `.env`
-        // mal formado sí es error.
-        if let Err(e) = dotenvy::dotenv() {
-            if !e.not_found() {
-                return Err(AppError::EnvFile(e));
-            }
-        }
-        let web_client_id = parse_client_id(std::env::var(WEB_CLIENT_ID_VAR).ok())?;
+        let env = env_client_id()?;
         let data_dir = data_dir()?;
+        let (web_client_id, client_id_source) =
+            resolve_client_id(env, setup::read_saved(&data_dir))?;
         Ok(Config {
             web_client_id,
+            client_id_source,
             data_dir,
         })
     }
+}
+
+/// Valor crudo de `SPOTIFY_CLIENT_ID`, cargando antes `.env` si existe.
+/// `.env` no pisa una variable de entorno ya definida, así que esta gana.
+///
+/// - Errores: `EnvFile` si `.env` existe y está mal formado.
+pub fn env_client_id() -> Result<Option<String>, AppError> {
+    if let Err(e) = dotenvy::dotenv() {
+        if !e.not_found() {
+            return Err(AppError::EnvFile(e));
+        }
+    }
+    Ok(std::env::var(WEB_CLIENT_ID_VAR).ok())
 }
 
 /// Carpeta de datos locales (`%APPDATA%\spotify-terminal`), sin necesitar
@@ -395,34 +466,94 @@ pub fn data_dir() -> Result<PathBuf, AppError> {
         .join(APP_DIR_NAME))
 }
 
-/// Valida el Client ID crudo. Separada de `load` para testearla sin tocar
-/// variables de entorno reales.
-fn parse_client_id(raw: Option<String>) -> Result<String, AppError> {
-    match raw {
-        Some(value) if !value.trim().is_empty() => Ok(value.trim().to_string()),
-        _ => Err(AppError::MissingClientId),
+/// Elige el Client ID entre `SPOTIFY_CLIENT_ID` (`env`) y el guardado.
+/// Separada de `Config::load` para testearla sin tocar el entorno real.
+///
+/// - Post: `env` recortado si no es vacío (sin exigir formato, como antes
+///   de spec 008); si no, el guardado si es válido; si no,
+///   `MissingClientId`.
+pub fn resolve_client_id(
+    env: Option<String>,
+    saved: SavedClientId,
+) -> Result<(String, ClientIdSource), AppError> {
+    if let Some(value) = env.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        return Ok((value.to_string(), ClientIdSource::Env));
+    }
+    match saved {
+        SavedClientId::Valid(id) => Ok((id.as_str().to_string(), ClientIdSource::SavedFile)),
+        SavedClientId::Missing => Err(AppError::MissingClientId {
+            saved_invalid: false,
+        }),
+        SavedClientId::Invalid => Err(AppError::MissingClientId {
+            saved_invalid: true,
+        }),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::setup::validate;
+
+    const SAVED: &str = "0123456789abcdef0123456789abcdef";
+
+    fn saved() -> SavedClientId {
+        SavedClientId::Valid(validate(SAVED).unwrap())
+    }
+
+    fn missing(
+        saved_invalid: bool,
+    ) -> impl Fn(&Result<(String, ClientIdSource), AppError>) -> bool {
+        move |r| matches!(r, Err(AppError::MissingClientId { saved_invalid: s }) if *s == saved_invalid)
+    }
 
     #[test]
-    fn client_id_ausente_o_vacio_es_error() {
-        for raw in [None, Some(""), Some("   "), Some("\t\n")] {
-            assert!(matches!(
-                parse_client_id(raw.map(str::to_string)),
-                Err(AppError::MissingClientId)
-            ));
+    fn env_gana_sobre_el_archivo_y_se_recorta() {
+        for file in [saved(), SavedClientId::Missing, SavedClientId::Invalid] {
+            let (id, source) = resolve_client_id(Some("  abc123  ".into()), file).unwrap();
+            assert_eq!((id.as_str(), source), ("abc123", ClientIdSource::Env));
         }
     }
 
     #[test]
-    fn client_id_valido_se_recorta() {
-        assert_eq!(
-            parse_client_id(Some("  abc123  ".into())).unwrap(),
-            "abc123"
-        );
+    fn sin_env_se_usa_el_archivo() {
+        for env in [None, Some(""), Some("   "), Some("\t\n")] {
+            let (id, source) = resolve_client_id(env.map(str::to_string), saved()).unwrap();
+            assert_eq!((id.as_str(), source), (SAVED, ClientIdSource::SavedFile));
+        }
+    }
+
+    #[test]
+    fn sin_ninguno_es_missing_client_id() {
+        assert!(missing(false)(&resolve_client_id(
+            None,
+            SavedClientId::Missing
+        )));
+        assert!(missing(true)(&resolve_client_id(
+            Some(" ".into()),
+            SavedClientId::Invalid
+        )));
+    }
+
+    #[test]
+    fn la_guia_tiene_link_y_redirect_uri() {
+        let guide = setup_guide();
+        assert!(guide.contains(DASHBOARD_URL) && guide.contains(REDIRECT_URI));
+    }
+
+    /// Si cambia una constante que el LEEME del zip repite, este test marca
+    /// el LEEME desactualizado (spec 008, AC-13).
+    #[test]
+    fn leeme_coincide_con_la_config() {
+        let leeme = include_str!("../dist/LEEME.txt");
+        for text in [
+            DASHBOARD_URL,
+            REDIRECT_URI,
+            &format!("%APPDATA%\\{APP_DIR_NAME}"),
+            "setup",
+            "Más información",
+        ] {
+            assert!(leeme.contains(text), "falta en dist/LEEME.txt: {text}");
+        }
     }
 }

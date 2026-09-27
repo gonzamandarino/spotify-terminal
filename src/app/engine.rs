@@ -28,7 +28,7 @@ use tokio::{
 };
 
 use super::{
-    backend::{Backend, Playback, SpotifyBackend},
+    backend::{Backend, ClientIdStatus, Playback, SpotifyBackend},
     queue::{Clock, PlayState, Queue, Step, on_player_event, uri_text},
     shell::{self, ShellCommand, VolumeCommand},
     volume::Volume,
@@ -36,6 +36,7 @@ use super::{
 use crate::{
     config,
     error::AppError,
+    setup,
     spotify::{
         player::Resolved,
         web::{Hit, SearchKind, User},
@@ -174,6 +175,8 @@ pub(crate) enum Prompt {
     Choose(usize),
     /// Hay una tarea en curso (texto para mostrar); se puede escribir igual.
     Busy(&'static str),
+    /// Esperando que se pegue un Client ID (spec 008).
+    ClientId,
 }
 
 /// Lo que el motor le manda a la ventana.
@@ -270,6 +273,15 @@ pub(crate) fn spawn(wake: impl Fn() + Send + 'static) -> Result<EngineHandle, Ap
 const NOTHING_PLAYING: &str = "⚠ No suena nada. Probá con `play <nombre>`.";
 const NOTHING_TO_SHUFFLE: &str = "⚠ Hay un solo tema: no hay nada que mezclar.";
 
+/// Por qué se está pidiendo el Client ID.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Asking {
+    /// No había ninguno al abrir la app: al guardarlo se sigue con el login.
+    FirstRun,
+    /// `setup`: al guardarlo se avisa si hay que volver a hacer login.
+    Setup,
+}
+
 /// Para qué se buscó.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Purpose {
@@ -322,12 +334,16 @@ struct Playing {
 /// - `volume` es el del reproductor, si hay uno: se le aplica en cada
 ///   cambio y al conectar. Existe aunque no haya reproductor.
 /// - `save_at` es `Some` si hay un cambio de volumen sin guardar.
+/// - `asking` y `choosing` no son `Some` a la vez: pedir el Client ID
+///   cancela la elección.
 pub(crate) struct Engine<B: Backend> {
     backend: Rc<B>,
     player: Option<Rc<B::Player>>,
     events: Option<PlayerEventChannel>,
     playing: Option<Playing>,
     choosing: Option<(Vec<Hit>, Purpose)>,
+    /// `Some` mientras se espera un Client ID: cada línea se toma como tal.
+    asking: Option<Asking>,
     task: Option<Task<B::Player>>,
     busy: &'static str,
     rng: StdRng,
@@ -356,6 +372,7 @@ impl<B: Backend + 'static> Engine<B> {
             events: None,
             playing: None,
             choosing: None,
+            asking: None,
             task: None,
             busy: "",
             rng: StdRng::from_rng(&mut rand::rng()),
@@ -377,6 +394,7 @@ impl<B: Backend + 'static> Engine<B> {
     /// hasta que se cierra `inputs`. Al salir corta el audio y guarda el
     /// volumen si quedó un cambio sin guardar.
     async fn run(mut self, mut inputs: UnboundedReceiver<Input>) {
+        self.on_open();
         self.publish();
         loop {
             tokio::select! {
@@ -399,6 +417,72 @@ impl<B: Backend + 'static> Engine<B> {
         self.save_volume();
     }
 
+    /// Al abrir la app: sin Client ID configurado, muestra la guía y lo
+    /// pide (AC-1 de spec 008) en vez de fallar en el primer comando.
+    fn on_open(&mut self) {
+        if let ClientIdStatus::Missing { saved_invalid } = self.backend.client_id_status() {
+            if saved_invalid {
+                self.out.line(
+                    LineKind::Warn,
+                    format!(
+                        "⚠ El Client ID guardado ({}) no es válido: hay que cargarlo de nuevo.",
+                        config::CLIENT_ID_FILE
+                    ),
+                );
+            }
+            self.ask_client_id(Asking::FirstRun);
+        }
+    }
+
+    /// Muestra la guía y pasa a esperar un Client ID.
+    fn ask_client_id(&mut self, asking: Asking) {
+        self.choosing = None;
+        self.asking = Some(asking);
+        self.out.line(LineKind::Normal, config::setup_guide());
+        self.out
+            .line(LineKind::Dim, "Pegá el Client ID y Enter (Esc cancela).");
+    }
+
+    /// Una línea mientras se espera el Client ID: se valida y se guarda.
+    /// Solo Esc sale de este modo (un comando mal tipeado no lo corta).
+    fn on_client_id(&mut self, asking: Asking, text: &str) {
+        let id = match setup::validate(text) {
+            Ok(id) => id,
+            Err(reason) => {
+                self.out.line(
+                    LineKind::Warn,
+                    format!("⚠ Ese Client ID {reason}. Probá de nuevo (Esc cancela)."),
+                );
+                return;
+            }
+        };
+        match self.backend.set_client_id(&id) {
+            Ok(applied) => {
+                self.asking = None;
+                self.out.line(LineKind::Ok, "✔ Client ID guardado.");
+                if asking == Asking::FirstRun && !applied.overridden_by_env {
+                    self.login();
+                } else if let Some(notice) = applied.notice("login") {
+                    self.out.line(LineKind::Warn, notice);
+                }
+            }
+            Err(e) => self.out.error(&e),
+        }
+    }
+
+    fn login(&mut self) {
+        let backend = self.backend.clone();
+        if self.start_task(
+            "esperando la autorización en el navegador",
+            Box::pin(async move { Done::Login(backend.login().await) }),
+        ) {
+            self.out.line(
+                LineKind::Dim,
+                "Iniciando sesión… si hace falta, se abre el navegador para autorizar.",
+            );
+        }
+    }
+
     fn on_input(&mut self, input: Input) -> Flow {
         match input {
             Input::Line(text) => return self.on_line(&text),
@@ -408,7 +492,12 @@ impl<B: Backend + 'static> Engine<B> {
             Input::VolumeUp => self.volume_step(true, false),
             Input::VolumeDown => self.volume_step(false, false),
             Input::Cancel => {
-                if self.choosing.take().is_some() {
+                if self.asking.take().is_some() {
+                    self.out.line(
+                        LineKind::Dim,
+                        "Configuración cancelada: el Client ID no cambió.",
+                    );
+                } else if self.choosing.take().is_some() {
                     self.out.line(LineKind::Dim, "Elección cancelada.");
                 } else if self.task.take().is_some() {
                     self.out.line(LineKind::Dim, "Cancelado.");
@@ -463,6 +552,10 @@ impl<B: Backend + 'static> Engine<B> {
     }
 
     fn on_line(&mut self, text: &str) -> Flow {
+        if let Some(asking) = self.asking {
+            self.on_client_id(asking, text);
+            return Flow::Continue;
+        }
         if let Some((hits, purpose)) = self.choosing.take() {
             let text = text.trim();
             if text.is_empty() || text.chars().all(|c| c.is_ascii_digit()) {
@@ -541,17 +634,13 @@ impl<B: Backend + 'static> Engine<B> {
                 self.out.send(Output::Exit);
                 return Flow::Exit;
             }
-            ShellCommand::Cli(Command::Login) => {
-                let backend = self.backend.clone();
-                if self.start_task(
-                    "esperando la autorización en el navegador",
-                    Box::pin(async move { Done::Login(backend.login().await) }),
-                ) {
-                    self.out.line(
-                        LineKind::Dim,
-                        "Iniciando sesión… si hace falta, se abre el navegador para autorizar.",
-                    );
-                }
+            ShellCommand::Cli(Command::Login) => self.login(),
+            ShellCommand::Cli(Command::Setup) => self.ask_client_id(Asking::Setup),
+            ShellCommand::Cli(Command::Version) => {
+                self.out.line(
+                    LineKind::Normal,
+                    format!("spotify-terminal {}", config::VERSION),
+                );
             }
             ShellCommand::Cli(Command::Logout) => {
                 // La sesión de audio es de la cuenta que se va.
@@ -959,6 +1048,7 @@ impl<B: Backend + 'static> Engine<B> {
             self.out.send(Output::NowPlaying(now));
         }
         let prompt = match (&self.choosing, &self.task) {
+            _ if self.asking.is_some() => Prompt::ClientId,
             (Some((hits, _)), _) => Prompt::Choose(hits.len()),
             (None, Some(_)) => Prompt::Busy(self.busy),
             (None, None) => Prompt::Ready,
@@ -1062,12 +1152,26 @@ mod tests {
     struct FakeBackend {
         log: Log,
         premium: bool,
+        client_id: ClientIdStatus,
+        /// Lo que devuelve `set_client_id`.
+        applied: setup::Applied,
     }
 
     impl Backend for FakeBackend {
         type Player = FakePlayer;
 
+        fn client_id_status(&self) -> ClientIdStatus {
+            self.client_id
+        }
+        fn set_client_id(&self, id: &setup::ClientId) -> Result<setup::Applied, AppError> {
+            self.log
+                .borrow_mut()
+                .push(format!("client-id {}", id.as_str()));
+            Ok(self.applied)
+        }
+
         async fn login(&self) -> Result<(), AppError> {
+            self.log.borrow_mut().push("login".into());
             Ok(())
         }
         fn logout(&self) -> Result<bool, AppError> {
@@ -1148,6 +1252,11 @@ mod tests {
         let backend = FakeBackend {
             log: log.clone(),
             premium,
+            client_id: ClientIdStatus::Ready,
+            applied: setup::Applied {
+                changed: true,
+                overridden_by_env: false,
+            },
         };
         Harness {
             engine: Engine::new(backend, out, Volume::default(), None),
@@ -1613,7 +1722,7 @@ mod tests {
             h.engine.on_input(Input::Global(action));
         }
         assert!(h.take_log().is_empty());
-        assert!(h.outputs().is_empty());
+        assert!(!h.outputs().iter().any(|o| matches!(o, Output::Line(..))));
         // El volumen sí cambia, para cuando suene.
         h.engine.on_input(Input::Global(GlobalAction::VolumeUp));
         assert_eq!(h.engine.volume, volume_at(100));
@@ -1646,6 +1755,102 @@ mod tests {
             &outputs,
             LineKind::Normal,
             "Ctrl+F5          stop"
+        ));
+    }
+
+    // --- Client ID (spec 008) ---
+
+    const CLIENT_ID: &str = "0123456789abcdef0123456789abcdef";
+
+    fn harness_without_client_id(saved_invalid: bool) -> Harness {
+        let mut h = harness(true);
+        Rc::get_mut(&mut h.engine.backend).unwrap().client_id =
+            ClientIdStatus::Missing { saved_invalid };
+        h.engine.on_open();
+        h.engine.publish();
+        h
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn sin_client_id_al_abrir_muestra_la_guia_y_lo_pide() {
+        let h = harness_without_client_id(false);
+        let out = h.outputs();
+        assert!(has_line(&out, LineKind::Normal, config::DASHBOARD_URL));
+        assert!(has_line(&out, LineKind::Normal, config::REDIRECT_URI));
+        assert!(out.contains(&Output::Prompt(Prompt::ClientId)));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn client_id_guardado_invalido_avisa() {
+        let h = harness_without_client_id(true);
+        assert!(has_line(&h.outputs(), LineKind::Warn, "no es válido"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn con_client_id_al_abrir_no_pide_nada() {
+        let mut h = harness(true);
+        h.engine.on_open();
+        h.engine.publish();
+        assert!(!h.outputs().iter().any(|o| matches!(o, Output::Line(..))));
+        assert_eq!(h.engine.shown_prompt, Prompt::Ready);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn client_id_invalido_insiste_sin_guardar() {
+        let mut h = harness_without_client_id(false);
+        h.outputs();
+        // Un comando tampoco sale del modo: se valida como Client ID.
+        for bad in ["hola", "play algo", ""] {
+            h.type_line(bad).await;
+        }
+        assert!(has_line(&h.outputs(), LineKind::Warn, "Probá de nuevo"));
+        assert!(h.take_log().is_empty());
+        assert_eq!(h.engine.shown_prompt, Prompt::ClientId);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn client_id_valido_la_primera_vez_guarda_y_sigue_con_el_login() {
+        let mut h = harness_without_client_id(false);
+        h.type_line(&format!("  {CLIENT_ID}  ")).await;
+        assert_eq!(
+            h.take_log(),
+            [format!("client-id {CLIENT_ID}"), "login".into()]
+        );
+        assert_eq!(h.engine.shown_prompt, Prompt::Ready);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn setup_con_cambio_avisa_que_hay_que_hacer_login() {
+        let mut h = harness(true);
+        h.type_line("setup").await;
+        assert_eq!(h.engine.shown_prompt, Prompt::ClientId);
+        h.type_line(CLIENT_ID).await;
+        assert_eq!(h.take_log(), [format!("client-id {CLIENT_ID}")]);
+        assert!(has_line(&h.outputs(), LineKind::Warn, "Hacé `login`"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn esc_cancela_setup_sin_guardar() {
+        let mut h = harness(true);
+        h.type_line("setup").await;
+        h.engine.on_input(Input::Cancel);
+        h.engine.publish();
+        assert!(has_line(&h.outputs(), LineKind::Dim, "no cambió"));
+        assert!(h.take_log().is_empty());
+        assert_eq!(h.engine.shown_prompt, Prompt::Ready);
+        // Después de cancelar, las líneas vuelven a ser comandos.
+        h.type_line(CLIENT_ID).await;
+        assert!(h.take_log().iter().all(|l| !l.starts_with("client-id")));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn version_muestra_la_de_cargo() {
+        let mut h = harness(true);
+        h.type_line("version").await;
+        assert!(has_line(
+            &h.outputs(),
+            LineKind::Normal,
+            &format!("spotify-terminal {}", env!("CARGO_PKG_VERSION"))
         ));
     }
 }

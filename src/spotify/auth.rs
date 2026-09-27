@@ -47,12 +47,11 @@ impl TokenKind {
         }
     }
 
-    fn cache_path(self, config: &Config) -> PathBuf {
-        let file = match self {
+    fn cache_path(self, data_dir: &Path) -> PathBuf {
+        data_dir.join(match self {
             TokenKind::Audio => config::AUDIO_TOKEN_FILE,
             TokenKind::Web => config::WEB_TOKEN_FILE,
-        };
-        config.data_dir.join(file)
+        })
     }
 
     /// Nombre para mostrar al usuario.
@@ -147,11 +146,14 @@ impl Token {
 ///   todos los scopes de `kind`, y quedó guardado en su cache.
 /// - Errores: sin red al renovar → `Network` (no abre el navegador: el
 ///   login tampoco andaría); en el login, cancelado → `LoginCancelled`,
-///   puerto del callback ocupado → `LoginPortBusy`, sin red → `Network`.
-///   Si Spotify rechaza el refresh token, se vuelve a loguear.
+///   puerto del callback ocupado → `LoginPortBusy`, sin red → `Network`,
+///   Client ID propio que Spotify no conoce → `InvalidClientId` (se chequea
+///   antes de abrir el navegador, que si no se quedaría esperando un
+///   callback que nunca llega). Si Spotify rechaza el refresh token, se
+///   vuelve a loguear.
 /// - No debe: imprimir ni loguear el access token ni el refresh token.
 pub async fn get_valid_token(config: &Config, kind: TokenKind) -> Result<Token, AppError> {
-    let cache_path = kind.cache_path(config);
+    let cache_path = kind.cache_path(&config.data_dir);
     let client = oauth_client(config, kind)?;
 
     if let Some(cached) = read_cache(&cache_path) {
@@ -178,6 +180,9 @@ pub async fn get_valid_token(config: &Config, kind: TokenKind) -> Result<Token, 
         }
     }
 
+    if kind == TokenKind::Web {
+        check_client(&config.web_client_id).await?;
+    }
     eprintln!(
         "Abriendo el navegador para autorizar el acceso de {}...\n\
          (Si cerraste el navegador sin terminar, cortá con Ctrl+C.)",
@@ -189,13 +194,14 @@ pub async fn get_valid_token(config: &Config, kind: TokenKind) -> Result<Token, 
     Ok(token)
 }
 
-/// Borra los tokens guardados (audio y Web API).
+/// Borra los tokens guardados (audio y Web API) de `data_dir`. No necesita
+/// Client ID: anda aunque no haya ninguno configurado.
 ///
 /// - Post: no queda ningún cache. Devuelve `true` si había alguna sesión.
-pub fn logout(config: &Config) -> Result<bool, AppError> {
+pub fn logout(data_dir: &Path) -> Result<bool, AppError> {
     let mut removed = false;
     for kind in TokenKind::ALL {
-        match fs::remove_file(kind.cache_path(config)) {
+        match fs::remove_file(kind.cache_path(data_dir)) {
             Ok(()) => removed = true,
             Err(e) if e.kind() == io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.into()),
@@ -215,6 +221,52 @@ fn refresh_was_rejected(error: &OAuthError) -> bool {
     matches!(error, OAuthError::ExchangeCode { e } if e.contains(SERVER_REJECTED_PREFIX))
 }
 
+/// Chequea que Spotify conozca `client_id` antes de abrir el navegador:
+/// canjea un código falso. Con un Client ID inexistente Spotify responde
+/// `invalid_client`; con uno válido, `invalid_grant` (T1 de spec 008).
+///
+/// - Post: `Ok` salvo que Spotify haya dicho `invalid_client`. Cualquier
+///   otra respuesta es `Ok`, para no trabar un login válido si Spotify
+///   cambia el texto.
+/// - Errores: `InvalidClientId`; sin red → `Network`.
+async fn check_client(client_id: &str) -> Result<(), AppError> {
+    let network = |e: reqwest::Error| AppError::Network(e.to_string());
+    let body = reqwest::Client::builder()
+        .timeout(config::HTTP_TIMEOUT)
+        .build()
+        .map_err(|e| AppError::Internal(format!("cliente HTTP: {e}")))?
+        .post(config::TOKEN_URL)
+        .form(&[
+            ("grant_type", "authorization_code"),
+            ("code", "chequeo-de-client-id"),
+            ("redirect_uri", config::REDIRECT_URI),
+            ("client_id", client_id),
+            ("code_verifier", CHECK_CODE_VERIFIER),
+        ])
+        .send()
+        .await
+        .map_err(network)?
+        .text()
+        .await
+        .map_err(network)?;
+    classify_client_check(&body)
+}
+
+/// Verifier PKCE de relleno para `check_client` (43 caracteres, el mínimo).
+const CHECK_CODE_VERIFIER: &str = "chequeo-de-client-id-chequeo-de-client-id-x";
+
+/// Interpreta la respuesta de `check_client` (ver su contrato).
+fn classify_client_check(body: &str) -> Result<(), AppError> {
+    #[derive(Deserialize)]
+    struct TokenError {
+        error: String,
+    }
+    match serde_json::from_str::<TokenError>(body) {
+        Ok(e) if e.error == config::INVALID_CLIENT_ERROR => Err(AppError::InvalidClientId),
+        _ => Ok(()),
+    }
+}
+
 /// Traduce un fallo del login en el navegador a un error con instrucciones.
 fn login_error(error: OAuthError) -> AppError {
     match error {
@@ -223,6 +275,9 @@ fn login_error(error: OAuthError) -> AppError {
         OAuthError::AuthCodeListenerBind { addr, .. } => AppError::LoginPortBusy(addr.to_string()),
         OAuthError::ExchangeCode { ref e } if !e.contains(SERVER_REJECTED_PREFIX) => {
             AppError::Network(error.to_string())
+        }
+        OAuthError::ExchangeCode { ref e } if e.contains(config::INVALID_CLIENT_ERROR) => {
+            AppError::InvalidClientId
         }
         other => AppError::Login(other.to_string()),
     }
@@ -394,18 +449,15 @@ mod tests {
 
     #[test]
     fn logout_borra_ambos_caches_y_es_idempotente() {
-        let config = Config {
-            web_client_id: "id".into(),
-            data_dir: temp_dir("logout"),
-        };
+        let dir = temp_dir("logout");
         for kind in TokenKind::ALL {
-            write_cache(&kind.cache_path(&config), &token(1, &[])).unwrap();
+            write_cache(&kind.cache_path(&dir), &token(1, &[])).unwrap();
         }
-        assert!(logout(&config).unwrap());
+        assert!(logout(&dir).unwrap());
         for kind in TokenKind::ALL {
-            assert!(!kind.cache_path(&config).exists());
+            assert!(!kind.cache_path(&dir).exists());
         }
-        assert!(!logout(&config).unwrap());
+        assert!(!logout(&dir).unwrap());
     }
 
     fn exchange_error(text: &str) -> OAuthError {
@@ -440,23 +492,53 @@ mod tests {
         ));
         assert!(matches!(
             login_error(exchange_error(
-                "Server returned error response: invalid_client"
+                "Server returned error response: invalid_client: Failed to get client"
+            )),
+            AppError::InvalidClientId
+        ));
+        assert!(matches!(
+            login_error(exchange_error(
+                "Server returned error response: invalid_grant: Invalid redirect URI"
             )),
             AppError::Login(_)
         ));
+    }
+
+    /// Respuestas reales de `/api/token` anotadas en T1 de spec 008.
+    #[test]
+    fn chequeo_de_client_id_con_respuestas_reales() {
+        assert!(matches!(
+            classify_client_check(
+                r#"{"error":"invalid_client","error_description":"Failed to get client"}"#
+            ),
+            Err(AppError::InvalidClientId)
+        ));
+        for body in [
+            r#"{"error":"invalid_grant","error_description":"Invalid authorization code"}"#,
+            "<html>algo raro</html>",
+            "",
+        ] {
+            assert!(classify_client_check(body).is_ok(), "{body}");
+        }
+    }
+
+    #[test]
+    fn verifier_de_chequeo_tiene_largo_valido() {
+        assert!((43..=128).contains(&CHECK_CODE_VERIFIER.len()));
     }
 
     #[test]
     fn cada_tipo_de_token_tiene_su_client_id_y_cache() {
         let config = Config {
             web_client_id: "propio".into(),
+            client_id_source: config::ClientIdSource::Env,
             data_dir: PathBuf::from("datos"),
         };
         assert_eq!(TokenKind::Audio.client_id(&config), config::AUDIO_CLIENT_ID);
         assert_eq!(TokenKind::Web.client_id(&config), "propio");
         assert_ne!(
-            TokenKind::Audio.cache_path(&config),
-            TokenKind::Web.cache_path(&config)
+            TokenKind::Audio.cache_path(&config.data_dir),
+            TokenKind::Web.cache_path(&config.data_dir)
         );
     }
 }
