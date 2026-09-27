@@ -19,17 +19,25 @@ enum Key {
     Quit,
 }
 
-/// Reproduce `track` y atiende el teclado hasta que termina el tema o el
-/// usuario sale.
+/// Reproduce `tracks` en orden y atiende el teclado hasta que termina el
+/// último tema o el usuario sale.
 ///
+/// - Pre: `tracks` no está vacío.
 /// - Post: la terminal vuelve a modo normal siempre (incluso con error).
-/// - Errores: `TrackUnavailable` si Spotify no deja reproducir el tema.
-pub async fn play_track(player: &Player, track: SpotifyUri) -> Result<(), AppError> {
+///   Mientras suena un tema se precarga el siguiente, para que no haya
+///   silencio entre temas.
+/// - Errores: con un solo tema, `TrackUnavailable` si Spotify no deja
+///   reproducirlo; en una lista, el tema no disponible se saltea con aviso.
+pub async fn play_queue(player: &Player, tracks: &[SpotifyUri]) -> Result<(), AppError> {
+    let Some(first) = tracks.first() else {
+        return Ok(());
+    };
     let mut events = player.events();
     let _raw = RawMode::enable()?;
     let mut keys = spawn_key_reader();
 
-    player.play(track);
+    let mut current = 0;
+    player.play(first.clone());
     let mut paused = false;
     status("Cargando...");
 
@@ -45,7 +53,12 @@ pub async fn play_track(player: &Player, track: SpotifyUri) -> Result<(), AppErr
                             .join(", "),
                         _ => String::new(),
                     };
-                    line(&format!("♪ {} — {}", audio_item.name, artists));
+                    let position = if tracks.len() > 1 {
+                        format!("[{}/{}] ", current + 1, tracks.len())
+                    } else {
+                        String::new()
+                    };
+                    line(&format!("♪ {position}{} — {}", audio_item.name, artists));
                 }
                 Some(PlayerEvent::Playing { .. }) => {
                     paused = false;
@@ -55,10 +68,28 @@ pub async fn play_track(player: &Player, track: SpotifyUri) -> Result<(), AppErr
                     paused = true;
                     status("⏸ En pausa        [espacio] seguir [q] salir");
                 }
-                Some(PlayerEvent::Unavailable { track_id, .. }) => {
-                    return Err(AppError::TrackUnavailable(track_id.to_string()));
+                Some(PlayerEvent::TimeToPreloadNextTrack { .. }) => {
+                    if let Some(next) = tracks.get(current + 1) {
+                        player.preload(next.clone());
+                    }
                 }
-                Some(PlayerEvent::EndOfTrack { .. }) | None => break,
+                // Puede llegar por el tema precargado: solo cuenta si es el
+                // que está sonando (el otro se saltea cuando le toque).
+                Some(PlayerEvent::Unavailable { track_id, .. }) if track_id == tracks[current] => {
+                    if tracks.len() == 1 {
+                        return Err(AppError::TrackUnavailable(uri_text(&track_id)));
+                    }
+                    line(&format!("⚠ {} no está disponible, sigo con el próximo.", uri_text(&track_id)));
+                    if !advance(player, tracks, &mut current) {
+                        break;
+                    }
+                }
+                Some(PlayerEvent::EndOfTrack { .. }) => {
+                    if !advance(player, tracks, &mut current) {
+                        break;
+                    }
+                }
+                None => break,
                 Some(_) => {}
             },
             key = keys.recv() => match key {
@@ -73,6 +104,22 @@ pub async fn play_track(player: &Player, track: SpotifyUri) -> Result<(), AppErr
     }
     line("Fin.");
     Ok(())
+}
+
+/// Pasa al tema siguiente. Devuelve `false` si no quedan temas.
+fn advance(player: &Player, tracks: &[SpotifyUri], current: &mut usize) -> bool {
+    *current += 1;
+    match tracks.get(*current) {
+        Some(next) => {
+            player.play(next.clone());
+            true
+        }
+        None => false,
+    }
+}
+
+fn uri_text(uri: &SpotifyUri) -> String {
+    uri.to_uri().unwrap_or_else(|_| "(sin URI)".to_string())
 }
 
 /// Lee el teclado en un hilo aparte (la lectura de crossterm bloquea) y

@@ -14,7 +14,7 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-use librespot_oauth::{OAuthClient, OAuthClientBuilder, OAuthToken};
+use librespot_oauth::{OAuthClient, OAuthClientBuilder, OAuthError, OAuthToken};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -113,6 +113,10 @@ impl Token {
 /// - Pre: ninguna (el cache puede no existir o estar corrupto).
 /// - Post: el token no vence en los próximos `TOKEN_REFRESH_MARGIN`, tiene
 ///   todos los scopes de `kind`, y quedó guardado en su cache.
+/// - Errores: sin red al renovar → `Network` (no abre el navegador: el
+///   login tampoco andaría); en el login, cancelado → `LoginCancelled`,
+///   puerto del callback ocupado → `LoginPortBusy`, sin red → `Network`.
+///   Si Spotify rechaza el refresh token, se vuelve a loguear.
 /// - No debe: imprimir ni loguear el access token ni el refresh token.
 pub async fn get_valid_token(config: &Config, kind: TokenKind) -> Result<Token, AppError> {
     let cache_path = kind.cache_path(config);
@@ -129,10 +133,13 @@ pub async fn get_valid_token(config: &Config, kind: TokenKind) -> Result<Token, 
                     write_cache(&cache_path, &token)?;
                     return Ok(token);
                 }
-                Err(e) => eprintln!(
-                    "No se pudo renovar la sesión de {} ({e}). Hay que iniciar sesión.",
+                // Solo si Spotify rechazó el refresh token tiene sentido
+                // volver a loguearse; sin red, el login tampoco andaría.
+                Err(e) if refresh_was_rejected(&e) => eprintln!(
+                    "La sesión de {} ya no es válida. Hay que iniciar sesión.",
                     kind.label()
                 ),
+                Err(e) => return Err(AppError::Network(e.to_string())),
             }
         } else {
             println!("Hacen falta permisos nuevos ({}).", kind.label());
@@ -140,13 +147,11 @@ pub async fn get_valid_token(config: &Config, kind: TokenKind) -> Result<Token, 
     }
 
     println!(
-        "Abriendo el navegador para autorizar el acceso de {}...",
+        "Abriendo el navegador para autorizar el acceso de {}...
+         (Si cerraste el navegador sin terminar, cortá con Ctrl+C.)",
         kind.label()
     );
-    let fresh = client
-        .get_access_token_async()
-        .await
-        .map_err(|e| AppError::Login(e.to_string()))?;
+    let fresh = client.get_access_token_async().await.map_err(login_error)?;
     let token = Token::from_oauth(fresh, None);
     write_cache(&cache_path, &token)?;
     Ok(token)
@@ -165,6 +170,30 @@ pub fn logout(config: &Config) -> Result<bool, AppError> {
         }
     }
     Ok(removed)
+}
+
+/// Prefijo con el que `oauth2` muestra una respuesta de error del servidor
+/// (p. ej. `invalid_grant`), a diferencia de un fallo de red. `librespot-oauth`
+/// solo expone el error como texto, así que se distingue por acá.
+const SERVER_REJECTED_PREFIX: &str = "Server returned error response";
+
+/// `true` si Spotify respondió y rechazó el refresh token (revocado, de otro
+/// Client ID...), `false` si el pedido no llegó (sin red, DNS, timeout).
+fn refresh_was_rejected(error: &OAuthError) -> bool {
+    matches!(error, OAuthError::ExchangeCode { e } if e.contains(SERVER_REJECTED_PREFIX))
+}
+
+/// Traduce un fallo del login en el navegador a un error con instrucciones.
+fn login_error(error: OAuthError) -> AppError {
+    match error {
+        // Al cancelar, Spotify redirige con `?error=access_denied`, sin `code`.
+        OAuthError::AuthCodeNotFound { .. } => AppError::LoginCancelled,
+        OAuthError::AuthCodeListenerBind { addr, .. } => AppError::LoginPortBusy(addr.to_string()),
+        OAuthError::ExchangeCode { ref e } if !e.contains(SERVER_REJECTED_PREFIX) => {
+            AppError::Network(error.to_string())
+        }
+        other => AppError::Login(other.to_string()),
+    }
 }
 
 fn oauth_client(config: &Config, kind: TokenKind) -> Result<OAuthClient, AppError> {
@@ -303,6 +332,44 @@ mod tests {
             assert!(!kind.cache_path(&config).exists());
         }
         assert!(!logout(&config).unwrap());
+    }
+
+    fn exchange_error(text: &str) -> OAuthError {
+        OAuthError::ExchangeCode { e: text.into() }
+    }
+
+    #[test]
+    fn refresh_rechazado_vs_fallo_de_red() {
+        assert!(refresh_was_rejected(&exchange_error(
+            "Server returned error response: invalid_grant: Refresh token revoked"
+        )));
+        assert!(!refresh_was_rejected(&exchange_error("Request failed")));
+        assert!(!refresh_was_rejected(&OAuthError::Recv));
+    }
+
+    #[test]
+    fn errores_de_login_se_traducen() {
+        let cancelled = OAuthError::AuthCodeNotFound {
+            uri: "http://localhost/login?error=access_denied".into(),
+        };
+        assert!(matches!(login_error(cancelled), AppError::LoginCancelled));
+
+        let busy = OAuthError::AuthCodeListenerBind {
+            addr: "127.0.0.1:8898".parse().unwrap(),
+            e: io::Error::from(io::ErrorKind::AddrInUse),
+        };
+        assert!(matches!(login_error(busy), AppError::LoginPortBusy(a) if a == "127.0.0.1:8898"));
+
+        assert!(matches!(
+            login_error(exchange_error("Request failed")),
+            AppError::Network(_)
+        ));
+        assert!(matches!(
+            login_error(exchange_error(
+                "Server returned error response: invalid_client"
+            )),
+            AppError::Login(_)
+        ));
     }
 
     #[test]

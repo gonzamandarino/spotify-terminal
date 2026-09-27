@@ -76,7 +76,7 @@ pero sirven para comparar consumo y enfoques.
       muestra el nombre del usuario.
 - [x] **AC-3** — Con access token vencido y refresh token válido, el cliente
       lo renueva solo y sigue funcionando sin intervención.
-- [ ] **AC-4** — Dado un URI de tema, el audio suena por esta PC; pausa y
+- [x] **AC-4** — Dado un URI de tema, el audio suena por esta PC; pausa y
       reanudación funcionan desde la terminal.
 - [ ] **AC-5** — Reproducción continua de 30 minutos (varios temas
       seguidos por `play` de un álbum o playlist) sin cortes ni saltos
@@ -180,7 +180,7 @@ pero sirven para comparar consumo y enfoques.
 - [x] T3 — `auth.rs`: login PKCE + callback local + cache atómico + refresh
       + logout, con tests (AC-1, AC-3, AC-8)
 - [x] T4 — `web.rs`: `current_user` + subcomando `whoami` (AC-2)
-- [ ] T5 — `player.rs` + subcomando `play` con pausa/reanudar por teclado
+- [x] T5 — `player.rs` + subcomando `play` con pausa/reanudar por teclado
       (AC-4)
 - [ ] T6 — Mensajes de error de usuario (sin Premium, sin red, login
       cancelado) (AC-7)
@@ -252,3 +252,30 @@ pero sirven para comparar consumo y enfoques.
     borra ambos. Vuelve `.env.example`.
   - **AC-2:** después de `login`, `whoami` → "Gonza Mandarino (…), plan:
     premium" sin abrir el navegador. 16 tests OK, `fmt`/`clippy` OK.
+- **T5 / AC-4 (2026-09-26):** `play https://open.spotify.com/track/4uLU…`
+  → "♪ Never Gonna Give You Up — Rick Astley", el audio sale por la PC;
+  espacio pausa y reanuda, `q` sale ("Fin."). Confirmado por vos.
+- **T6 (2026-09-26, código):** cada falla tiene su variante de `AppError`
+  con instrucciones, y `main` sale con código 1:
+  - login cancelado en el navegador → `LoginCancelled`; puerto 8898
+    ocupado → `LoginPortBusy`; sin red → `Network`. Mientras espera el
+    callback avisa que se corta con Ctrl+C.
+  - sin red al renovar el token → `Network`. Antes se abría el navegador
+    para loguearse de nuevo, que tampoco iba a andar. Solo un rechazo de
+    Spotify (`invalid_grant`) lleva al login.
+  - Web API: 401 → `SessionRejected` (logout + login), 429 →
+    `RateLimited` con `Retry-After`, 5xx → "problema de Spotify".
+  - sesión de audio: credenciales rechazadas → `SessionRejected`; el resto
+    → `Network`. Tema no disponible, álbum inexistente y salida de audio
+    ausente tienen su propio mensaje.
+  - Probado a mano: `play spotify:artist:…` → uso + `exit=1`;
+    `play spotify:album:000…` → "no se encontró el álbum…", `exit=1`.
+    La primera versión mostraba "revisá la conexión" en ese caso, así que
+    se separó `metadata_error` de `session_error`.
+- **T7 (2026-09-26, código):** `play` acepta álbumes y playlists (URI o
+  link). Los temas se piden con `librespot-metadata` por la sesión de audio
+  (ver `docs/decisiones.md`); la cola precarga el siguiente tema
+  (`TimeToPreloadNextTrack`) para que no haya silencio entre temas. Un tema
+  no disponible dentro de una lista se saltea con aviso.
+  `scripts/medir-consumo.ps1` probado contra otro proceso (1 min, OK).
+

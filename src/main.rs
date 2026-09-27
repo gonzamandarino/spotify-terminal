@@ -66,11 +66,12 @@ async fn run() -> Result<(), AppError> {
             if !user.is_premium() {
                 return Err(AppError::NotPremium(user.plan().to_string()));
             }
-            let track = SpotifyUri::from_uri(&uri)
-                .map_err(|e| AppError::Usage(format!("tema inválido ({uri}): {e}")))?;
+            let target = SpotifyUri::from_uri(&uri)
+                .map_err(|e| AppError::Usage(format!("no reconozco {uri}: {e}")))?;
             let audio_token = auth::get_valid_token(&config, TokenKind::Audio).await?;
             let player = Player::connect(&audio_token).await?;
-            playback::play_track(&player, track).await?;
+            let tracks = player.resolve_tracks(&target).await?;
+            playback::play_queue(&player, &tracks).await?;
         }
     }
     Ok(())

@@ -1,5 +1,6 @@
 //! Llamadas a la Spotify Web API.
 
+use reqwest::{StatusCode, header::RETRY_AFTER};
 use serde::Deserialize;
 
 use crate::{config, error::AppError, spotify::auth::Token};
@@ -34,7 +35,7 @@ impl User {
 ///
 /// - Pre: `token` vigente de tipo `TokenKind::Web`.
 /// - Post: `Ok(User)` con los datos de `/me`; error de red → `Network`,
-///   respuesta no exitosa → `WebApi` con el código HTTP.
+///   respuesta no exitosa → ver [`status_error`].
 /// - No debe: reintentar en loop ni loguear el token.
 pub async fn current_user(token: &Token) -> Result<User, AppError> {
     let response = reqwest::Client::new()
@@ -46,12 +47,37 @@ pub async fn current_user(token: &Token) -> Result<User, AppError> {
 
     let status = response.status();
     if !status.is_success() {
-        return Err(AppError::WebApi(format!("{status} al pedir el usuario")));
+        let retry_after = response
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok());
+        return Err(status_error(status, retry_after, "pedir el usuario"));
     }
     response
         .json::<User>()
         .await
         .map_err(|e| AppError::WebApi(format!("respuesta inesperada de /me: {e}")))
+}
+
+/// Traduce una respuesta no exitosa a un error con instrucciones.
+///
+/// - 401 → `SessionRejected` (token revocado o inválido: hay que reloguearse).
+/// - 429 → `RateLimited` con los segundos de `Retry-After` (o
+///   `config::DEFAULT_RETRY_AFTER` si no vino).
+/// - 5xx → `WebApi` indicando que es un problema de Spotify.
+/// - resto → `WebApi` con el código y la operación (`action`).
+fn status_error(status: StatusCode, retry_after: Option<u64>, action: &str) -> AppError {
+    match status {
+        StatusCode::UNAUTHORIZED => AppError::SessionRejected(format!("{status} al {action}")),
+        StatusCode::TOO_MANY_REQUESTS => {
+            AppError::RateLimited(retry_after.unwrap_or(config::DEFAULT_RETRY_AFTER.as_secs()))
+        }
+        s if s.is_server_error() => AppError::WebApi(format!(
+            "{status} al {action}. Es un problema de Spotify: probá más tarde."
+        )),
+        _ => AppError::WebApi(format!("{status} al {action}")),
+    }
 }
 
 #[cfg(test)]
@@ -73,5 +99,30 @@ mod tests {
         assert_eq!(user.name(), "abc");
         assert!(!user.is_premium());
         assert_eq!(user.plan(), "desconocido");
+    }
+
+    #[test]
+    fn codigos_http_se_traducen() {
+        let e = |status, retry| status_error(status, retry, "probar");
+        assert!(matches!(
+            e(StatusCode::UNAUTHORIZED, None),
+            AppError::SessionRejected(_)
+        ));
+        assert!(matches!(
+            e(StatusCode::TOO_MANY_REQUESTS, Some(42)),
+            AppError::RateLimited(42)
+        ));
+        assert!(matches!(
+            e(StatusCode::TOO_MANY_REQUESTS, None),
+            AppError::RateLimited(s) if s == config::DEFAULT_RETRY_AFTER.as_secs()
+        ));
+        assert!(matches!(
+            e(StatusCode::BAD_GATEWAY, None),
+            AppError::WebApi(m) if m.contains("probá más tarde")
+        ));
+        assert!(matches!(
+            e(StatusCode::FORBIDDEN, None),
+            AppError::WebApi(_)
+        ));
     }
 }

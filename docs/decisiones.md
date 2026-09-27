@@ -54,3 +54,14 @@ entradas viejas — se marcan reemplazadas.
   API): no oficial, sin búsqueda documentada, likes/edición inciertos.
 - **Costo:** la primera vez se autoriza dos veces; después, nunca.
 - **Estado:** Vigente (reemplaza el "un solo login" de la entrada anterior)
+
+## 2026-09-26 — Temas de álbum/playlist por la sesión de audio
+- **Decisión:** `play` de un álbum o playlist obtiene la lista de temas con
+  `librespot-metadata` sobre la sesión de audio ya abierta, no con la Web
+  API.
+- **Motivo:** no gasta cuota de la Web API ni pide scopes nuevos, y la
+  sesión ya está abierta para reproducir. La crate ya era dependencia.
+- **Alternativa:** `GET /albums/{id}/tracks` y `/playlists/{id}/items` con el
+  token Web; queda para cuando haga falta paginar o mostrar más datos
+  (spec de playlists).
+- **Estado:** Vigente (spec 001, T7)

@@ -24,6 +24,9 @@ pub const REDIRECT_URI: &str = "http://127.0.0.1:8898/login";
 /// Base de la Spotify Web API.
 pub const WEB_API_BASE: &str = "https://api.spotify.com/v1";
 
+/// Espera sugerida al usuario ante un 429 si Spotify no manda `Retry-After`.
+pub const DEFAULT_RETRY_AFTER: Duration = Duration::from_secs(30);
+
 /// Se renueva el access token si le queda menos que esto de vida, para que
 /// no venza en medio de una operación.
 pub const TOKEN_REFRESH_MARGIN: Duration = Duration::from_secs(60);

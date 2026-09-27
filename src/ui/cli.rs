@@ -9,15 +9,18 @@ Comandos:
   login         Inicia sesión en Spotify (o confirma que la sesión guardada sirve)
   logout        Borra la sesión guardada
   whoami        Muestra el usuario logueado y su plan
-  play <tema>   Reproduce un tema: URI (spotify:track:ID), link de
-                open.spotify.com o ID. Espacio = pausa/reanudar, q = salir";
+  play <qué>    Reproduce un tema, un álbum o una playlist: URI
+                (spotify:track:ID, spotify:album:ID, spotify:playlist:ID),
+                link de open.spotify.com o ID de tema.
+                Espacio = pausa/reanudar, q = salir";
 
 #[derive(Debug, PartialEq)]
 pub enum Command {
     Login,
     Logout,
     Whoami,
-    /// URI de tema normalizada (`spotify:track:<ID>`).
+    /// URI normalizada de lo que hay que reproducir
+    /// (`spotify:{track|album|playlist}:<ID>`).
     Play(String),
     Help,
 }
@@ -25,8 +28,8 @@ pub enum Command {
 /// Interpreta los argumentos (sin el nombre del programa).
 ///
 /// - Post: sin argumentos o con `help`/`-h`/`--help` → `Command::Help`;
-///   un comando desconocido, un tema inválido o argumentos de más →
-///   `AppError::Usage`.
+///   un comando desconocido, algo irreconocible para `play` o argumentos
+///   de más → `AppError::Usage`.
 pub fn parse(args: &[String]) -> Result<Command, AppError> {
     let (command, expected_args) = match args.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => return Ok(Command::Help),
@@ -36,8 +39,8 @@ pub fn parse(args: &[String]) -> Result<Command, AppError> {
         Some("play") => {
             let track = args
                 .get(1)
-                .ok_or_else(|| usage_error("falta el tema a reproducir"))?;
-            (Command::Play(parse_track(track)?), 2)
+                .ok_or_else(|| usage_error("falta qué reproducir"))?;
+            (Command::Play(parse_playable(track)?), 2)
         }
         Some(other) => return Err(usage_error(&format!("comando desconocido: {other}"))),
     };
@@ -47,26 +50,36 @@ pub fn parse(args: &[String]) -> Result<Command, AppError> {
     Ok(command)
 }
 
-/// Normaliza un tema a `spotify:track:<ID>`. Acepta la URI, un link de
-/// `open.spotify.com/track/<ID>` (con o sin `?si=...`) o el ID solo.
-fn parse_track(input: &str) -> Result<String, AppError> {
-    let id = if let Some(id) = input.strip_prefix("spotify:track:") {
-        id
-    } else if input.contains("open.spotify.com/") {
+/// Tipos que acepta `play`, tal como aparecen en URIs y links.
+const PLAYABLE_KINDS: [&str; 3] = ["track", "album", "playlist"];
+
+/// Normaliza lo que se pide reproducir a `spotify:<tipo>:<ID>`. Acepta la
+/// URI, un link de `open.spotify.com/<tipo>/<ID>` (con o sin `?si=...` o
+/// prefijo de idioma) o el ID solo, que se toma como tema.
+fn parse_playable(input: &str) -> Result<String, AppError> {
+    let (kind, id) = if let Some(rest) = input.strip_prefix("spotify:") {
+        rest.split_once(':').unwrap_or_default()
+    } else if let Some((_, path)) = input.split_once("open.spotify.com/") {
         // Puede venir con prefijo de idioma: open.spotify.com/intl-es/track/ID
-        input
-            .split_once("/track/")
-            .and_then(|(_, rest)| rest.split(['?', '/']).next())
-            .unwrap_or_default()
+        let mut parts = path
+            .split(['?', '/'])
+            .skip_while(|p| !PLAYABLE_KINDS.contains(p));
+        (
+            parts.next().unwrap_or_default(),
+            parts.next().unwrap_or_default(),
+        )
     } else {
-        input
+        ("track", input)
     };
 
     // Los IDs de Spotify son 22 caracteres base62.
-    if id.len() == 22 && id.chars().all(|c| c.is_ascii_alphanumeric()) {
-        Ok(format!("spotify:track:{id}"))
+    let valid_id = id.len() == 22 && id.chars().all(|c| c.is_ascii_alphanumeric());
+    if PLAYABLE_KINDS.contains(&kind) && valid_id {
+        Ok(format!("spotify:{kind}:{id}"))
     } else {
-        Err(usage_error(&format!("no reconozco el tema: {input}")))
+        Err(usage_error(&format!(
+            "no reconozco qué reproducir: {input}"
+        )))
     }
 }
 
@@ -122,19 +135,35 @@ mod tests {
             format!("https://open.spotify.com/track/{ID}?si=abc123"),
             format!("https://open.spotify.com/intl-es/track/{ID}?si=abc"),
         ] {
-            assert_eq!(parse_track(&input).unwrap(), uri, "{input}");
+            assert_eq!(parse_playable(&input).unwrap(), uri, "{input}");
         }
     }
 
     #[test]
-    fn tema_invalido() {
+    fn album_y_playlist() {
+        for kind in ["album", "playlist"] {
+            let uri = format!("spotify:{kind}:{ID}");
+            for input in [
+                uri.clone(),
+                format!("https://open.spotify.com/{kind}/{ID}?si=x"),
+                format!("https://open.spotify.com/intl-es/{kind}/{ID}"),
+            ] {
+                assert_eq!(parse_playable(&input).unwrap(), uri, "{input}");
+            }
+        }
+    }
+
+    #[test]
+    fn entrada_invalida() {
         for input in [
             "",
             "abc",
-            "spotify:album:4uLU6hMCjMI75M1A2tKUQC",
+            "spotify:artist:4uLU6hMCjMI75M1A2tKUQC",
+            "spotify:track:",
+            "https://open.spotify.com/artist/4uLU6hMCjMI75M1A2tKUQC",
             "4uLU6hMCjMI75M1A2tKUQ!",
         ] {
-            assert!(parse_track(input).is_err(), "{input}");
+            assert!(parse_playable(input).is_err(), "{input}");
         }
     }
 }
