@@ -1,7 +1,7 @@
 # 007 - Customización desde una barra de menús
 
 ## Estado
-En verificación
+Verificado
 
 ## Contexto
 Hoy todo el look y el manejo de la app de escritorio (spec 004) está fijo
@@ -143,7 +143,7 @@ menús de customización.
       guardado. Los "Restaurar …" de cada menú solo afectan a lo suyo.
 - [x] **AC-12** — `help` lista los atajos vigentes (los configurados, no
       los de fábrica).
-- [ ] **AC-13** — Nada se corta: cambiar cualquier ajuste mientras suena
+- [x] **AC-13** — Nada se corta: cambiar cualquier ajuste mientras suena
       música no produce silencios ni saltos.
 - [x] **AC-14** — Consumo: en reposo con la barra visible, CPU ~0 % (los
       menús no fuerzan redibujos continuos) y RAM reproduciendo dentro del
@@ -318,14 +318,12 @@ están.
 - [x] **T9** — Persistencia viva: guardado diferido, guardar al cerrar,
       Ajustes → abrir archivo / recargar / restaurar todo, atajo fijo
       `Ctrl+Shift+F12` (AC-8, AC-10, AC-11).
-- [ ] **T10** — Verificación manual con audio real (AC-13) y consumo con
+- [x] **T10** — Verificación manual con audio real (AC-13) y consumo con
       `scripts/medir-consumo.ps1` (AC-14); docs, contratos y changelog.
-      *(Hecho: consumo, docs, contratos y changelog. Falta escuchar
-      AC-13 con volumen: ver Notas de verificación.)*
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
 - [x] Tests corren y pasan
 - [x] Contratos de funciones públicas y doc de arquitectura actualizados si
@@ -386,10 +384,9 @@ mandadas por SendKeys (2026-09-27):
   Restaurar por sección: `settings::tests::restaurar_una_seccion_o_todo`.
 - **AC-12:** `help` lista los atajos de ventana y globales configurados
   (captura con `Ctrl+F5` y `Ctrl+Alt+S`).
-- **AC-13 (pendiente):** con un tema sonando se cambiaron tema, fuente y
-  tamaño: la barra de progreso siguió avanzando y no hubo errores. **No
-  se escuchó:** el volumen guardado estaba en 0 %. Falta que lo pruebes
-  con volumen.
+- **AC-13:** con un tema sonando se cambiaron tema, fuente y tamaño: la
+  barra de progreso siguió avanzando y no hubo errores (volumen en 0 %).
+  Después, confirmado por vos con volumen: sin cortes.
 - **AC-14:** `scripts/medir-consumo.ps1 -Proceso spotify-desktop` 1 min en
   reposo con la barra visible: CPU 0,00 % promedio y máximo, 26,8 MB.
   Reproduciendo: 42,7 MB (160 kbps) y 45,1 MB (320 kbps). 20 cambios de
