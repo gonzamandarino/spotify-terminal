@@ -19,11 +19,11 @@ use crate::{error::AppError, spotify::web::Hit};
 /// - No debe: reproducir ni hacer pedidos a Spotify.
 pub async fn choose(hits: &[Hit]) -> Result<Option<usize>, AppError> {
     for (i, hit) in hits.iter().enumerate() {
-        println!("  {}. {} — {}", i + 1, hit.name, hit.detail);
+        println!("{}", hit_line(i, hit));
     }
     let _raw = RawMode::enable()?;
     let mut out = io::stdout().lock();
-    let _ = write!(out, "Elegí [1-{}] (Enter = 1, q = cancelar): ", hits.len());
+    let _ = write!(out, "{}", prompt(hits.len()));
     let _ = out.flush();
     drop(out);
 
@@ -52,13 +52,24 @@ pub async fn choose(hits: &[Hit]) -> Result<Option<usize>, AppError> {
     }
 }
 
+/// Línea de un resultado en la lista (`i` desde 0; se muestra desde 1).
+pub(super) fn hit_line(i: usize, hit: &Hit) -> String {
+    format!("  {}. {} — {}", i + 1, hit.name, hit.detail)
+}
+
+/// Pregunta que acompaña a la lista de `len` resultados.
+pub(super) fn prompt(len: usize) -> String {
+    format!("Elegí [1-{len}] (Enter = 1, q = cancelar): ")
+}
+
 #[derive(Debug, PartialEq)]
-enum Choice {
+pub(super) enum Choice {
     Pick(usize),
     Cancel,
 }
 
-fn map_key(key: KeyEvent, len: usize) -> Option<Choice> {
+/// Tecla → elección entre `len` resultados; `None` = ignorarla.
+pub(super) fn map_key(key: KeyEvent, len: usize) -> Option<Choice> {
     // En Windows llegan también los eventos de soltar la tecla.
     if key.kind != KeyEventKind::Press {
         return None;

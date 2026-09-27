@@ -25,8 +25,10 @@ main ──> ui::cli (parseo de subcomandos → Command)
   │         │      metadata de álbum/playlist (librespot-metadata)
   │         └──> hilos de librespot: reproductor + salida de audio (rodio/WASAPI)
   │
-  └──> ui::playback::play_queue ──> spotify::player (play/preload/pause/stop,
-                                     eventos del reproductor)
+  └──> ui::playback::play_queue ──> spotify::player (play/preload/pause/
+                                     restart/stop, eventos del reproductor)
+                                 └──> spotify::web::search (tecla `a`, como
+                                      future dentro del loop, sin bloquearlo)
 
 config  <── usado por todos (constantes, rutas, umbrales)
 error   <── usado por todos (AppError con mensajes para el usuario)
@@ -51,8 +53,11 @@ error   <── usado por todos (AppError con mensajes para el usuario)
   controla durante `play`.
 - **Modo raw de la terminal:** `ui::RawMode` (lo usan `select` y
   `playback`); se restaura al soltarse o ante un panic.
-- **Cola de reproducción:** `ui::playback::Queue` (lista de temas, cuál
-  suena y el `play_request_id` vigente) vive mientras dura `play_queue`.
+- **Cola de reproducción:** `ui::playback::Queue` vive mientras dura
+  `play_queue` y es la única dueña de qué suena después: orden de la lista
+  (con o sin shuffle), temas encolados (`up_next`), historial para
+  "anterior" (`timeline`) y el `play_request_id` vigente. Es nuestra, no
+  de Spotify: la Web API no la ve.
 
 ## Reglas estructurales
 - `spotify::web` solo recibe tokens `Web` y `spotify::player` solo `Audio`
@@ -78,7 +83,7 @@ corregir la tabla.
 | `AppError` (una variante por caso) | `src/error.rs` | doc-comment |
 | `auth::get_valid_token`, `auth::logout`, `auth::Token`, `auth::TokenKind` | `src/spotify/auth.rs` | doc-comment |
 | `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
-| `player::Player`, `player::Resolved` | `src/spotify/player.rs` | doc-comment |
-| `playback::play_queue`, `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
+| `player::Player` (incl. `restart`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
+| `playback::play_queue` (teclas, cola, shuffle), `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
 | `cli::parse`, `cli::Command`, `cli::USAGE` | `src/ui/cli.rs` | doc-comment |
 | `select::choose` | `src/ui/select.rs` | doc-comment |

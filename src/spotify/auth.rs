@@ -97,6 +97,18 @@ impl Token {
         &self.access_token
     }
 
+    /// Token falso para tests de otros módulos que necesitan un cliente pero
+    /// no hacen pedidos.
+    #[cfg(test)]
+    pub fn for_tests() -> Token {
+        Token {
+            access_token: "acceso".into(),
+            refresh_token: "refresco".into(),
+            expires_at: 0,
+            scopes: Vec::new(),
+        }
+    }
+
     /// Convierte el token de `librespot-oauth`. Si `previous_refresh` es
     /// `Some` y el token nuevo no trae refresh token, se conserva el anterior.
     fn from_oauth(token: OAuthToken, previous_refresh: Option<&str>) -> Token {

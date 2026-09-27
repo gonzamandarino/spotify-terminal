@@ -200,6 +200,12 @@ impl Player {
         self.inner.play();
     }
 
+    /// Vuelve al principio del tema actual (evento `Seeked`), sin cambiar
+    /// si está en pausa o sonando. Sin efecto si no hay nada cargado.
+    pub fn restart(&self) {
+        self.inner.seek(0);
+    }
+
     /// Corta la reproducción y descarga el tema actual.
     pub fn stop(&self) {
         self.inner.stop();

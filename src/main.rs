@@ -60,11 +60,15 @@ async fn run() -> Result<(), AppError> {
             let user = web.current_user().await?;
             println!("{} ({}), plan: {}", user.name(), user.id, user.plan());
         }
-        Command::Play(target) => {
+        Command::Play { target, shuffle } => {
             let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
-            play(&config, &web, &target).await?;
+            play(&config, &web, &target, shuffle).await?;
         }
-        Command::Search { kind, query } => {
+        Command::Search {
+            kind,
+            query,
+            shuffle,
+        } => {
             let web = WebClient::new(auth::get_valid_token(&config, TokenKind::Web).await?)?;
             let hits = web.search(kind, &query).await?;
             if hits.is_empty() {
@@ -76,15 +80,21 @@ async fn run() -> Result<(), AppError> {
             // Premium y la sesión de audio recién después de elegir:
             // cancelar no cuesta nada.
             if let Some(i) = select::choose(&hits).await? {
-                play(&config, &web, &hits[i].uri).await?;
+                play(&config, &web, &hits[i].uri, shuffle).await?;
             }
         }
     }
     Ok(())
 }
 
-/// Reproduce un tema, álbum o playlist con los controles de `playback`.
-async fn play(config: &Config, web: &WebClient, target: &SpotifyUri) -> Result<(), AppError> {
+/// Reproduce un tema, álbum o playlist con los controles de `playback`
+/// (`shuffle` = arrancar mezclado). `web` se usa también para encolar.
+async fn play(
+    config: &Config,
+    web: &WebClient,
+    target: &SpotifyUri,
+    shuffle: bool,
+) -> Result<(), AppError> {
     // Chequeo barato antes de abrir la sesión de audio: sin Premium
     // librespot no reproduce y el error sería menos claro.
     let user = web.current_user().await?;
@@ -100,5 +110,5 @@ async fn play(config: &Config, web: &WebClient, target: &SpotifyUri) -> Result<(
             resolved.skipped
         );
     }
-    playback::play_queue(&player, &resolved.tracks).await
+    playback::play_queue(&player, web, &resolved.tracks, shuffle).await
 }

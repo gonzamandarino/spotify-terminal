@@ -105,3 +105,23 @@ entradas viejas — se marcan reemplazadas.
   reproducir igual con su link, porque la lista de temas va por la sesión
   de audio.
 - **Estado:** Vigente (spec 002)
+
+## 2026-09-26 — Cola de reproducción propia, no la de Spotify Connect
+- **Decisión:** shuffle, siguiente/anterior y encolar se resuelven en
+  `ui::playback::Queue`, que decide qué tema pedirle a librespot. No se usa
+  `POST /me/player/queue` ni los endpoints de `/me/player/*`.
+- **Motivo:** esos endpoints controlan un dispositivo Spotify Connect, y
+  nuestro reproductor es librespot embebido sin Spotify Connect (spec 001):
+  Spotify no conoce su cola. Además no gastan cuota de la Web API.
+- **Costo:** la cola no se ve ni se maneja desde el celular ni desde la app
+  oficial, y se pierde al salir.
+- **Alternativa:** activar Spotify Connect en librespot (`Spirc`) y usar la
+  cola de Spotify; más memoria y otro spec.
+- **Estado:** Vigente (spec 003)
+
+## 2026-09-26 — `rand` como dependencia directa
+- **Decisión:** `rand` 0.9 para mezclar la cola (`SliceRandom::shuffle`).
+- **Motivo:** ya la compila librespot con la misma versión y las mismas
+  features: no suma código al binario.
+- **Estado:** Vigente (spec 003)
+

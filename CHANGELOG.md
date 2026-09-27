@@ -2,6 +2,16 @@
 
 ## [Sin publicar]
 
+### Agregado (spec 003 — shuffle, siguiente/anterior y cola)
+- Durante la reproducción: `n`/→ siguiente, `p`/← reinicia el tema o vuelve
+  al anterior (según si lleva más de 3 s), `s` shuffle sí/no (el tema
+  actual sigue; se mezcla lo que falta).
+- `play -s` / `--shuffle`: arranca la lista mezclada desde un tema al azar.
+- `a`: busca un tema sin cortar la música y lo agrega a la cola; suena
+  después del actual, antes del resto de la lista. Con `play` de un solo
+  tema, al terminar siguen los encolados.
+- La línea de estado muestra shuffle y cantidad de temas en cola.
+
 ### Agregado (spec 002 — búsqueda)
 - `play <nombre>`: busca temas y muestra los 5 mejores (artistas, álbum,
   duración); se elige con 1-5, Enter = el primero, q = cancelar.

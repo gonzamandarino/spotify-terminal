@@ -20,6 +20,8 @@ librespot-core = "0.8.0"
 librespot-metadata = "0.8.0"
 librespot-oauth = "0.8.0"
 librespot-playback = "0.8.0"
+# Misma versión y features que ya compila librespot: shuffle de la cola.
+rand = "0.9.5"
 # Misma versión que ya trae librespot-oauth: un solo stack HTTP/TLS.
 reqwest = { version = "0.12.28", features = ["json"] }
 serde = { version = "1.0.229", features = ["derive"] }
