@@ -1,6 +1,6 @@
 # Changelog
 
-## [Sin publicar]
+## [0.1.0] - 2026-09-27
 
 ### Agregado (spec 008 — distribución)
 - Zip para Windows en GitHub Releases: se descomprime y se usa, sin Rust

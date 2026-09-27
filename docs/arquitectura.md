@@ -152,14 +152,19 @@ bin/desktop ──> desktop::run
 
 ## Distribución (spec 008)
 
-`.github/workflows/release.yml`, al pushear un tag `vX.Y.Z` igual a la
-versión de `Cargo.toml` (o a mano, sin publicar): fmt, clippy, tests,
+Un Release por spec. `.github/workflows/version-check.yml` exige, en cada
+PR que cambia lo que se distribuye, versión nueva en `Cargo.toml` /
+`Cargo.lock` y su sección en el `CHANGELOG.md`.
+`.github/workflows/release.yml`, en cada push a `main` cuya versión todavía
+no tiene tag (o con un tag `vX.Y.Z` pusheado a mano, o sin publicar con
+"Run workflow"): fmt, clippy, tests,
 `cargo build --release --locked` con CRT estático (`.cargo/config.toml`),
 `scripts/verificar-dependencias.ps1` (sin DLL del runtime de C) y
 `scripts/armar-zip.ps1` (lista explícita: los dos `.exe`,
 `dist/LEEME.txt`, `dist/crear-accesos-directos.cmd`,
-`scripts/instalar-acceso-directo.ps1`). Un segundo job, el único con
-permiso de escritura, crea el Release con el zip.
+`scripts/instalar-acceso-directo.ps1`). Un último job, el único con
+permiso de escritura, crea el tag y el Release con el zip y las notas de
+la sección del changelog.
 
 ## Reglas estructurales
 - `spotify::web` solo recibe tokens `Web` y `spotify::player` solo `Audio`
