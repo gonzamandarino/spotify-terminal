@@ -115,7 +115,7 @@ pero sirven para comparar consumo y enfoques.
   Studio, etc.) se documenta en el README como prerequisito.
 
 ## Plan técnico
-*(propuesta — pendiente de revisión de vos antes de escribir código)*
+*(aprobado antes de implementar; los desvíos quedan en "Notas de verificación")*
 
 - **Archivos que toca:**
   - `Cargo.toml`, `Cargo.lock` — crate binaria `spotify-terminal`, edición
