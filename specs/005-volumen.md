@@ -1,7 +1,7 @@
 # 005 - Control de volumen
 
 ## Estado
-En implementación
+Verificado
 
 ## Contexto
 Hoy la app suena siempre al 100 % (el reproductor se arma con
@@ -63,29 +63,29 @@ poder controlar el volumen de la app desde la propia app.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — `vol N` (0-100) fija el volumen de la app; se nota en el
+- [x] **AC-1** — `vol N` (0-100) fija el volumen de la app; se nota en el
       audio en menos de ~0,5 s, sin cortes ni clics audibles, y no cambia
       el volumen de Windows ni el de otras apps.
-- [ ] **AC-2** — `vol` / `v` muestra el volumen actual; `vol +` y `vol -`
+- [x] **AC-2** — `vol` / `v` muestra el volumen actual; `vol +` y `vol -`
       suben / bajan un paso (config) y quedan en 0-100 (en 100, `+` no
       pasa de 100; en 0, `-` no baja de 0).
-- [ ] **AC-3** — `mute` / `m` silencia; otro `mute` o cualquier `vol …`
+- [x] **AC-3** — `mute` / `m` silencia; otro `mute` o cualquier `vol …`
       lo saca, volviendo al volumen de antes (o al nuevo, si fue `vol N`).
-- [ ] **AC-4** — `Ctrl+↑` / `Ctrl+↓` en la ventana suben / bajan un paso,
+- [x] **AC-4** — `Ctrl+↑` / `Ctrl+↓` en la ventana suben / bajan un paso,
       aunque haya texto escrito en la entrada; `↑`/`↓` sin Ctrl siguen
       recorriendo el historial.
-- [ ] **AC-5** — La barra de "sonando ahora" muestra el volumen (o `mute`)
+- [x] **AC-5** — La barra de "sonando ahora" muestra el volumen (o `mute`)
       y se actualiza con cada cambio.
-- [ ] **AC-6** — El volumen se mantiene al pasar de tema, con `play`
+- [x] **AC-6** — El volumen se mantiene al pasar de tema, con `play`
       nuevo, `stop` + `play`, y al cerrar y reabrir la app.
-- [ ] **AC-7** — Primera vez (sin volumen guardado) o archivo ilegible →
+- [x] **AC-7** — Primera vez (sin volumen guardado) o archivo ilegible →
       arranca al 100 %, sin error visible.
-- [ ] **AC-8** — `vol` con argumento inválido (`vol 150`, `vol -3`,
+- [x] **AC-8** — `vol` con argumento inválido (`vol 150`, `vol -3`,
       `vol abc`, `vol 1 2`) muestra un error de uso y no cambia nada.
-- [ ] **AC-9** — En la CLI, `+` / `-` en la pantalla de reproducción
+- [x] **AC-9** — En la CLI, `+` / `-` en la pantalla de reproducción
       suben / bajan un paso y la pantalla muestra el volumen; el volumen
       guardado se comparte con la ventana.
-- [ ] **AC-10** — Cambiar el volumen seguido (mantener `Ctrl+↑`) no
+- [x] **AC-10** — Cambiar el volumen seguido (mantener `Ctrl+↑`) no
       suma consumo sostenido: la CPU vuelve a ~0 % al soltar y la RAM
       reproduciendo sigue dentro del tope de spec 004 (≤ 100 MB).
 
@@ -186,20 +186,40 @@ el volumen solo si cambió mientras conectaba.)*
 - [x] T5 — Ventana: `Ctrl+↑`/`Ctrl+↓` y volumen en la barra.
 - [x] T6 — CLI: `+` / `=` / `-`, volumen en la línea de estado y guardar
       al salir.
-- [ ] T7 — Pruebas a mano de todos los AC + medición (AC-10).
+- [x] T7 — Pruebas a mano de todos los AC + medición (AC-10).
 - [x] T8 — Docs: arquitectura, decisiones, README, changelog.
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y doc de arquitectura actualizados si
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y doc de arquitectura actualizados si
       el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas
-- [ ] Changelog actualizado
-- [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Decisiones de diseño relevantes documentadas
+- [x] Changelog actualizado
+- [x] Sin constantes/umbrales hardcodeados fuera de su lugar de config
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
+
+Automático: 105 tests (nuevos: `app::volume` — límites, mute, escala del
+reproductor, archivo ausente/basura/fuera de rango, ida y vuelta;
+`app::shell` — `vol`/`v`/`mute`/`m` y los errores de AC-8;
+`app::engine` — volumen sin reproductor aplicado al conectar, cambios con
+reproductor, atajo sin línea en la consola, se mantiene con `play` nuevo y
+`stop`, cambio mientras conecta, guardado único con espera, aviso si no se
+puede guardar, guardado al salir; `ui::playback` — `+`, `=`, `-`).
+`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` y
+`cargo test` sin avisos.
+
+A mano (2026-09-27, `spotify-desktop.exe` y `spotify-terminal.exe`
+release, Windows 10, con audio real): confirmado por vos ("todo ok")
+sobre la lista de pruebas de T7 — `vol 30` baja enseguida sin cortes y el
+mezclador de Windows no cambia (AC-1), `Ctrl+↑` sostenido sube de a pasos
+y `↑` solo sigue siendo historial (AC-4), `mute` + `vol +` (AC-3), el
+volumen se mantiene al reabrir ventana y CLI (AC-6, AC-9), barra con el
+volumen (AC-5). AC-10: confirmado por vos junto con el resto; no quedó
+registrado un número nuevo de RAM/CPU (la referencia sigue siendo la de
+spec 004: 36,9 MB máx. reproduciendo).
