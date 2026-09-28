@@ -1,9 +1,7 @@
 # 011 - Likear el tema que suena y elegir entre mis playlists
 
 ## Estado
-En verificación
-
-Falta la prueba manual con la cuenta (T10: AC-1, AC-5, AC-9).
+Verificado
 
 ## Contexto
 Dos funciones objetivo de `CLAUDE.md` que todavía no existen:
@@ -74,7 +72,7 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — Con un tema sonando (o en pausa), `like` lo agrega a Tus
+- [x] **AC-1** — Con un tema sonando (o en pausa), `like` lo agrega a Tus
       me gusta (se ve en la app oficial) y la consola muestra
       `♥ <tema> — agregado a Tus me gusta`.
 - [x] **AC-2** — `like` sobre un tema que ya estaba likeado no falla: avisa
@@ -84,7 +82,7 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
 - [x] **AC-4** — Sin nada sonando, `like` / `unlike` avisan
       `Nada sonando` y no hacen pedidos. Con un episodio, avisan que solo se
       likean temas.
-- [ ] **AC-5** — La barra "sonando" muestra ♥ lleno si el tema actual está
+- [x] **AC-5** — La barra "sonando" muestra ♥ lleno si el tema actual está
       en Tus me gusta y apagado si no; cambia al instante tras `like` /
       `unlike` y se recalcula en cada cambio de tema con un solo pedido.
 - [x] **AC-6** — `playlists` (y `pl`) lista mis playlists numeradas desde 1,
@@ -98,7 +96,7 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
 - [x] **AC-8** — Con más de 50 playlists se ven todas (hasta
       `MY_PLAYLISTS_MAX`); si hay más que el tope, se avisa cuántas no se
       muestran. Sin playlists, se avisa y no queda esperando un número.
-- [ ] **AC-9** — La primera vez tras actualizar, el token viejo (sin los
+- [x] **AC-9** — La primera vez tras actualizar, el token viejo (sin los
       scopes nuevos) lleva a login una sola vez; después `like` y
       `playlists` andan sin volver a pedirlo.
 - [x] **AC-10** — Errores de red, 401/403 o 429 se muestran en la consola
@@ -186,22 +184,22 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
 - [x] T7 — `engine`: `playlists` + tests.
 - [x] T8 — `desktop`: ♥ en la barra "sonando".
 - [x] T9 — Docs, contratos, changelog 0.3.0, versión; fmt/clippy/test.
-- [ ] T10 — Prueba manual con la cuenta (AC-1, AC-5, AC-9).
+- [x] T10 — Prueba manual con la cuenta (AC-1, AC-5, AC-9).
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y `docs/arquitectura.md` actualizados
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y `docs/arquitectura.md` actualizados
       si el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas en `docs/decisiones.md`
-- [ ] Changelog actualizado: sección `## [0.3.0] - fecha`
-- [ ] Versión subida en `Cargo.toml` y `Cargo.lock`; el Release lo publica
+- [x] Decisiones de diseño relevantes documentadas en `docs/decisiones.md`
+- [x] Changelog actualizado: sección `## [0.3.0] - fecha`
+- [x] Versión subida en `Cargo.toml` y `Cargo.lock`; el Release lo publica
       CI al mergear
-- [ ] Sin constantes/umbrales hardcodeados fuera de `src/config.rs`
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Sin constantes/umbrales hardcodeados fuera de `src/config.rs`
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
 
@@ -212,4 +210,6 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
   sin cuerpo ni `Content-Length`). Corregido: los pedidos que no son `GET`
   van con cuerpo vacío y `Content-Length: 0` (test
   `put_y_delete_van_con_content_length_cero`).
-- Pendiente, prueba manual con la cuenta: AC-1, AC-5, AC-9.
+- Prueba manual 2 (vos, con la cuenta): `like` / `unlike` se reflejan en
+  la app oficial y el ♥ de la barra cambia (AC-1, AC-5); login pedido una
+  sola vez por los scopes nuevos (AC-9); `playlists` lista y reproduce.
