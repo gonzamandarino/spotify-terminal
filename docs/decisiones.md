@@ -515,27 +515,37 @@ entradas viejas — se marcan reemplazadas.
   lista es una foto: `like`/`unlike` mientras suena no la cambian.
 - **Estado:** Vigente (spec 013)
 
-## 2026-09-28 — Panel de consumo: medir solo mientras se ve, en % de un núcleo
+## 2026-09-28 — Panel de consumo: medir solo mientras se ve, como el Administrador de tareas
 - **Decisión:** el panel de consumo mide el propio proceso con
   `GetProcessTimes` (CPU de kernel + usuario) y `K32GetProcessMemoryInfo`
-  (working set), una vez por `config::usage::PERIOD` (1 s), desde el
-  hilo de la ventana y solo mientras el panel se dibuja. El CPU se
-  muestra en % de **un núcleo** y la RAM en MB de working set. El máximo
+  con `PROCESS_MEMORY_COUNTERS_EX2` (working set privado), una vez por
+  `config::usage::PERIOD` (1 s), desde el hilo de la ventana y solo
+  mientras el panel se dibuja. El CPU se muestra en % de **toda la PC**
+  (dividido por los núcleos lógicos) y la RAM en MB de working set
+  **privado**: los mismos números que el Administrador de tareas. El máximo
   de cada recurso es una **alerta** (color de error en el texto y en el
   gráfico), no un tope que la app aplique. Los gráficos se dibujan con el
   `Painter` de egui (segmentos), con los últimos `HISTORY` valores; la
   historia se borra si pasa más de `GAP_RESET` sin medir (ventana
   minimizada) o al apagar el panel.
-- **Motivo:** son las mismas unidades con que se midieron los topes de
-  los specs 004 y 010, así el número del panel se compara directo. Medir
+- **Motivo:** el usuario compara el panel con el Administrador de
+  tareas. Primero se usó % de un núcleo y working set (las unidades de
+  los topes de los specs 004 y 010) y no coincidían: un pico de 40 % de
+  un núcleo son 2,5 % en una PC de 16, y el working set suma las páginas
+  compartidas (DLL del sistema), ~30 MB contra ~16 MB privados. Medir
   cuesta dos llamadas al sistema; lo caro es redibujar la ventana, por eso
   se redibuja una vez por segundo y nada con el panel apagado. La RAM no
   se puede forzar desde la app y bajar consumo solo (apagar la
   visualización, bajar fps) cambiaría la app sin que el usuario lo pida.
-- **Alternativa descartada:** un hilo que mida siempre (tendría historia
+- **Alternativa descartada:** los contadores de rendimiento (PDH), que
+  dan lo mismo pero son mucho más caros de consultar; un hilo que mida siempre (tendría historia
   al abrir el panel, pero gastaría con el panel apagado); una librería de
   gráficos (`egui_plot`): dependencia más para dos líneas.
-- **Consecuencias:** el panel prendido cuesta ~0,15 % de un núcleo y
-  ~1,3 MB de working set en reposo (redibujar una vez por segundo). La
-  medición es solo de Windows: en otra plataforma se ve `—`.
+- **Consecuencias:** el panel prendido cuesta ~0,1–0,3 % de un núcleo
+  y ~1,1–1,3 MB de working set privado en reposo (redibujar una vez por
+  segundo). La medición es solo de Windows 10 1809 o posterior
+  (`PROCESS_MEMORY_COUNTERS_EX2`, que `windows-sys` 0.52 no trae: se
+  define a mano); en otra plataforma se ve `—`. Los topes de consumo de
+  los specs (medidos por PID en % de un núcleo) no se comparan directo
+  con el panel: hay que dividirlos por los núcleos.
 - **Estado:** Vigente (spec 014)

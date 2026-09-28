@@ -393,7 +393,7 @@ pub(crate) struct UsageSettings {
     pub(crate) visible: bool,
     pub(crate) values: UsageValues,
     pub(crate) graph: UsageGraph,
-    /// Máximo de CPU (% de un núcleo), en `[MAX_CPU_MIN, MAX_CPU_MAX]`:
+    /// Máximo de CPU (% de toda la PC), en `[MAX_CPU_MIN, MAX_CPU_MAX]`:
     /// pasarlo se marca en el color de error, no cambia nada más.
     pub(crate) max_cpu: f32,
     /// Máximo de RAM (MB), en `[MAX_RAM_MB_MIN, MAX_RAM_MB_MAX]`.
@@ -1499,8 +1499,8 @@ mod tests {
             ("visible", r#""si""#),
             ("valores", r#""disco""#),
             ("grafico", "3"),
-            ("max_cpu", "0.5"),
-            ("max_cpu", "500"),
+            ("max_cpu", "0.05"),
+            ("max_cpu", "150"),
             ("max_ram", "10"),
             ("max_ram", "100.5"),
             ("max_ram", "99999"),
@@ -1531,7 +1531,7 @@ mod tests {
                 visible: false,
                 values: UsageValues::Both,
                 graph: UsageGraph::None,
-                max_cpu: 10.0,
+                max_cpu: 1.0,
                 max_ram_mb: 100,
             }
         );

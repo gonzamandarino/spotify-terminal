@@ -24,16 +24,42 @@ const BYTES_PER_MB: f32 = 1024.0 * 1024.0;
 /// Una medición del proceso.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct Sample {
-    /// CPU usado desde que arrancó el proceso (kernel + usuario).
+    /// CPU usado desde que arrancó el proceso (kernel + usuario, sumando
+    /// todos los núcleos).
     pub(super) cpu: Duration,
     pub(super) at: Instant,
-    /// Working set, en bytes.
+    /// Working set privado, en bytes: la "Memoria" del Administrador de
+    /// tareas (sin las páginas compartidas con otros procesos, como las
+    /// DLL del sistema).
     pub(super) ram: u64,
+}
+
+/// `PROCESS_MEMORY_COUNTERS_EX2` de Windows (10 1809+), que `windows-sys`
+/// 0.52 no trae: el único contador de memoria con el working set privado.
+#[cfg(windows)]
+#[repr(C)]
+#[derive(Default)]
+#[allow(non_snake_case)]
+struct MemoryCountersEx2 {
+    cb: u32,
+    PageFaultCount: u32,
+    PeakWorkingSetSize: usize,
+    WorkingSetSize: usize,
+    QuotaPeakPagedPoolUsage: usize,
+    QuotaPagedPoolUsage: usize,
+    QuotaPeakNonPagedPoolUsage: usize,
+    QuotaNonPagedPoolUsage: usize,
+    PagefileUsage: usize,
+    PeakPagefileUsage: usize,
+    PrivateUsage: usize,
+    PrivateWorkingSetSize: usize,
+    SharedCommitUsage: u64,
 }
 
 /// Mide el propio proceso.
 ///
-/// - Post: `None` si el sistema no la da (o fuera de Windows).
+/// - Post: `None` si el sistema no la da (Windows anterior a 10 1809, o
+///   fuera de Windows).
 /// - No debe: bloquear ni reservar memoria (son dos llamadas al sistema).
 #[cfg(windows)]
 pub(super) fn sample() -> Option<Sample> {
@@ -51,33 +77,30 @@ pub(super) fn sample() -> Option<Sample> {
         dwHighDateTime: 0,
     };
     let (mut creation, mut exit, mut kernel, mut user) = (zero, zero, zero, zero);
-    let mut memory = PROCESS_MEMORY_COUNTERS {
-        cb: 0,
-        PageFaultCount: 0,
-        PeakWorkingSetSize: 0,
-        WorkingSetSize: 0,
-        QuotaPeakPagedPoolUsage: 0,
-        QuotaPagedPoolUsage: 0,
-        QuotaPeakNonPagedPoolUsage: 0,
-        QuotaNonPagedPoolUsage: 0,
-        PagefileUsage: 0,
-        PeakPagefileUsage: 0,
+    let size = u32::try_from(std::mem::size_of::<MemoryCountersEx2>()).ok()?;
+    let mut memory = MemoryCountersEx2 {
+        cb: size,
+        ..MemoryCountersEx2::default()
     };
-    let size = u32::try_from(std::mem::size_of::<PROCESS_MEMORY_COUNTERS>()).ok()?;
-    memory.cb = size;
     // SAFETY: `GetCurrentProcess` es un pseudo-handle que no se cierra;
-    // los punteros son a variables locales vivas durante las llamadas, y
-    // `memory.cb` es su tamaño.
+    // los punteros son a variables locales vivas durante las llamadas.
+    // `K32GetProcessMemoryInfo` acepta la versión extendida de la
+    // estructura si `cb` es su tamaño (`MemoryCountersEx2` empieza con los
+    // mismos campos que `PROCESS_MEMORY_COUNTERS`, `repr(C)`).
     let ok = unsafe {
         let process = GetCurrentProcess();
         GetProcessTimes(process, &mut creation, &mut exit, &mut kernel, &mut user) != 0
-            && K32GetProcessMemoryInfo(process, &mut memory, size) != 0
+            && K32GetProcessMemoryInfo(
+                process,
+                (&raw mut memory).cast::<PROCESS_MEMORY_COUNTERS>(),
+                size,
+            ) != 0
     };
     ok.then(|| Sample {
         // FILETIME cuenta de a 100 ns.
         cpu: Duration::from_nanos((ticks(kernel) + ticks(user)).saturating_mul(100)),
         at: Instant::now(),
-        ram: memory.WorkingSetSize as u64,
+        ram: memory.PrivateWorkingSetSize as u64,
     })
 }
 
@@ -86,17 +109,21 @@ pub(super) fn sample() -> Option<Sample> {
     None
 }
 
-/// CPU usado entre dos mediciones, en % de un núcleo (pasa de 100 con
-/// varios núcleos ocupados).
+/// CPU usado entre dos mediciones, en % de toda la PC con `cores` núcleos
+/// lógicos, como el Administrador de tareas.
 ///
 /// - Pre: `next` es posterior a `prev`.
-/// - Post: `≥ 0`; con intervalo cero, 0 (no divide por cero).
-pub(super) fn cpu_percent(prev: &Sample, next: &Sample) -> f32 {
+/// - Post: en `[0, 100]` salvo error de medición; con intervalo cero o
+///   `cores` 0, 0 (no divide por cero).
+pub(super) fn cpu_percent(prev: &Sample, next: &Sample, cores: u32) -> f32 {
     let wall = next.at.saturating_duration_since(prev.at).as_secs_f32();
-    if wall <= 0.0 {
+    if wall <= 0.0 || cores == 0 {
         return 0.0;
     }
-    next.cpu.saturating_sub(prev.cpu).as_secs_f32() / wall * 100.0
+    // Los núcleos de una PC entran en f32 sin pérdida.
+    #[allow(clippy::cast_precision_loss)]
+    let cores = cores as f32;
+    next.cpu.saturating_sub(prev.cpu).as_secs_f32() / wall / cores * 100.0
 }
 
 /// Tope del eje de un gráfico: el mayor entre `max` y el pico de
@@ -141,6 +168,8 @@ pub(super) struct Usage {
     ram_mb: Option<f32>,
     cpu_history: VecDeque<f32>,
     ram_history: VecDeque<f32>,
+    /// Núcleos lógicos de la PC: el CPU se divide por esto.
+    cores: u32,
 }
 
 impl Usage {
@@ -152,6 +181,8 @@ impl Usage {
             ram_mb: None,
             cpu_history: VecDeque::with_capacity(HISTORY),
             ram_history: VecDeque::with_capacity(HISTORY),
+            cores: std::thread::available_parallelism()
+                .map_or(1, |n| u32::try_from(n.get()).unwrap_or(u32::MAX)),
         }
     }
 
@@ -188,13 +219,13 @@ impl Usage {
         {
             self.clear();
         }
-        // Un working set entra de sobra en f32 (con pérdida de bytes).
+        // La RAM de la app entra de sobra en f32 (con pérdida de bytes).
         #[allow(clippy::cast_precision_loss)]
         let ram = sample.ram as f32 / BYTES_PER_MB;
         push(&mut self.ram_history, ram);
         self.ram_mb = Some(ram);
         if let Some(last) = &self.last {
-            let cpu = cpu_percent(last, &sample);
+            let cpu = cpu_percent(last, &sample, self.cores);
             push(&mut self.cpu_history, cpu);
             self.cpu = Some(cpu);
         }
@@ -355,20 +386,27 @@ mod tests {
     }
 
     #[test]
-    fn cpu_en_porcentaje_de_un_nucleo() {
+    fn cpu_en_porcentaje_de_toda_la_pc() {
         let t = Instant::now();
-        assert_eq!(cpu_percent(&at(t, 0, 100, 1), &at(t, 1000, 100, 1)), 0.0);
-        assert!((cpu_percent(&at(t, 0, 0, 1), &at(t, 1000, 500, 1)) - 50.0).abs() < 1e-3);
-        // Varios núcleos ocupados: pasa de 100.
-        assert!((cpu_percent(&at(t, 0, 0, 1), &at(t, 1000, 2500, 1)) - 250.0).abs() < 1e-3);
+        assert_eq!(
+            cpu_percent(&at(t, 0, 100, 1), &at(t, 1000, 100, 1), 16),
+            0.0
+        );
+        assert!((cpu_percent(&at(t, 0, 0, 1), &at(t, 1000, 500, 1), 1) - 50.0).abs() < 1e-3);
+        // Medio núcleo en una PC de 16: como el Administrador de tareas.
+        assert!((cpu_percent(&at(t, 0, 0, 1), &at(t, 1000, 500, 1), 16) - 3.125).abs() < 1e-3);
+        // Dos núcleos y medio de cuatro.
+        assert!((cpu_percent(&at(t, 0, 0, 1), &at(t, 1000, 2500, 1), 4) - 62.5).abs() < 1e-3);
         // Intervalo cero: no divide por cero.
-        assert_eq!(cpu_percent(&at(t, 0, 0, 1), &at(t, 0, 500, 1)), 0.0);
+        assert_eq!(cpu_percent(&at(t, 0, 0, 1), &at(t, 0, 500, 1), 16), 0.0);
+        assert_eq!(cpu_percent(&at(t, 0, 0, 1), &at(t, 1000, 500, 1), 0), 0.0);
     }
 
     #[test]
     fn cpu_desde_la_segunda_medicion() {
         let t = Instant::now();
         let mut usage = Usage::new();
+        usage.cores = 1;
         usage.record(at(t, 0, 0, 40));
         assert_eq!(usage.cpu, None);
         assert_eq!(usage.ram_mb, Some(40.0));

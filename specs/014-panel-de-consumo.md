@@ -32,9 +32,10 @@ recurso que marca cuándo la app se pasa.
   pasa, se pinta en el color de error del tema; el gráfico dibuja el
   umbral como línea horizontal y el tramo que lo pasa en ese color. La
   app no cambia su comportamiento por pasarlo.
-- **¿Umbrales de fábrica y rango?** → Asumido: CPU 10 % (tope de spec
-  010 AC-8), RAM 100 MB (tope de spec 004). Rango: CPU 1–400 %, RAM
-  20–2000 MB (config). Se eligen con un slider en el menú (como el tamaño
+- **¿Umbrales de fábrica y rango?** → Asumido: CPU 1 % de la PC, RAM
+  100 MB (tope de spec 004). Rango: CPU 0,1–100 %, RAM 20–2000 MB
+  (config). *(Primero era CPU 10 % en 1–400 %, en % de un núcleo; se
+  cambió con las unidades, ver abajo.)* Se eligen con un slider en el menú (como el tamaño
   de letra, spec 009).
 - **¿Escala del gráfico?** → Asumido: de 0 al mayor entre el umbral y
   el máximo de la ventana visible, más un 10 %: el umbral siempre se ve y
@@ -49,15 +50,16 @@ recurso que marca cuándo la app se pasa.
   propias ya no entra como una casilla dentro de Visualización.
 - **¿Cómo se guarda?** → Asumido: sección propia en `ajustes.json`:
   `"consumo": {"visible": false, "valores": "ambos", "grafico":
-  "ninguno", "max_cpu": 10, "max_ram": 100}`. "Restaurar consumo" y
+  "ninguno", "max_cpu": 1, "max_ram": 100}`. "Restaurar consumo" y
   "Restaurar todo" vuelven a esos valores. Una clave inválida abre con su
   valor de fábrica y avisa la clave (como spec 007 AC-9).
-- **¿CPU en qué unidad?** → Asumido: % de **un núcleo**, igual que en
-  los AC de consumo de los specs 004 y 010 (puede pasar de 100 % en una
-  PC de varios núcleos). Motivo: el número del panel y el umbral se
-  comparan directo con los topes de los specs.
-- **¿Qué RAM?** → Asumido: el working set del proceso (lo que se midió
-  por PID en los specs 004 y 010), en MB.
+- **¿CPU y RAM en qué unidad?** → Respondido por vos (2026-09-28, al
+  probarlo): **las del Administrador de tareas**. CPU en % de toda la PC
+  (dividido por los núcleos lógicos) y RAM en working set **privado**.
+  Primero se había asumido % de un núcleo y working set (las unidades de
+  los topes de los specs 004 y 010) y no coincidían con el Administrador:
+  un pico de 40 % de un núcleo son 2,5 % en una PC de 16, y el working
+  set suma las páginas compartidas (~30 MB contra ~16 MB privados).
 - **¿Cada cuánto se actualiza?** → Asumido: cada 1 s (config), y el CPU
   es el promedio de ese segundo. Medir es barato (dos llamadas al
   sistema); lo que cuesta es redibujar la ventana, así que se redibuja
@@ -107,7 +109,7 @@ recurso que marca cuándo la app se pasa.
       config; Restaurar consumo. Lo elegido se marca, se aplica en el
       mismo frame y persiste al reabrir. Restaurar consumo y Restaurar
       todo vuelven a los valores de fábrica (apagado, Ambos, Ninguno,
-      10 %, 100 MB).
+      1 %, 100 MB).
 - [x] **AC-2** — Con consumo prendido y una visualización, la columna
       derecha tiene el panel de consumo arriba y la visualización abajo,
       con el alto que sobra; los dos comparten el ancho y el borde
@@ -120,8 +122,8 @@ recurso que marca cuándo la app se pasa.
       `MIN_VIZ_HEIGHT` puntos, la visualización no se dibuja ni pide
       cuadros; al agrandar la ventana vuelve. Con la ventana angosta,
       la columna entera sigue las reglas de ancho del spec 010 AC-2.
-- [x] **AC-5** — Los valores son `CPU X,Y %` (de un núcleo, promedio del
-      último período) y `RAM N MB` (working set), según Valores,
+- [x] **AC-5** — Los valores son `CPU X,Y %` (de toda la PC, promedio
+      del último período) y `RAM N MB` (working set privado), según Valores,
       actualizados cada `usage::PERIOD` (1 s). Antes de la segunda
       medición, `CPU —`. El % a partir de dos mediciones es correcto
       (test con tiempos sintéticos, incluido 0, más de 100 % e intervalo
@@ -139,7 +141,7 @@ recurso que marca cuándo la app se pasa.
 - [ ] **AC-8** — Los valores coinciden con los medidos por PID desde
       afuera (Administrador de tareas / script de medición) con margen de
       ±1 punto de CPU y ±5 MB de RAM, en reposo y reproduciendo con
-      Barras.
+      Barras. Mismas unidades que el Administrador de tareas.
 - [ ] **AC-9** — Consumo del propio panel: prendido con los dos valores
       y los dos gráficos, en reposo (sin música, visualización Ninguna),
       la app queda ≤ 1 % de un núcleo y la RAM no crece más de 1 MB
@@ -163,7 +165,7 @@ Sin dependencias nuevas: se suma la feature
 | Archivo | Cambio |
 |---|---|
 | `Cargo.toml`, `Cargo.lock` | Feature `Win32_System_ProcessStatus`. Versión `0.6.0`. |
-| `src/config.rs` | Módulo `usage`: `PERIOD = 1 s`, `HISTORY = 60`, `GRAPH_HEIGHT`, `MAX_CPU = 10.0` y rango `MAX_CPU_MIN..MAX_CPU_MAX` (1–400), `MAX_RAM_MB = 100` y rango (20–2000), `SCALE_HEADROOM = 1.1`. En `viz`: `MIN_VIZ_HEIGHT`. |
+| `src/config.rs` | Módulo `usage`: `PERIOD = 1 s`, `HISTORY = 60`, `GRAPH_HEIGHT`, `MAX_CPU = 1.0` y rango `MAX_CPU_MIN..MAX_CPU_MAX` (0,1–100), `MAX_RAM_MB = 100` y rango (20–2000), `SCALE_HEADROOM = 1.1`. En `viz`: `MIN_VIZ_HEIGHT`. |
 | `src/desktop/usage.rs` *(nuevo)* | `Sample { cpu: Duration, at: Instant, ram: u64 }`; `sample() -> Option<Sample>` (Windows: `GetProcessTimes` + `K32GetProcessMemoryInfo` del propio proceso; otra plataforma: `None`); `cpu_percent(prev, next) -> f32` puro; `Usage`: última medición, historia circular de `HISTORY` puntos por recurso, `due(now)`, `clear()`; `scale(history, max) -> f32` puro. Dibujo: `show(ui, rect, &UsageSettings, &Palette)` con texto y gráficos, y `height(&UsageSettings, row_height) -> f32`. |
 | `src/desktop/settings.rs` | `UsageSettings { visible, values: UsageValues, graph: UsageGraph, max_cpu, max_ram_mb }`, `Section::Usage` (`"consumo"`), validación por clave y restaurar. |
 | `src/desktop/menu.rs` | `SUBMENUS` suma "Consumo"; `usage_menu` con casilla, dos grupos de opciones, dos sliders y Restaurar consumo. |
@@ -195,7 +197,7 @@ Sin dependencias nuevas: se suma la feature
   `Section`.
 - `docs/arquitectura.md`: módulo `desktop::usage` y la columna derecha
   (consumo + visualización).
-- `docs/decisiones.md`: CPU en % de un núcleo, working set, 1 s y solo
+- `docs/decisiones.md`: unidades del Administrador de tareas, 1 s y solo
   con el panel visible, historia que se borra al minimizar, umbral como
   alerta (no como tope que la app aplica), gráfico con `Painter` sin
   librería.
@@ -221,6 +223,12 @@ Sin dependencias nuevas: se suma la feature
 - La línea que separa consumo y visualización solo se dibuja si abajo hay
   visualización; el rótulo del gráfico lleva fondo propio para no pisarse
   con la línea punteada del máximo (visto en las capturas).
+- **Unidades (2026-09-28, pedido tuyo al probarlo):** `cpu_percent`
+  recibe los núcleos lógicos (`available_parallelism`, una vez en
+  `Usage::new`) y divide por ellos; `sample` lee
+  `PROCESS_MEMORY_COUNTERS_EX2.PrivateWorkingSetSize` con una estructura
+  propia (`windows-sys` 0.52 no la trae). `MAX_CPU` pasa a 1 % en
+  0,1–100 %.
 
 ## Tareas
 
@@ -267,8 +275,8 @@ después). Las capturas se sacaron con `PrintWindow`; el menú se manejó
 mandando teclas a la ventana.
 
 - **AC-1:** captura de Personalización → Consumo abierto con `Alt+P`,
-  ↓×6, →: casilla, Valores, Gráfico, los dos sliders (10 % y 100 MB de
-  fábrica) y Restaurar consumo. Con la casilla marcada con `Espacio`, el
+  ↓×6, →: casilla, Valores, Gráfico, los dos sliders (entonces 10 % y
+  100 MB de fábrica; hoy 1 % y 100 MB) y Restaurar consumo. Con la casilla marcada con `Espacio`, el
   panel apareció enseguida y `ajustes.json` quedó con
   `"consumo": {"visible": true}`. Restaurar:
   `settings::tests::consumo_valido_o_de_fabrica`; "Restaurar todo" vuelve
@@ -293,13 +301,17 @@ mandando teclas a la ventana.
 - **AC-7:** con `max_ram` 20 MB, `RAM 28 MB` y su línea en rojo (captura);
   en la captura del menú, el pico de CPU al abrirlo pasó el 10 % y ese
   tramo se ve rojo. `pasar_el_maximo_es_mayor_estricto`.
-- **AC-8 (parcial):** en reposo, último segundo antes de la captura: el
-  panel mostró `CPU 0,0 %` / `RAM 29 MB`; medido por PID afuera, 0,00 % /
-  28,6 MB. Dentro del margen. **Falta** reproduciendo con Barras (hace
+- **AC-8 (parcial):** con las unidades del Administrador (release, en
+  reposo, tres capturas cada ~2,5 s): el panel mostró `CPU 0,0 %` /
+  `RAM 15 MB`; afuera, CPU 0,00 % de la PC y working set privado
+  (`Win32_PerfRawData_PerfProc_Process.WorkingSetPrivate`, el del
+  Administrador) 15,0–15,1 MB. Antes del cambio, tu app abierta mostraba
+  ~30 MB con 16,1 MB en el Administrador, y picos de 17,7 % de un núcleo
+  = 1,1 % de la PC: la diferencia que viste era de unidades. **Falta** reproduciendo con Barras (hace
   falta música; no se pudo mandar `play` sin que la ventana tuviera foco
   estable).
-- **AC-9 (no cumple la RAM):** reposo, visualización Ninguna, por PID,
-  tres corridas de 20–30 s cada una:
+- **AC-9 (no cumple la RAM):** reposo, visualización Ninguna, por PID.
+  Primero en working set, tres corridas de 20–30 s cada una:
 
   | Panel | CPU (% de un núcleo) | RAM (MB) |
   |---|---|---|
@@ -307,7 +319,11 @@ mandando teclas a la ventana.
   | Prendido, dos valores y dos gráficos | 0,15 / 0,15 / 0,00 | 28,5–28,7 / 28,5 / 28,4–28,6 |
   | Prendido, solo texto | — / 0,08 / 0,31 | — / 27,8–28,0 / 28,0 |
 
-  CPU dentro del tope (≤ 1 %). La RAM sube **+1,2–1,3 MB** con los dos
+  Rehecho con las unidades nuevas, working set privado, dos corridas de
+  20 s: apagado 13,8 / 13,8 MB; dos gráficos 14,9–15,1 / 14,9–15,0 MB;
+  solo texto 14,4–14,5 / 14,4 MB. CPU 0,07–0,30 % de un núcleo.
+
+  CPU dentro del tope (≤ 1 %). La RAM sube **+1,1–1,3 MB** con los dos
   gráficos (+0,7 MB solo con texto), estable (no crece con el tiempo),
   por encima del tope de 1 MB que se asumió en este spec. Lo que el panel
   guarda son 2×60 `f32`; la diferencia es de redibujar una vez por

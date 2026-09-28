@@ -410,11 +410,11 @@ pub mod usage {
     pub const GRAPH_HEIGHT: f32 = 48.0;
     /// Separación entre renglones y gráficos del panel, en puntos.
     pub const GAP: f32 = 4.0;
-    /// Máximo de CPU de fábrica (% de un núcleo; tope de spec 010 AC-8) y
-    /// su rango.
-    pub const MAX_CPU: f32 = 10.0;
-    pub const MAX_CPU_MIN: f32 = 1.0;
-    pub const MAX_CPU_MAX: f32 = 400.0;
+    /// Máximo de CPU de fábrica (% de toda la PC, como el Administrador de
+    /// tareas) y su rango.
+    pub const MAX_CPU: f32 = 1.0;
+    pub const MAX_CPU_MIN: f32 = 0.1;
+    pub const MAX_CPU_MAX: f32 = 100.0;
     /// Máximo de RAM de fábrica (MB; tope de spec 004) y su rango.
     pub const MAX_RAM_MB: u32 = 100;
     pub const MAX_RAM_MB_MIN: u32 = 20;
