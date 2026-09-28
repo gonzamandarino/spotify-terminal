@@ -61,7 +61,7 @@ pub enum Command {
 const PLAYLIST_WORDS: [&str; 2] = ["list", "playlist"];
 
 /// Opción de `play` para arrancar mezclado (en cualquier posición).
-const SHUFFLE_FLAGS: [&str; 2] = ["-s", "--shuffle"];
+pub(crate) const SHUFFLE_FLAGS: [&str; 2] = ["-s", "--shuffle"];
 
 /// Interpreta los argumentos (sin el nombre del programa).
 ///

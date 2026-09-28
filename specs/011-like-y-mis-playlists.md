@@ -1,7 +1,9 @@
 # 011 - Likear el tema que suena y elegir entre mis playlists
 
 ## Estado
-En plan
+En verificación
+
+Falta la prueba manual con la cuenta (T10: AC-1, AC-5, AC-9).
 
 ## Contexto
 Dos funciones objetivo de `CLAUDE.md` que todavía no existen:
@@ -75,33 +77,33 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
 - [ ] **AC-1** — Con un tema sonando (o en pausa), `like` lo agrega a Tus
       me gusta (se ve en la app oficial) y la consola muestra
       `♥ <tema> — agregado a Tus me gusta`.
-- [ ] **AC-2** — `like` sobre un tema que ya estaba likeado no falla: avisa
+- [x] **AC-2** — `like` sobre un tema que ya estaba likeado no falla: avisa
       que ya estaba y no hace un pedido de guardado.
-- [ ] **AC-3** — `unlike` quita el tema actual de Tus me gusta y lo
+- [x] **AC-3** — `unlike` quita el tema actual de Tus me gusta y lo
       confirma; sobre uno que no estaba, avisa y no hace nada.
-- [ ] **AC-4** — Sin nada sonando, `like` / `unlike` avisan
+- [x] **AC-4** — Sin nada sonando, `like` / `unlike` avisan
       `Nada sonando` y no hacen pedidos. Con un episodio, avisan que solo se
       likean temas.
 - [ ] **AC-5** — La barra "sonando" muestra ♥ lleno si el tema actual está
       en Tus me gusta y apagado si no; cambia al instante tras `like` /
       `unlike` y se recalcula en cada cambio de tema con un solo pedido.
-- [ ] **AC-6** — `playlists` (y `pl`) lista mis playlists numeradas desde 1,
+- [x] **AC-6** — `playlists` (y `pl`) lista mis playlists numeradas desde 1,
       con nombre, dueño y cantidad de temas cuando la API la informa.
       Mientras carga se ve `Buscando tus playlists…`.
-- [ ] **AC-7** — Escribir un número válido reproduce esa playlist igual que
+- [x] **AC-7** — Escribir un número válido reproduce esa playlist igual que
       `play <link de la playlist>` (misma barra, cola, siguiente/anterior);
       Enter solo elige la 1; un número fuera de rango avisa y sigue
       esperando; otro comando o `Esc` cancela. `playlists -s` arranca
       mezclado.
-- [ ] **AC-8** — Con más de 50 playlists se ven todas (hasta
+- [x] **AC-8** — Con más de 50 playlists se ven todas (hasta
       `MY_PLAYLISTS_MAX`); si hay más que el tope, se avisa cuántas no se
       muestran. Sin playlists, se avisa y no queda esperando un número.
 - [ ] **AC-9** — La primera vez tras actualizar, el token viejo (sin los
       scopes nuevos) lleva a login una sola vez; después `like` y
       `playlists` andan sin volver a pedirlo.
-- [ ] **AC-10** — Errores de red, 401/403 o 429 se muestran en la consola
+- [x] **AC-10** — Errores de red, 401/403 o 429 se muestran en la consola
       con el mensaje de siempre (`status_error`) y no cortan lo que suena.
-- [ ] **AC-11** — `help` y Tab (completar) incluyen `like`, `unlike` y
+- [x] **AC-11** — `help` y Tab (completar) incluyen `like`, `unlike` y
       `playlists`.
 
 ## Riesgos / casos de falla
@@ -133,9 +135,9 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
     pagina `GET /me/playlists` hasta que no haya `next` o se llegue a
     `max`. La conversión playlist → `Hit` se comparte con `search`.
   - `web::WebClient::is_saved(uri) -> bool` (`GET /me/library/contains`)
-    y `set_saved(uri, bool)` (`PUT` / `DELETE /me/library?uris=`). Un
-    helper `send_empty` para pedidos sin cuerpo de respuesta, con el mismo
-    manejo de errores que `get_json` (`status_error`).
+    y `set_saved(uri, bool)` (`PUT` / `DELETE /me/library?uris=`). `get_json`
+    pasa a usar un `send` común (cualquier método, mismo manejo de errores
+    con `status_error`).
   - `Backend`: `my_playlists`, `is_saved`, `set_saved` (y en el
     `FakeBackend` de los tests).
   - `queue::TrackInfo.uri` (el `track_id` del `TrackChanged`).
@@ -172,18 +174,18 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
 
 ## Tareas
 
-- [ ] T1 — `config`: scopes y constantes nuevas.
-- [ ] T2 — `web`: `my_playlists`, `is_saved`, `set_saved`, `send_empty` +
+- [x] T1 — `config`: scopes y constantes nuevas.
+- [x] T2 — `web`: `my_playlists`, `is_saved`, `set_saved`, `send` +
       tests de parseo.
-- [ ] T3 — `backend`: métodos nuevos en `Backend`, `SpotifyBackend` y el
+- [x] T3 — `backend`: métodos nuevos en `Backend`, `SpotifyBackend` y el
       fake.
-- [ ] T4 — `queue`: `TrackInfo.uri`.
-- [ ] T5 — `shell`: comandos, `HELP`, `NAMES` + tests.
-- [ ] T6 — `engine`: like/unlike con `check_task`/`save_task` y ♥ en
+- [x] T4 — `queue`: `TrackInfo.uri`.
+- [x] T5 — `shell`: comandos, `HELP`, `NAMES` + tests.
+- [x] T6 — `engine`: like/unlike con `check_task`/`save_task` y ♥ en
       `NowPlaying` + tests.
-- [ ] T7 — `engine`: `playlists` + tests.
-- [ ] T8 — `desktop`: ♥ en la barra "sonando".
-- [ ] T9 — Docs, contratos, changelog 0.3.0, versión; fmt/clippy/test.
+- [x] T7 — `engine`: `playlists` + tests.
+- [x] T8 — `desktop`: ♥ en la barra "sonando".
+- [x] T9 — Docs, contratos, changelog 0.3.0, versión; fmt/clippy/test.
 - [ ] T10 — Prueba manual con la cuenta (AC-1, AC-5, AC-9).
 
 ## Definition of Done
@@ -202,3 +204,8 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
 - [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
+
+- Tests automáticos (motor con backend falso, parseo de `web` y `shell`):
+  AC-2, AC-3, AC-4, AC-6, AC-7, AC-8, AC-10 (errores de red; 401/403/429
+  pasan por `status_error`, ya testeado), AC-11.
+- Pendiente, prueba manual con la cuenta: AC-1, AC-5, AC-9.

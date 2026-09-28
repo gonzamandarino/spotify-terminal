@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0] - 2026-09-28
+
+### Agregado (spec 011 — like y mis playlists)
+- `like` agrega el tema que suena a Tus me gusta y `unlike` lo quita. La
+  barra de abajo muestra un ♥ encendido si el tema ya está likeado.
+- `playlists` (o `pl`) lista tus playlists (las tuyas y las que seguís) y
+  reproduce la que elijas por número; `playlists -s` arranca mezclado.
+
+### Cambiado
+- La app pide permisos nuevos de Spotify (biblioteca y playlists): la
+  primera vez después de actualizar hay que autorizar de nuevo en el
+  navegador.
+
 ## [0.2.0] - 2026-09-27
 
 ### Agregado (spec 010 — visualización)

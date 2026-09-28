@@ -15,7 +15,7 @@ use crate::{
         cover::{self, Cover},
         player::{Player, Resolved},
         tap::AudioTap,
-        web::{Hit, SearchKind, User, WebClient},
+        web::{Hit, MyPlaylists, SearchKind, User, WebClient},
     },
 };
 
@@ -101,6 +101,17 @@ pub(crate) trait Backend {
 
     async fn search(&self, kind: SearchKind, query: &str) -> Result<Vec<Hit>, AppError>;
 
+    /// Mis playlists, hasta `config::MY_PLAYLISTS_MAX` (ver
+    /// [`WebClient::my_playlists`], spec 011).
+    async fn my_playlists(&self) -> Result<MyPlaylists, AppError>;
+
+    /// Si `uri` está en Tus me gusta (ver [`WebClient::is_saved`]).
+    async fn is_saved(&self, uri: &SpotifyUri) -> Result<bool, AppError>;
+
+    /// Agrega (`save`) o quita `uri` de Tus me gusta (ver
+    /// [`WebClient::set_saved`]).
+    async fn set_saved(&self, uri: &SpotifyUri, save: bool) -> Result<(), AppError>;
+
     /// Abre un reproductor nuevo con `volume`. Antes chequea que la cuenta
     /// sea Premium (sin Premium → `NotPremium`, sin abrir la sesión de
     /// audio).
@@ -171,6 +182,21 @@ impl Backend for SpotifyBackend {
 
     async fn search(&self, kind: SearchKind, query: &str) -> Result<Vec<Hit>, AppError> {
         Self::web().await?.search(kind, query).await
+    }
+
+    async fn my_playlists(&self) -> Result<MyPlaylists, AppError> {
+        Self::web()
+            .await?
+            .my_playlists(config::MY_PLAYLISTS_MAX)
+            .await
+    }
+
+    async fn is_saved(&self, uri: &SpotifyUri) -> Result<bool, AppError> {
+        Self::web().await?.is_saved(uri).await
+    }
+
+    async fn set_saved(&self, uri: &SpotifyUri, save: bool) -> Result<(), AppError> {
+        Self::web().await?.set_saved(uri, save).await
     }
 
     async fn connect(&self, volume: Volume, bitrate: Bitrate) -> Result<Player, AppError> {
