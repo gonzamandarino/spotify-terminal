@@ -40,6 +40,10 @@ y el estado ♥ que agrega ese spec. Se implementa después de 011.
   la consola.
 - **¿Tooltip?** → Asumido: al pasar el mouse, el nombre de la acción y su
   atajo de ventana si tiene (según los ajustes del spec 007).
+- **¿Color del ícono de estado en pausa?** → Respondido por vos (en la
+  prueba manual): el ícono al lado del nombre del tema (▶ / ⏸) usa el
+  mismo color sonando y en pausa (el de acento); antes, en pausa era el de
+  advertencia.
 - **¿Tamaño?** → Asumido: escalan con el tamaño de letra (spec 009), como
   el resto de la barra; área clickeable mínima de config.
 
@@ -77,6 +81,8 @@ apagado).
 - [ ] **AC-10** — Con música sonando y el mouse quieto, el consumo de CPU
       no sube respecto de 0.3.0 (los botones no agregan redibujos
       continuos).
+- [x] **AC-11** — El ícono de estado al lado del nombre del tema (▶ sonando,
+      ⏸ en pausa) tiene el mismo color en los dos estados.
 
 ## Plan técnico
 
@@ -151,5 +157,6 @@ apagado).
   Spotify confirma, así que si falla nunca cambió (test de spec 011).
 - Captura de la app en release sin nada sonando: ⏮ ▶ ⏭, ♥ y 🔀 atenuados
   y alineados.
+- AC-11: test `el_icono_de_estado_no_cambia_de_color_en_pausa`.
 - Pendiente, prueba manual con algo sonando: AC-1, AC-8 (resaltado y
   tooltip), AC-10 (CPU con el mouse quieto contra 0.3.0).

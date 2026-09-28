@@ -10,6 +10,9 @@
 - Si la ventana es angosta, primero se ocultan la posición, la cola y el
   volumen de la barra, y el título se corta: los botones siempre se ven.
 
+### Cambiado
+- El ícono al lado del tema (▶ / ⏸) ya no cambia de color al pausar.
+
 ## [0.3.0] - 2026-09-28
 
 ### Agregado (spec 011 — like y mis playlists)

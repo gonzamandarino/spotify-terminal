@@ -846,11 +846,7 @@ impl DesktopApp {
 
         let mut left = rect.left();
         if let Some(now) = &now {
-            let (state_icon, state_color) = match now.state {
-                PlayState::Loading => ("…", color(p.secondary)),
-                PlayState::Playing => ("▶", color(p.accent)),
-                PlayState::Paused => ("⏸", color(p.warning)),
-            };
+            let (state_icon, state_color) = state_icon(&p, now.state);
             let icon = painter.text(
                 Pos2::new(rect.left(), top),
                 Align2::LEFT_CENTER,
@@ -1389,6 +1385,16 @@ fn title_button(ui: &mut Ui, p: &Palette, rect: Rect, id: &str, icon: TitleIcon)
     response
 }
 
+/// Ícono de estado al lado del tema. Sonando y en pausa, del mismo color
+/// (el de acento, spec 012); cargando, apagado.
+fn state_icon(p: &Palette, state: PlayState) -> (&'static str, Color32) {
+    match state {
+        PlayState::Loading => ("…", color(p.secondary)),
+        PlayState::Playing => ("▶", color(p.accent)),
+        PlayState::Paused => ("⏸", color(p.accent)),
+    }
+}
+
 /// Un botón de la barra "sonando" (spec 012).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PlayerButton {
@@ -1795,6 +1801,16 @@ mod tests {
                 assert!(!a.intersects(*b), "{a:?} {b:?}");
             }
         }
+    }
+
+    #[test]
+    fn el_icono_de_estado_no_cambia_de_color_en_pausa() {
+        let p = Settings::default().appearance.palette;
+        assert_eq!(
+            state_icon(&p, PlayState::Playing).1,
+            state_icon(&p, PlayState::Paused).1
+        );
+        assert_eq!(state_icon(&p, PlayState::Paused).0, "⏸");
     }
 
     #[test]
