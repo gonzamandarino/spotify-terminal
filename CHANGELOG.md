@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0] - 2026-09-28
+
+### Agregado (spec 014 — panel de consumo)
+- Personalización → Consumo muestra un panel arriba de la visualización
+  con el CPU (% de un núcleo) y la RAM de la app, actualizados cada
+  segundo. Se elige qué valores ver (ambos, solo CPU o solo RAM) y qué
+  gráficos de los últimos 60 s (ninguno, CPU, RAM o uno para cada uno).
+- Un máximo de CPU y uno de RAM: al pasarlos, el valor y el tramo del
+  gráfico se pintan en el color de error; el máximo se ve como una línea
+  punteada. De fábrica, 10 % y 100 MB.
+- Con el panel y una visualización a la vez, la visualización se achica
+  para dejarle lugar; si no queda alto suficiente, no se dibuja. El panel
+  también se puede ver solo, sin visualización.
+
 ## [0.5.0] - 2026-09-28
 
 ### Agregado (spec 013 — reproducir mis me gusta)

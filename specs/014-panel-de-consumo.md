@@ -1,7 +1,7 @@
 # 014 - Panel de consumo
 
 ## Estado
-En plan
+En verificación
 
 ## Contexto
 Bajo consumo es un requisito del proyecto (CLAUDE.md), pero hoy la única
@@ -100,7 +100,7 @@ recurso que marca cuándo la app se pasa.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — Personalización tiene el submenú **Consumo**, después
+- [x] **AC-1** — Personalización tiene el submenú **Consumo**, después
       de Visualización, con: casilla Mostrar consumo; Valores (Ambos /
       Solo CPU / Solo RAM); Gráfico (Ninguno / CPU / RAM / Uno para cada
       uno); sliders Máximo de CPU y Máximo de RAM dentro del rango de
@@ -108,31 +108,31 @@ recurso que marca cuándo la app se pasa.
       mismo frame y persiste al reabrir. Restaurar consumo y Restaurar
       todo vuelven a los valores de fábrica (apagado, Ambos, Ninguno,
       10 %, 100 MB).
-- [ ] **AC-2** — Con consumo prendido y una visualización, la columna
+- [x] **AC-2** — Con consumo prendido y una visualización, la columna
       derecha tiene el panel de consumo arriba y la visualización abajo,
       con el alto que sobra; los dos comparten el ancho y el borde
       arrastrable del spec 010. El alto del panel es un renglón por valor
       elegido más `GRAPH_HEIGHT` por gráfico elegido.
-- [ ] **AC-3** — Con consumo prendido y visualización en Ninguna, la
+- [x] **AC-3** — Con consumo prendido y visualización en Ninguna, la
       columna derecha existe solo con el panel de consumo arriba, del
       ancho guardado. Con los dos apagados no hay columna (como hoy).
-- [ ] **AC-4** — Si abajo del panel de consumo quedan menos de
+- [x] **AC-4** — Si abajo del panel de consumo quedan menos de
       `MIN_VIZ_HEIGHT` puntos, la visualización no se dibuja ni pide
       cuadros; al agrandar la ventana vuelve. Con la ventana angosta,
       la columna entera sigue las reglas de ancho del spec 010 AC-2.
-- [ ] **AC-5** — Los valores son `CPU X,Y %` (de un núcleo, promedio del
+- [x] **AC-5** — Los valores son `CPU X,Y %` (de un núcleo, promedio del
       último período) y `RAM N MB` (working set), según Valores,
       actualizados cada `usage::PERIOD` (1 s). Antes de la segunda
       medición, `CPU —`. El % a partir de dos mediciones es correcto
       (test con tiempos sintéticos, incluido 0, más de 100 % e intervalo
       cero).
-- [ ] **AC-6** — Gráficos: uno de línea por recurso elegido en Gráfico,
+- [x] **AC-6** — Gráficos: uno de línea por recurso elegido en Gráfico,
       con un punto por medición y como mucho `usage::HISTORY` (60 s) de
       historia; el punto más nuevo a la derecha. La escala va de 0 al
       mayor entre el umbral y el máximo visible, +10 %. La historia se
       borra al apagar el panel o minimizar la ventana (tests de la
       historia y la escala).
-- [ ] **AC-7** — Umbral: un valor mayor a su máximo se pinta en el color
+- [x] **AC-7** — Umbral: un valor mayor a su máximo se pinta en el color
       de error del tema, en el texto y en el tramo del gráfico que lo
       pasa; el gráfico dibuja el máximo como línea horizontal. Igual o
       menor, colores normales (test del corte; captura con un máximo bajo).
@@ -145,10 +145,10 @@ recurso que marca cuándo la app se pasa.
       la app queda ≤ 1 % de un núcleo y la RAM no crece más de 1 MB
       respecto de apagado. Minimizada no se mide ni redibuja. Apagado,
       reposo en ~0 % como spec 007 AC-14.
-- [ ] **AC-10** — `ajustes.json` con una clave de `consumo` inválida
+- [x] **AC-10** — `ajustes.json` con una clave de `consumo` inválida
       (tipo equivocado, opción desconocida o máximo fuera de rango) abre
       con el valor de fábrica de esa clave y avisa cuál.
-- [ ] **AC-11** — La CLI (`spotify-terminal.exe`) no cambia.
+- [x] **AC-11** — La CLI (`spotify-terminal.exe`) no cambia.
 
 ## Plan técnico
 
@@ -205,39 +205,116 @@ Sin dependencias nuevas: se suma la feature
 ### Versión
 `0.6.0` (minor: spec nuevo).
 
+### Cambios respecto del plan (al implementar)
+
+- La ventana minimizada no llama a `ui()` (mide 0×0), así que no se
+  detecta el minimizado: `Usage::record` borra la historia si la
+  medición llega más de `config::usage::GAP_RESET` (3 s) después de la
+  anterior. Mismo efecto que AC-6 pide.
+- `Usage::tick` mide si pasó `PERIOD` menos `EARLY` (50 ms, config): el
+  redibujo pedido a 1 s puede llegar unos ms antes y sin esto habría un
+  segundo redibujo solo para esperar lo que falta.
+- `Usage::clear` / `reset` vacían en el lugar (sin reservar memoria): con
+  el panel oculto se llaman en cada cuadro.
+- El corte de alto quedó en `viz::below(area, used)` (puro, testeado) en
+  vez de una `viz_height` en `app`. `usage::over` es el corte del máximo.
+- La línea que separa consumo y visualización solo se dibuja si abajo hay
+  visualización; el rótulo del gráfico lleva fondo propio para no pisarse
+  con la línea punteada del máximo (visto en las capturas).
+
 ## Tareas
 
-- [ ] **T1** — `usage`: medición en Windows, `cpu_percent`, `Usage` con
+- [x] **T1** — `usage`: medición en Windows, `cpu_percent`, `Usage` con
       historia, `scale`. Tests (AC-5, AC-6).
-- [ ] **T2** — `UsageSettings`, sección `consumo` en `ajustes.json`,
+- [x] **T2** — `UsageSettings`, sección `consumo` en `ajustes.json`,
       validación y restaurar. Tests (AC-1, AC-10).
-- [ ] **T3** — Submenú Consumo (AC-1).
-- [ ] **T4** — Dibujo del panel: valores, gráficos, umbral en color de
+- [x] **T3** — Submenú Consumo (AC-1).
+- [x] **T4** — Dibujo del panel: valores, gráficos, umbral en color de
       error. Tests del corte y la altura (AC-5–AC-7).
-- [ ] **T5** — Columna derecha con consumo arriba y visualización
+- [x] **T5** — Columna derecha con consumo arriba y visualización
       achicada; `panel_width` y corte por `MIN_VIZ_HEIGHT`. Tests (AC-2–
       AC-4).
-- [ ] **T6** — Repintado cada período solo con el panel visible y sin
+- [x] **T6** — Repintado cada período solo con el panel visible y sin
       minimizar; historia borrada al apagar/minimizar (AC-6, AC-9).
 - [ ] **T7** — Verificación: capturas, comparación por PID y consumo en
       reposo en release (AC-8, AC-9, AC-11).
-- [ ] **T8** — Contratos, arquitectura, decisiones, glosario, README,
+- [x] **T8** — Contratos, arquitectura, decisiones, glosario, README,
       changelog y versión `0.6.0`.
 
 ## Definition of Done
 
 - [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y doc de arquitectura actualizados si
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y doc de arquitectura actualizados si
       el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas
-- [ ] Changelog actualizado: sección `## [0.6.0] - fecha` de la versión del
+- [x] Decisiones de diseño relevantes documentadas
+- [x] Changelog actualizado: sección `## [0.6.0] - fecha` de la versión del
       spec
-- [ ] Versión subida en `Cargo.toml` y `Cargo.lock` (si cambia lo que se
+- [x] Versión subida en `Cargo.toml` y `Cargo.lock` (si cambia lo que se
       distribuye); el Release lo publica CI al mergear
-- [ ] Sin constantes/umbrales hardcodeados fuera de su lugar de config
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Sin constantes/umbrales hardcodeados fuera de su lugar de config
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
+
+2026-09-28. 244 tests (`cargo test`), `cargo fmt --check` y `cargo clippy
+--all-targets -- -D warnings` limpios. Capturas y mediciones con
+`spotify-desktop.exe` en release, 920×580, sin música, con un
+`ajustes.json` de prueba (el del usuario se guardó antes y se restauró
+después). Las capturas se sacaron con `PrintWindow`; el menú se manejó
+mandando teclas a la ventana.
+
+- **AC-1:** captura de Personalización → Consumo abierto con `Alt+P`,
+  ↓×6, →: casilla, Valores, Gráfico, los dos sliders (10 % y 100 MB de
+  fábrica) y Restaurar consumo. Con la casilla marcada con `Espacio`, el
+  panel apareció enseguida y `ajustes.json` quedó con
+  `"consumo": {"visible": true}`. Restaurar:
+  `settings::tests::consumo_valido_o_de_fabrica`; "Restaurar todo" vuelve
+  a `Settings::default()`. Orden: `menu::tests::personalizacion_junta_los_menus_de_antes`.
+- **AC-2:** captura con Barras + consumo (dos valores, dos gráficos): el
+  panel arriba y las barras debajo, más bajas, del mismo ancho.
+- **AC-3:** captura con Ninguna + consumo (Solo CPU, gráfico de RAM): la
+  columna aparece solo con el panel. Los dos apagados:
+  `viz::tests::el_panel_solo_con_modo_y_lugar` (`None`);
+  `la_columna_tambien_con_consumo_solo`.
+- **AC-4:** captura en 920×400 con Barras + dos gráficos: el panel se ve y
+  las barras no se dibujan (quedaban menos de `MIN_VIZ_HEIGHT`).
+  `viz::tests::la_visualizacion_se_achica_bajo_el_consumo`; ancho, mismas
+  reglas: `la_columna_tambien_con_consumo_solo`.
+- **AC-5:** `usage::tests::cpu_en_porcentaje_de_un_nucleo` (0, 50, 250 %,
+  intervalo cero), `cpu_desde_la_segunda_medicion`,
+  `mide_una_vez_por_periodo`, `mide_el_proceso_en_windows`. Formato
+  `CPU 1,6 %` / `RAM 28 MB` en las capturas.
+- **AC-6:** `la_historia_guarda_las_ultimas`, `un_hueco_largo_borra_la_historia`,
+  `escala_con_el_maximo_siempre_visible`; en las capturas el gráfico crece
+  desde la derecha.
+- **AC-7:** con `max_ram` 20 MB, `RAM 28 MB` y su línea en rojo (captura);
+  en la captura del menú, el pico de CPU al abrirlo pasó el 10 % y ese
+  tramo se ve rojo. `pasar_el_maximo_es_mayor_estricto`.
+- **AC-8 (parcial):** en reposo, último segundo antes de la captura: el
+  panel mostró `CPU 0,0 %` / `RAM 29 MB`; medido por PID afuera, 0,00 % /
+  28,6 MB. Dentro del margen. **Falta** reproduciendo con Barras (hace
+  falta música; no se pudo mandar `play` sin que la ventana tuviera foco
+  estable).
+- **AC-9 (no cumple la RAM):** reposo, visualización Ninguna, por PID,
+  tres corridas de 20–30 s cada una:
+
+  | Panel | CPU (% de un núcleo) | RAM (MB) |
+  |---|---|---|
+  | Apagado | 0,00 / 0,00 / 0,00 | 27,3 / 27,3 / 27,2 |
+  | Prendido, dos valores y dos gráficos | 0,15 / 0,15 / 0,00 | 28,5–28,7 / 28,5 / 28,4–28,6 |
+  | Prendido, solo texto | — / 0,08 / 0,31 | — / 27,8–28,0 / 28,0 |
+
+  CPU dentro del tope (≤ 1 %). La RAM sube **+1,2–1,3 MB** con los dos
+  gráficos (+0,7 MB solo con texto), estable (no crece con el tiempo),
+  por encima del tope de 1 MB que se asumió en este spec. Lo que el panel
+  guarda son 2×60 `f32`; la diferencia es de redibujar una vez por
+  segundo (buffers de egui y de la superficie que Windows mantiene en el
+  working set). Pendiente decisión tuya: aceptar el tope en ~2 MB o
+  buscar reducirlo.
+- **AC-10:** `settings::tests::consumo_valido_o_de_fabrica` (tipo
+  equivocado, opción desconocida, máximos fuera de rango y RAM no entera:
+  valor de fábrica + aviso con la clave).
+- **AC-11:** el diff no toca `src/main.rs`, `src/ui/` ni `src/app/`.

@@ -514,3 +514,28 @@ entradas viejas — se marcan reemplazadas.
   suene (≈ un pedido por cada 50). Más de 2000 no entran (se avisa). La
   lista es una foto: `like`/`unlike` mientras suena no la cambian.
 - **Estado:** Vigente (spec 013)
+
+## 2026-09-28 — Panel de consumo: medir solo mientras se ve, en % de un núcleo
+- **Decisión:** el panel de consumo mide el propio proceso con
+  `GetProcessTimes` (CPU de kernel + usuario) y `K32GetProcessMemoryInfo`
+  (working set), una vez por `config::usage::PERIOD` (1 s), desde el
+  hilo de la ventana y solo mientras el panel se dibuja. El CPU se
+  muestra en % de **un núcleo** y la RAM en MB de working set. El máximo
+  de cada recurso es una **alerta** (color de error en el texto y en el
+  gráfico), no un tope que la app aplique. Los gráficos se dibujan con el
+  `Painter` de egui (segmentos), con los últimos `HISTORY` valores; la
+  historia se borra si pasa más de `GAP_RESET` sin medir (ventana
+  minimizada) o al apagar el panel.
+- **Motivo:** son las mismas unidades con que se midieron los topes de
+  los specs 004 y 010, así el número del panel se compara directo. Medir
+  cuesta dos llamadas al sistema; lo caro es redibujar la ventana, por eso
+  se redibuja una vez por segundo y nada con el panel apagado. La RAM no
+  se puede forzar desde la app y bajar consumo solo (apagar la
+  visualización, bajar fps) cambiaría la app sin que el usuario lo pida.
+- **Alternativa descartada:** un hilo que mida siempre (tendría historia
+  al abrir el panel, pero gastaría con el panel apagado); una librería de
+  gráficos (`egui_plot`): dependencia más para dos líneas.
+- **Consecuencias:** el panel prendido cuesta ~0,15 % de un núcleo y
+  ~1,3 MB de working set en reposo (redibujar una vez por segundo). La
+  medición es solo de Windows: en otra plataforma se ve `—`.
+- **Estado:** Vigente (spec 014)

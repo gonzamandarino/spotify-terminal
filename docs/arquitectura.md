@@ -74,6 +74,9 @@ bin/desktop ──> desktop::run
                   │               │      barras con viz::spectrum, vinilo;
                   │               │      lee spotify::tap::AudioTap y
                   │               │      recibe las tapas del motor)
+                  │               ├──> desktop::usage (panel de consumo
+                  │               │      arriba de viz: mide CPU y RAM
+                  │               │      del propio proceso, spec 014)
                   │               ├──> desktop::settings::save (diferido)
                   │               └──> desktop::hotkeys::replace (al
                   │                      cambiar un atajo global)
@@ -137,6 +140,13 @@ motor por un canal `watch` y se ve en el aviso de tarea en curso
   tomado, se saltea la copia, nunca el audio); la ventana lo lee al
   dibujar el panel, a lo sumo `config::viz::FPS` veces por segundo y solo
   mientras suena.
+- **Panel de consumo (spec 014):** sin hilo propio. La ventana mide el
+  proceso (`usage::sample`: `GetProcessTimes` + `K32GetProcessMemoryInfo`)
+  al dibujar la columna derecha, una vez por `config::usage::PERIOD`, y
+  pide redibujar para la próxima. Apagado o minimizada no mide. La
+  columna derecha (`viz::panel_width`) existe si hay visualización o
+  consumo; el consumo va arriba y la visualización ocupa el resto
+  (`viz::below`).
 - **atajos** (`desktop::hotkeys`, solo Windows): registra los atajos
   globales y duerme en `GetMessageW` hasta que se aprieta uno; entonces
   manda un `Input::Global` al motor por el mismo canal que la ventana. Se
@@ -242,7 +252,8 @@ corregir la tabla.
 | `tap::AudioTap` (`push`, `snapshot`, `set_enabled`), `tap::TapSink` | `src/spotify/tap.rs` | doc-comment |
 | `output::DeviceSink` (crate; `Sink`: `start`, `stop`, `write`) | `src/spotify/output.rs` | doc-comment |
 | `cover::fetch`, `cover::Cover` | `src/spotify/cover.rs` | doc-comment |
-| `viz::Visualizer` (`show`, `set_mode`, `set_cover`, `panel_width`), `viz::Track`, `spectrum::Spectrum::bands`, `spectrum::normalize` | `src/desktop/viz/` | doc-comment |
+| `viz::Visualizer` (`show`, `set_mode`, `set_cover`, `panel_width`), `viz::below`, `viz::Track`, `spectrum::Spectrum::bands`, `spectrum::normalize` | `src/desktop/viz/` | doc-comment |
+| `usage::sample`, `usage::cpu_percent`, `usage::scale`, `usage::over`, `usage::height`, `usage::Usage` (`tick`, `record`, `clear`, `reset`, `show`) | `src/desktop/usage.rs` | doc-comment |
 | `playback::play_queue` (teclas, cola, shuffle), `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
 | `queue::Queue`, `queue::Step`, `queue::Clock`, `queue::on_player_event` (crate) | `src/app/queue.rs` | doc-comment |
 | `volume::Volume` (`load`, `save`, `output`) | `src/app/volume.rs` | doc-comment |
