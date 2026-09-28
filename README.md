@@ -82,6 +82,7 @@ se escribe.
 | `queue <tema>`, `a <tema>` | busca un tema y lo encola |
 | `like` / `unlike` | agrega / quita el tema que suena de Tus me gusta (♥ en la barra de abajo) |
 | `playlists`, `pl` | lista tus playlists (propias y seguidas) y reproduce la que elijas; `-s` mezclado |
+| `likes` | reproduce Tus me gusta, del último like al más viejo; `-s` mezclado |
 | `stop` | corta y vacía la cola |
 | `vol`, `v` | muestra el volumen de la app |
 | `vol <0-100>`, `vol +`, `vol -` | fija / sube / baja el volumen (Ctrl+↑ / Ctrl+↓) |

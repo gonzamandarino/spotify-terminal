@@ -3,7 +3,7 @@
 
 use librespot_core::SpotifyUri;
 use librespot_playback::{config::Bitrate, player::PlayerEventChannel};
-use tokio::runtime::Handle;
+use tokio::{runtime::Handle, sync::watch};
 
 use super::volume::Volume;
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
         cover::{self, Cover},
         player::{Player, Resolved},
         tap::AudioTap,
-        web::{Hit, MyPlaylists, SearchKind, User, WebClient},
+        web::{Hit, LikedTracks, MyPlaylists, SearchKind, User, WebClient},
     },
 };
 
@@ -105,6 +105,14 @@ pub(crate) trait Backend {
     /// [`WebClient::my_playlists`], spec 011).
     async fn my_playlists(&self) -> Result<MyPlaylists, AppError>;
 
+    /// Temas de Tus me gusta, hasta `config::LIKES_MAX` (ver
+    /// [`WebClient::liked_tracks`], spec 013). Tras cada página manda
+    /// `(recibidos, total)` por `progress`; si nadie escucha, sigue igual.
+    async fn liked_tracks(
+        &self,
+        progress: watch::Sender<(usize, usize)>,
+    ) -> Result<LikedTracks, AppError>;
+
     /// Si `uri` está en Tus me gusta (ver [`WebClient::is_saved`]).
     async fn is_saved(&self, uri: &SpotifyUri) -> Result<bool, AppError>;
 
@@ -188,6 +196,19 @@ impl Backend for SpotifyBackend {
         Self::web()
             .await?
             .my_playlists(config::MY_PLAYLISTS_MAX)
+            .await
+    }
+
+    async fn liked_tracks(
+        &self,
+        progress: watch::Sender<(usize, usize)>,
+    ) -> Result<LikedTracks, AppError> {
+        Self::web()
+            .await?
+            .liked_tracks(config::LIKES_MAX, |loaded, total| {
+                // Sin receptor (tarea cancelada) no hay a quién avisar.
+                let _ = progress.send((loaded, total));
+            })
             .await
     }
 

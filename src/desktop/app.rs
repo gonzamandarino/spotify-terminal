@@ -756,7 +756,7 @@ impl DesktopApp {
         let busy_font = mono(self.text_size(FONT_SIZE - 3.0));
         ui.horizontal_centered(|ui| {
             ui.label(RichText::new(prompt).font(strong).color(prompt_color));
-            let busy = match self.prompt {
+            let busy = match &self.prompt {
                 Prompt::Busy(what) => Some(format!("⋯ {what}  (Esc cancela)")),
                 _ => None,
             };

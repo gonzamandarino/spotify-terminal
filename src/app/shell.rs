@@ -11,6 +11,7 @@ Comandos:
   play <link>            tema, álbum o playlist por link, URI o ID
   play -s <…>            igual, pero arranca mezclado
   playlists, pl          tus playlists; elegís una por número (-s mezclado)
+  likes                  reproduce Tus me gusta (-s mezclado)
   pause                  pausa / reanudar
   next, n                siguiente tema
   prev, p                anterior o reinicia el tema
@@ -32,7 +33,7 @@ Comandos:
 ↑ ↓ historial · Tab completa · Esc cancela una búsqueda o elección";
 
 /// Nombres de comando, para completar con Tab.
-const NAMES: [&str; 20] = [
+const NAMES: [&str; 21] = [
     "play",
     "playlists",
     "pause",
@@ -42,6 +43,7 @@ const NAMES: [&str; 20] = [
     "queue",
     "like",
     "unlike",
+    "likes",
     "stop",
     "vol",
     "mute",
@@ -76,6 +78,10 @@ pub(crate) enum ShellCommand {
     Playlists {
         shuffle: bool,
     },
+    /// Reproducir Tus me gusta (spec 013); `shuffle` = arrancar mezclado.
+    Likes {
+        shuffle: bool,
+    },
     Stop,
     Volume(VolumeCommand),
     Mute,
@@ -103,8 +109,8 @@ pub(crate) enum VolumeCommand {
 ///   separan por espacios; entre comillas (`"…"` o `'…'`) un texto cuenta
 ///   como una sola palabra, igual que en PowerShell (`play "list of
 ///   demands"` busca ese tema). `help` → `Help`; `vol` acepta nada, `+`,
-///   `-` o un entero de 0 a 100; `playlists` / `pl`, solo `-s` o
-///   `--shuffle`; los comandos de la CLI se validan con
+///   `-` o un entero de 0 a 100; `playlists` / `pl` y `likes`,
+///   solo `-s` o `--shuffle`; los comandos de la CLI se validan con
 ///   `cli::parse_command`.
 /// - Errores: el motivo, sin la ayuda (comando desconocido, argumentos de
 ///   más o de menos, comillas sin cerrar, link mal formado).
@@ -135,6 +141,13 @@ pub(crate) fn parse_line(line: &str) -> Result<ShellCommand, String> {
                 Ok(ShellCommand::Playlists { shuffle: true })
             }
             _ => Err(format!("{} solo acepta -s", words[0])),
+        },
+        "likes" => match &words[1..] {
+            [] => Ok(ShellCommand::Likes { shuffle: false }),
+            [flag] if cli::SHUFFLE_FLAGS.contains(&flag.as_str()) => {
+                Ok(ShellCommand::Likes { shuffle: true })
+            }
+            _ => Err("likes solo acepta -s".into()),
         },
         "mute" | "m" => no_args(ShellCommand::Mute),
         "vol" | "v" => parse_volume(&words[1..]).map(ShellCommand::Volume),
@@ -240,6 +253,9 @@ mod tests {
                 "playlists --shuffle",
                 ShellCommand::Playlists { shuffle: true },
             ),
+            ("likes", ShellCommand::Likes { shuffle: false }),
+            ("Likes -s", ShellCommand::Likes { shuffle: true }),
+            ("likes --shuffle", ShellCommand::Likes { shuffle: true }),
             ("clear", ShellCommand::Clear),
             ("exit", ShellCommand::Exit),
             ("help", ShellCommand::Help),
@@ -331,6 +347,8 @@ mod tests {
             "unlike ya",
             "playlists rock",
             "pl -s -s",
+            "likes rock",
+            "likes -s -s",
             "play \"abc",
             "play spotify:artist:x",
         ] {
@@ -343,7 +361,8 @@ mod tests {
     fn completar() {
         assert_eq!(complete("pl"), vec!["play", "playlists"]);
         assert_eq!(complete("P"), vec!["play", "playlists", "pause", "prev"]);
-        assert_eq!(complete("li"), vec!["like"]);
+        assert_eq!(complete("li"), vec!["like", "likes"]);
+        assert_eq!(complete("likes"), vec!["likes"]);
         assert_eq!(complete("un"), vec!["unlike"]);
         assert_eq!(complete("log"), vec!["login", "logout"]);
         assert!(complete("").is_empty());

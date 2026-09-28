@@ -111,6 +111,15 @@ pub const MY_PLAYLISTS_MAX: usize = 500;
 
 const _: () = assert!(MY_PLAYLISTS_PAGE >= 1 && MY_PLAYLISTS_PAGE <= 50 && MY_PLAYLISTS_MAX >= 1);
 
+/// Temas por pedido a `GET /me/tracks` (el máximo de la API).
+pub const LIKES_PAGE: usize = 50;
+
+/// Tope de temas que carga `likes` (spec 013): con 50 por pedido, 40
+/// pedidos seguidos. Si hay más, suenan los más recientes.
+pub const LIKES_MAX: usize = 2000;
+
+const _: () = assert!(LIKES_PAGE >= 1 && LIKES_PAGE <= 50 && LIKES_MAX >= 1);
+
 /// "Anterior" con más que esto de tema sonando lo reinicia en vez de volver
 /// al tema anterior (como la app oficial).
 pub const PREVIOUS_RESTART_THRESHOLD: Duration = Duration::from_secs(3);

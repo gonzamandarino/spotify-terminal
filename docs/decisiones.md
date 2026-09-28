@@ -495,3 +495,22 @@ entradas viejas — se marcan reemplazadas.
   una vez. Si se cambia el ♥ desde otra app mientras suena el tema, se ve
   recién en el próximo.
 - **Estado:** Vigente (spec 011)
+
+## 2026-09-28 — Tus me gusta: `GET /me/tracks` y carga completa antes de sonar
+- **Decisión:** `likes` arma la lista con `GET /me/tracks` (50 por pedido,
+  hasta `LIKES_MAX` = 2000) y recién cuando están todas las páginas la
+  pone a sonar, por el mismo camino que una playlist. El avance se ve en el
+  aviso de tarea en curso. Un error en cualquier página descarta todo.
+- **Motivo:** librespot no expone la colección como contexto
+  reproducible, y `GET /me/tracks` (listar) sigue disponible después de
+  feb 2026 (solo se eliminaron guardar, quitar y `contains`). Tener la
+  lista entera antes de arrancar deja funcionar el shuffle sin cambiar la
+  cola del spec 003, que no está pensada para crecer mientras suena.
+- **Alternativa descartada (por ahora):** arrancar con la primera página y
+  cargar el resto de fondo. Tarda menos en sonar, pero la cola tendría que
+  aceptar temas nuevos mientras suena y el shuffle mezclaría solo lo
+  cargado.
+- **Consecuencias:** con muchos me gusta hay una espera antes de que
+  suene (≈ un pedido por cada 50). Más de 2000 no entran (se avisa). La
+  lista es una foto: `like`/`unlike` mientras suena no la cambian.
+- **Estado:** Vigente (spec 013)

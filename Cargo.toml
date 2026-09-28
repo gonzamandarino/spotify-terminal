@@ -1,6 +1,6 @@
 [package]
 name = "spotify-terminal"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Cliente de Spotify liviano para la terminal"
