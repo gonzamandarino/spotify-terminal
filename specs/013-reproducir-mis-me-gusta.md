@@ -1,7 +1,7 @@
 # 013 - Reproducir mis me gusta
 
 ## Estado
-En verificación
+Verificado
 
 ## Contexto
 El spec 011 dejó afuera reproducir "Tus me gusta": no es una playlist en la
@@ -56,24 +56,24 @@ like funcionando igual que con una playlist. `likes -s` arranca mezclado.
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — `likes` reproduce Tus me gusta empezando por el último
+- [x] **AC-1** — `likes` reproduce Tus me gusta empezando por el último
       tema likeado, y sigue en el orden de la app oficial.
-- [ ] **AC-2** — Con más de 50 me gusta se reproducen todos (hasta
+- [x] **AC-2** — Con más de 50 me gusta se reproducen todos (hasta
       `LIKES_MAX`); con más que el tope, se avisa cuántos no entran.
-- [ ] **AC-3** — `likes -s` arranca con un tema al azar y el resto
+- [x] **AC-3** — `likes -s` arranca con un tema al azar y el resto
       mezclado; `s`, siguiente, anterior y encolar (`queue`) funcionan
       como con una playlist.
-- [ ] **AC-4** — Mientras carga se ve `Cargando tus me gusta…` con el
+- [x] **AC-4** — Mientras carga se ve `Cargando tus me gusta…` con el
       avance, y lo que sonaba antes no se corta hasta que arranca la lista.
-- [ ] **AC-5** — Sin me gusta, avisa `Tus me gusta no tiene temas para
+- [x] **AC-5** — Sin me gusta, avisa `Tus me gusta no tiene temas para
       reproducir.` y no
       corta lo que sonaba. Los temas locales se omiten y se cuentan.
-- [ ] **AC-6** — Errores de red, 401/403 o 429 a mitad de la carga se
+- [x] **AC-6** — Errores de red, 401/403 o 429 a mitad de la carga se
       muestran con `status_error`, no cortan lo que sonaba y no dejan una
       lista a medias sonando.
-- [ ] **AC-7** — Con el token que ya tiene los scopes del spec 011, `likes`
+- [x] **AC-7** — Con el token que ya tiene los scopes del spec 011, `likes`
       no pide login de nuevo.
-- [ ] **AC-8** — `help` y Tab (completar) incluyen `likes`; `likes` con un
+- [x] **AC-8** — `help` y Tab (completar) incluyen `likes`; `likes` con un
       argumento que no sea `-s` avisa el uso.
 
 ## Riesgos / casos de falla
@@ -135,22 +135,22 @@ like funcionando igual que con una playlist. `likes -s` arranca mezclado.
 - [x] T5 — `engine`: `Source`, `prepare` con `Liked`, mensaje de carga +
       tests.
 - [x] T6 — Docs, contratos, changelog 0.5.0, versión; fmt/clippy/test.
-- [ ] T7 — Prueba manual con la cuenta (AC-1, AC-4, AC-7).
+- [x] T7 — Prueba manual con la cuenta (AC-1, AC-4, AC-7).
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y `docs/arquitectura.md` actualizados
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y `docs/arquitectura.md` actualizados
       si el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas en `docs/decisiones.md`
-- [ ] Changelog actualizado: sección `## [0.5.0] - fecha`
-- [ ] Versión subida en `Cargo.toml` y `Cargo.lock`; el Release lo publica
+- [x] Decisiones de diseño relevantes documentadas en `docs/decisiones.md`
+- [x] Changelog actualizado: sección `## [0.5.0] - fecha`
+- [x] Versión subida en `Cargo.toml` y `Cargo.lock`; el Release lo publica
       CI al mergear
-- [ ] Sin constantes/umbrales hardcodeados fuera de `src/config.rs`
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Sin constantes/umbrales hardcodeados fuera de `src/config.rs`
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
 
@@ -159,5 +159,6 @@ like funcionando igual que con una playlist. `likes -s` arranca mezclado.
   avance en el aviso de tarea y cancelar (AC-4), vacío y error de red sin
   cortar lo que suena (AC-5, AC-6), `likes` en `help`/Tab y argumentos
   inválidos (AC-8).
-- Pendiente: prueba manual con la cuenta (T7: AC-1 contra la app oficial,
-  AC-4 visual, AC-7 sin login nuevo).
+- Prueba manual (vos, con la cuenta, build release 0.5.0): `likes` y
+  `likes -s` suenan en el orden de la app oficial (AC-1), se ve el avance
+  sin cortar lo que sonaba (AC-4) y no pidió login de nuevo (AC-7).
