@@ -11,6 +11,14 @@ concepto nuevo — no antes, no de antemano especulando.
 - **Visualización** — lo que se dibuja de la canción en el panel derecho
   de la app de escritorio (spec 010): onda, barras (espectro) o vinilo
   con la tapa del disco. Se elige en Personalización → Visualización.
+- **Panel de consumo** — arriba en la columna derecha de la app de
+  escritorio (spec 014): CPU (% de toda la PC) y RAM (working set
+  privado) de la propia app, como el Administrador de tareas, en texto y
+  en gráficos de los últimos 60 s. Se configura en
+  Personalización → Consumo.
+- **Máximo de consumo** — umbral de CPU o de RAM del panel de consumo:
+  pasarlo pinta el valor en el color de error. Es una alerta; la app no
+  cambia su comportamiento.
 - **Tus me gusta** — la biblioteca de temas likeados del usuario en
   Spotify ("Liked Songs"). `like` / `unlike` agregan o quitan el tema que
   suena (spec 011); en la API es `/me/library`, no una playlist.

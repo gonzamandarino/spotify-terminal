@@ -115,10 +115,11 @@ impl Visualizer {
         self.cover = Some((url, texture));
     }
 
-    /// Ancho del panel, en una ventana con `available` puntos de ancho,
-    /// si se pidió `wanted`. `None` si no se muestra.
-    pub(super) fn panel_width(&self, wanted: f32, available: f32) -> Option<f32> {
-        panel_width(self.mode, wanted, available)
+    /// Ancho de la columna derecha (visualización y, si `usage`, el panel
+    /// de consumo de spec 014), en una ventana con `available` puntos de
+    /// ancho, si se pidió `wanted`. `None` si no se muestra.
+    pub(super) fn panel_width(&self, usage: bool, wanted: f32, available: f32) -> Option<f32> {
+        panel_width(self.mode, usage, wanted, available)
     }
 
     /// Dibuja el modo elegido en `rect`.
@@ -232,15 +233,26 @@ impl Visualizer {
 }
 
 /// `wanted` recortado a `[PANEL_WIDTH_MIN, PANEL_WIDTH_MAX]` y a lo que
-/// deja libre la consola (`MIN_CONSOLE_WIDTH`); `None` con Ninguna o si ni
-/// el mínimo entra.
-fn panel_width(mode: VizMode, wanted: f32, available: f32) -> Option<f32> {
+/// deja libre la consola (`MIN_CONSOLE_WIDTH`); `None` con Ninguna y sin
+/// consumo, o si ni el mínimo entra.
+fn panel_width(mode: VizMode, usage: bool, wanted: f32, available: f32) -> Option<f32> {
     let room = available - viz::MIN_CONSOLE_WIDTH;
-    (mode != VizMode::None && room >= viz::PANEL_WIDTH_MIN).then(|| {
+    ((mode != VizMode::None || usage) && room >= viz::PANEL_WIDTH_MIN).then(|| {
         wanted
             .clamp(viz::PANEL_WIDTH_MIN, viz::PANEL_WIDTH_MAX)
             .min(room)
     })
+}
+
+/// Lo que queda de `area` para la visualización debajo de `used` puntos
+/// (el panel de consumo y su separación, spec 014).
+///
+/// - Post: `None` si quedan menos de `MIN_VIZ_HEIGHT`: no se dibuja ni se
+///   anima.
+pub(super) fn below(area: Rect, used: f32) -> Option<Rect> {
+    let top = area.top() + used;
+    (area.bottom() - top >= viz::MIN_VIZ_HEIGHT)
+        .then(|| Rect::from_min_max(Pos2::new(area.left(), top), area.max))
 }
 
 /// Sube de golpe a lo nuevo; baja como mucho `BAR_FALL_PER_SEC` × `dt`.
@@ -396,35 +408,70 @@ mod tests {
     #[test]
     fn el_panel_solo_con_modo_y_lugar() {
         let wide = viz::PANEL_WIDTH + viz::MIN_CONSOLE_WIDTH;
-        assert_eq!(panel_width(VizMode::None, viz::PANEL_WIDTH, 2000.0), None);
         assert_eq!(
-            panel_width(VizMode::Bars, viz::PANEL_WIDTH, wide),
+            panel_width(VizMode::None, false, viz::PANEL_WIDTH, 2000.0),
+            None
+        );
+        assert_eq!(
+            panel_width(VizMode::Bars, false, viz::PANEL_WIDTH, wide),
             Some(viz::PANEL_WIDTH)
         );
         // Angosta: el panel se achica para dejarle lugar a la consola...
         assert_eq!(
-            panel_width(VizMode::Vinyl, viz::PANEL_WIDTH, wide - 50.0),
+            panel_width(VizMode::Vinyl, false, viz::PANEL_WIDTH, wide - 50.0),
             Some(viz::PANEL_WIDTH - 50.0)
         );
         // ...y si ni el mínimo entra, no se muestra.
         let tight = viz::PANEL_WIDTH_MIN + viz::MIN_CONSOLE_WIDTH;
         assert_eq!(
-            panel_width(VizMode::Wave, viz::PANEL_WIDTH, tight),
+            panel_width(VizMode::Wave, false, viz::PANEL_WIDTH, tight),
             Some(viz::PANEL_WIDTH_MIN)
         );
         assert_eq!(
-            panel_width(VizMode::Wave, viz::PANEL_WIDTH, tight - 1.0),
+            panel_width(VizMode::Wave, false, viz::PANEL_WIDTH, tight - 1.0),
             None
         );
         // Lo pedido se recorta al rango de config.
         assert_eq!(
-            panel_width(VizMode::Bars, 1.0, 5000.0),
+            panel_width(VizMode::Bars, false, 1.0, 5000.0),
             Some(viz::PANEL_WIDTH_MIN)
         );
         assert_eq!(
-            panel_width(VizMode::Bars, 1e6, 1e6),
+            panel_width(VizMode::Bars, false, 1e6, 1e6),
             Some(viz::PANEL_WIDTH_MAX)
         );
+    }
+
+    #[test]
+    fn la_columna_tambien_con_consumo_solo() {
+        let wide = viz::PANEL_WIDTH + viz::MIN_CONSOLE_WIDTH;
+        assert_eq!(
+            panel_width(VizMode::None, true, viz::PANEL_WIDTH, wide),
+            Some(viz::PANEL_WIDTH)
+        );
+        assert_eq!(
+            panel_width(VizMode::Bars, true, viz::PANEL_WIDTH, wide),
+            Some(viz::PANEL_WIDTH)
+        );
+        // Angosta: mismas reglas que sin consumo.
+        let tight = viz::PANEL_WIDTH_MIN + viz::MIN_CONSOLE_WIDTH;
+        assert_eq!(
+            panel_width(VizMode::None, true, viz::PANEL_WIDTH, tight - 1.0),
+            None
+        );
+    }
+
+    #[test]
+    fn la_visualizacion_se_achica_bajo_el_consumo() {
+        let area = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(280.0, 400.0));
+        assert_eq!(
+            below(area, 100.0),
+            Some(Rect::from_min_max(Pos2::new(10.0, 120.0), area.max))
+        );
+        // Justo el mínimo entra; uno menos, no.
+        let used = 400.0 - viz::MIN_VIZ_HEIGHT;
+        assert!(below(area, used).is_some());
+        assert_eq!(below(area, used + 1.0), None);
     }
 
     #[test]

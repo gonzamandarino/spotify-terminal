@@ -1,6 +1,6 @@
 //! Barra de menús de la app de escritorio (spec 007), en un renglón bajo
 //! la barra de título: Personalización (con los submenús Tema, Fuente,
-//! Atajos, Consola y Ventana, spec 009; Visualización, spec 010),
+//! Atajos, Consola y Ventana, spec 009; Visualización, spec 010; Consumo, spec 014),
 //! Reproducción y Ajustes, más los diálogos de colores y de atajos.
 //!
 //! Edita los `Settings` que le pasa la ventana y devuelve lo que no es un
@@ -19,8 +19,8 @@ use egui::{
 use super::{
     combo::Combo,
     settings::{
-        self, ColorSlot, ComboCheck, Section, Settings, Target, VizMode, WindowAction,
-        bitrate_from_kbps, bitrate_kbps,
+        self, ColorSlot, ComboCheck, Section, Settings, Target, UsageGraph, UsageValues, VizMode,
+        WindowAction, bitrate_from_kbps, bitrate_kbps,
     },
     theme::color,
 };
@@ -43,13 +43,14 @@ pub(super) enum Command {
 const TITLES: [&str; 3] = ["Personalización", "Reproducción", "Ajustes"];
 
 /// Submenús de Personalización, en orden.
-const SUBMENUS: [&str; 6] = [
+const SUBMENUS: [&str; 7] = [
     "Tema",
     "Fuente",
     "Atajos",
     "Consola",
     "Ventana",
     "Visualización",
+    "Consumo",
 ];
 
 /// Ancho mínimo de un menú desplegado.
@@ -251,7 +252,8 @@ impl Menus {
                     2 => self.keys_menu(ui, settings, &mut sub_first),
                     3 => self.console_menu(ui, settings, commands, &mut sub_first),
                     4 => window_menu(ui, settings, commands, &mut sub_first),
-                    _ => viz_menu(ui, settings, &mut sub_first),
+                    5 => viz_menu(ui, settings, &mut sub_first),
+                    _ => usage_menu(ui, settings, &mut sub_first),
                 }
             });
             let response = if index == 0 {
@@ -686,6 +688,60 @@ fn viz_menu(
     }
 }
 
+/// Consumo (spec 014): el panel con el CPU y la RAM de la app, arriba en
+/// la columna derecha. Los cambios se ven al instante, con el menú abierto.
+fn usage_menu(
+    ui: &mut Ui,
+    settings: &mut Settings,
+    first: &mut impl FnMut(egui::Response) -> egui::Response,
+) {
+    let usage = &mut settings.usage;
+    first(ui.checkbox(&mut usage.visible, "Mostrar consumo"));
+    ui.separator();
+    ui.label("Valores");
+    for values in UsageValues::ALL {
+        if ui.radio(usage.values == values, values.label()).clicked() {
+            usage.values = values;
+        }
+    }
+    ui.separator();
+    ui.label("Gráfico");
+    for graph in UsageGraph::ALL {
+        if ui.radio(usage.graph == graph, graph.label()).clicked() {
+            usage.graph = graph;
+        }
+    }
+    ui.separator();
+    keeps_arrows(
+        ui.add(
+            Slider::new(
+                &mut usage.max_cpu,
+                config::usage::MAX_CPU_MIN..=config::usage::MAX_CPU_MAX,
+            )
+            .logarithmic(true)
+            .max_decimals(1)
+            .suffix(" %")
+            .text("máximo de CPU"),
+        ),
+    );
+    keeps_arrows(
+        ui.add(
+            Slider::new(
+                &mut usage.max_ram_mb,
+                config::usage::MAX_RAM_MB_MIN..=config::usage::MAX_RAM_MB_MAX,
+            )
+            .logarithmic(true)
+            .suffix(" MB")
+            .text("máximo de RAM"),
+        ),
+    );
+    ui.separator();
+    if ui.button("Restaurar consumo").clicked() {
+        settings.restore(Section::Usage);
+        ui.close();
+    }
+}
+
 fn settings_menu(
     ui: &mut Ui,
     commands: &mut Vec<Command>,
@@ -845,7 +901,8 @@ mod tests {
                 "Atajos",
                 "Consola",
                 "Ventana",
-                "Visualización"
+                "Visualización",
+                "Consumo"
             ]
         );
         for sub in SUBMENUS {

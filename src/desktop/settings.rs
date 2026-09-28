@@ -299,6 +299,119 @@ impl VizMode {
     }
 }
 
+/// Qué valores muestra el panel de consumo (spec 014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum UsageValues {
+    #[default]
+    Both,
+    Cpu,
+    Ram,
+}
+
+impl UsageValues {
+    pub(crate) const ALL: [UsageValues; 3] =
+        [UsageValues::Both, UsageValues::Cpu, UsageValues::Ram];
+
+    /// Como se escribe en `ajustes.json`.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            UsageValues::Both => "ambos",
+            UsageValues::Cpu => "cpu",
+            UsageValues::Ram => "ram",
+        }
+    }
+
+    /// Como se ve en el menú.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            UsageValues::Both => "Ambos",
+            UsageValues::Cpu => "Solo CPU",
+            UsageValues::Ram => "Solo RAM",
+        }
+    }
+
+    pub(crate) fn cpu(self) -> bool {
+        self != UsageValues::Ram
+    }
+
+    pub(crate) fn ram(self) -> bool {
+        self != UsageValues::Cpu
+    }
+}
+
+/// Qué gráficos muestra el panel de consumo (spec 014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum UsageGraph {
+    #[default]
+    None,
+    Cpu,
+    Ram,
+    /// Uno para cada uno.
+    Both,
+}
+
+impl UsageGraph {
+    pub(crate) const ALL: [UsageGraph; 4] = [
+        UsageGraph::None,
+        UsageGraph::Cpu,
+        UsageGraph::Ram,
+        UsageGraph::Both,
+    ];
+
+    /// Como se escribe en `ajustes.json`.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            UsageGraph::None => "ninguno",
+            UsageGraph::Cpu => "cpu",
+            UsageGraph::Ram => "ram",
+            UsageGraph::Both => "ambos",
+        }
+    }
+
+    /// Como se ve en el menú.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            UsageGraph::None => "Ninguno",
+            UsageGraph::Cpu => "CPU",
+            UsageGraph::Ram => "RAM",
+            UsageGraph::Both => "Uno para cada uno",
+        }
+    }
+
+    pub(crate) fn cpu(self) -> bool {
+        matches!(self, UsageGraph::Cpu | UsageGraph::Both)
+    }
+
+    pub(crate) fn ram(self) -> bool {
+        matches!(self, UsageGraph::Ram | UsageGraph::Both)
+    }
+}
+
+/// Panel de consumo (spec 014).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct UsageSettings {
+    pub(crate) visible: bool,
+    pub(crate) values: UsageValues,
+    pub(crate) graph: UsageGraph,
+    /// Máximo de CPU (% de toda la PC), en `[MAX_CPU_MIN, MAX_CPU_MAX]`:
+    /// pasarlo se marca en el color de error, no cambia nada más.
+    pub(crate) max_cpu: f32,
+    /// Máximo de RAM (MB), en `[MAX_RAM_MB_MIN, MAX_RAM_MB_MAX]`.
+    pub(crate) max_ram_mb: u32,
+}
+
+impl Default for UsageSettings {
+    fn default() -> UsageSettings {
+        UsageSettings {
+            visible: false,
+            values: UsageValues::default(),
+            graph: UsageGraph::default(),
+            max_cpu: config::usage::MAX_CPU,
+            max_ram_mb: config::usage::MAX_RAM_MB,
+        }
+    }
+}
+
 /// Todos los ajustes.
 ///
 /// Invariante (la cumplen `default()` y `from_json`, y la mantienen
@@ -317,6 +430,7 @@ pub(crate) struct Settings {
     /// Ancho pedido del panel de la visualización, en puntos (se cambia
     /// arrastrando su borde), en `[PANEL_WIDTH_MIN, PANEL_WIDTH_MAX]`.
     pub(crate) viz_width: f32,
+    pub(crate) usage: UsageSettings,
 }
 
 impl Default for Settings {
@@ -362,6 +476,7 @@ impl Default for Settings {
             },
             visualization: VizMode::None,
             viz_width: config::viz::PANEL_WIDTH,
+            usage: UsageSettings::default(),
         }
     }
 }
@@ -377,10 +492,11 @@ pub(crate) enum Section {
     Console,
     Window,
     Visualization,
+    Usage,
 }
 
 impl Section {
-    const ALL: [Section; 8] = [
+    const ALL: [Section; 9] = [
         Section::Colors,
         Section::Font,
         Section::WindowKeys,
@@ -389,6 +505,7 @@ impl Section {
         Section::Console,
         Section::Window,
         Section::Visualization,
+        Section::Usage,
     ];
 
     fn key(self) -> &'static str {
@@ -401,6 +518,7 @@ impl Section {
             Section::Console => "consola",
             Section::Window => "ventana",
             Section::Visualization => "visualizacion",
+            Section::Usage => "consumo",
         }
     }
 }
@@ -507,6 +625,7 @@ impl Settings {
                 self.visualization = defaults.visualization;
                 self.viz_width = defaults.viz_width;
             }
+            Section::Usage => self.usage = defaults.usage,
         }
     }
 
@@ -947,6 +1066,65 @@ fn fields() -> Vec<Field> {
             Ok(())
         },
     ));
+    fields.push(field(
+        Section::Usage,
+        "visible",
+        |s| json!(s.usage.visible),
+        |s, v| {
+            s.usage.visible = boolean(v)?;
+            Ok(())
+        },
+    ));
+    fields.push(field(
+        Section::Usage,
+        "valores",
+        |s| json!(s.usage.values.key()),
+        |s, v| {
+            s.usage.values = one_of(v, &UsageValues::ALL, UsageValues::key)?;
+            Ok(())
+        },
+    ));
+    fields.push(field(
+        Section::Usage,
+        "grafico",
+        |s| json!(s.usage.graph.key()),
+        |s, v| {
+            s.usage.graph = one_of(v, &UsageGraph::ALL, UsageGraph::key)?;
+            Ok(())
+        },
+    ));
+    fields.push(field(
+        Section::Usage,
+        "max_cpu",
+        |s| json!(s.usage.max_cpu),
+        |s, v| {
+            let max = number_in(
+                v,
+                config::usage::MAX_CPU_MIN.into(),
+                config::usage::MAX_CPU_MAX.into(),
+            )?;
+            // Dentro del rango de config: entra en f32.
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                s.usage.max_cpu = max as f32;
+            }
+            Ok(())
+        },
+    ));
+    fields.push(field(
+        Section::Usage,
+        "max_ram",
+        |s| json!(s.usage.max_ram_mb),
+        |s, v| {
+            let max = integer_in(
+                v,
+                config::usage::MAX_RAM_MB_MIN.into(),
+                config::usage::MAX_RAM_MB_MAX.into(),
+            )?;
+            s.usage.max_ram_mb = u32::try_from(max).map_err(|e| e.to_string())?;
+            Ok(())
+        },
+    ));
     fields
 }
 
@@ -1026,6 +1204,24 @@ fn parse_geometry(value: &Value) -> Result<Option<Geometry>, String> {
         width: size("ancho", min_width)?,
         height: size("alto", min_height)?,
     }))
+}
+
+/// La opción de `options` cuya clave (`key`) es `value`, sin importar
+/// mayúsculas.
+fn one_of<T: Copy>(
+    value: &Value,
+    options: &[T],
+    key: impl Fn(T) -> &'static str,
+) -> Result<T, String> {
+    let text = value.as_str().map(str::trim).unwrap_or_default();
+    options
+        .iter()
+        .copied()
+        .find(|&o| key(o).eq_ignore_ascii_case(text))
+        .ok_or_else(|| {
+            let known: Vec<&str> = options.iter().map(|&o| key(o)).collect();
+            format!("tiene que ser uno de: {}", known.join(", "))
+        })
 }
 
 fn boolean(value: &Value) -> Result<bool, String> {
@@ -1275,6 +1471,70 @@ mod tests {
             assert_eq!(warnings.len(), 1, "{warnings:?}");
             assert!(warnings[0].contains("visualizacion.ancho"), "{warnings:?}");
         }
+    }
+
+    #[test]
+    fn consumo_valido_o_de_fabrica() {
+        let (s, warnings) = load_json(
+            r#"{"consumo": {"visible": true, "valores": "CPU", "grafico": "ambos",
+                "max_cpu": 25.5, "max_ram": 150}}"#,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            s.usage,
+            UsageSettings {
+                visible: true,
+                values: UsageValues::Cpu,
+                graph: UsageGraph::Both,
+                max_cpu: 25.5,
+                max_ram_mb: 150,
+            }
+        );
+        assert_eq!(
+            s.to_json(),
+            json!({"consumo": {"visible": true, "valores": "cpu", "grafico": "ambos",
+                "max_cpu": 25.5, "max_ram": 150}})
+        );
+        let bad = [
+            ("visible", r#""si""#),
+            ("valores", r#""disco""#),
+            ("grafico", "3"),
+            ("max_cpu", "0.05"),
+            ("max_cpu", "150"),
+            ("max_ram", "10"),
+            ("max_ram", "100.5"),
+            ("max_ram", "99999"),
+        ];
+        for (key, value) in bad {
+            let (s, warnings) = load_json(&format!(r#"{{"consumo": {{"{key}": {value}}}}}"#));
+            assert_eq!(s.usage, UsageSettings::default(), "{key}: {value}");
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(
+                warnings[0].contains(&format!("consumo.{key}")),
+                "{warnings:?}"
+            );
+        }
+        let mut s = Settings {
+            usage: UsageSettings {
+                visible: true,
+                values: UsageValues::Ram,
+                graph: UsageGraph::Cpu,
+                max_cpu: 50.0,
+                max_ram_mb: 500,
+            },
+            ..Settings::default()
+        };
+        s.restore(Section::Usage);
+        assert_eq!(
+            s.usage,
+            UsageSettings {
+                visible: false,
+                values: UsageValues::Both,
+                graph: UsageGraph::None,
+                max_cpu: 1.0,
+                max_ram_mb: 100,
+            }
+        );
     }
 
     #[test]

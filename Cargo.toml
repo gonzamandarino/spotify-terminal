@@ -1,6 +1,6 @@
 [package]
 name = "spotify-terminal"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Cliente de Spotify liviano para la terminal"
@@ -55,6 +55,7 @@ codegen-units = 1
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52.0", features = [
     "Win32_Foundation",
+    "Win32_System_ProcessStatus",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
     "Win32_UI_Input_KeyboardAndMouse",

@@ -131,6 +131,7 @@ subrayada; en Personalización, → abre un submenú y ← vuelve):
 | Personalización → Consola | símbolo del prompt, líneas guardadas, historial, hora en cada línea |
 | Personalización → Ventana | siempre visible, recordar tamaño y posición |
 | Personalización → Visualización | panel a la derecha de la consola con la onda, las barras (espectro) o un vinilo girando con la tapa del disco; se anima solo mientras suena. El ancho se cambia arrastrando el borde izquierdo del panel |
+| Personalización → Consumo | panel arriba de la visualización con el CPU y la RAM de la app: qué valores (ambos, solo CPU, solo RAM), gráficos de los últimos 60 s (ninguno, CPU, RAM o uno para cada uno) y un máximo de CPU y de RAM que, al pasarlo, pinta el valor en rojo |
 | Reproducción | paso de volumen, cuándo "anterior" reinicia el tema, calidad de audio (desde el próximo `play`) |
 | Ajustes | abrir / recargar `ajustes.json`, restaurar todo |
 

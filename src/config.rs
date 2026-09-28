@@ -317,6 +317,9 @@ pub mod viz {
     /// La consola nunca queda más angosta que esto: el panel se achica
     /// hasta `PANEL_WIDTH_MIN` y, si ni así entra, no se muestra.
     pub const MIN_CONSOLE_WIDTH: f32 = 360.0;
+    /// Alto mínimo de la visualización debajo del panel de consumo (spec
+    /// 014): con menos, no se dibuja ni se anima.
+    pub const MIN_VIZ_HEIGHT: f32 = 120.0;
     /// Muestras (mono) que se analizan por cuadro: ~23 ms a 44,1 kHz.
     /// Potencia de 2 (FFT radix-2).
     pub const FFT_SIZE: usize = 1024;
@@ -385,6 +388,46 @@ pub mod viz {
     const _: () = assert!(FFT_SIZE.is_power_of_two() && WAVE_POINTS <= WAVE_SAMPLES);
     const _: () = assert!(PANEL_WIDTH_MIN <= PANEL_WIDTH && PANEL_WIDTH <= PANEL_WIDTH_MAX);
     const _: () = assert!(LATENCY.as_millis() <= LATENCY_MAX.as_millis());
+}
+
+/// Panel de consumo de la app de escritorio (spec 014).
+pub mod usage {
+    use std::time::Duration;
+
+    /// Cada cuánto se mide y se redibuja el panel. El CPU es el promedio de
+    /// este período.
+    pub const PERIOD: Duration = Duration::from_secs(1);
+    /// Una medición que llega hasta esto antes de `PERIOD` cuenta igual (el
+    /// redibujo pedido a 1 s puede llegar unos ms antes): evita un segundo
+    /// redibujo solo para esperar lo que falta.
+    pub const EARLY: Duration = Duration::from_millis(50);
+    /// Sin medir por más que esto (ventana minimizada: no se dibuja), la
+    /// historia se borra y el gráfico arranca de cero.
+    pub const GAP_RESET: Duration = Duration::from_secs(3);
+    /// Mediciones que guarda cada gráfico (60 s con `PERIOD` de 1 s).
+    pub const HISTORY: usize = 60;
+    /// Alto de cada gráfico, en puntos.
+    pub const GRAPH_HEIGHT: f32 = 48.0;
+    /// Separación entre renglones y gráficos del panel, en puntos.
+    pub const GAP: f32 = 4.0;
+    /// Máximo de CPU de fábrica (% de toda la PC, como el Administrador de
+    /// tareas) y su rango.
+    pub const MAX_CPU: f32 = 1.0;
+    pub const MAX_CPU_MIN: f32 = 0.1;
+    pub const MAX_CPU_MAX: f32 = 100.0;
+    /// Máximo de RAM de fábrica (MB; tope de spec 004) y su rango.
+    pub const MAX_RAM_MB: u32 = 100;
+    pub const MAX_RAM_MB_MIN: u32 = 20;
+    pub const MAX_RAM_MB_MAX: u32 = 2000;
+    /// La escala de un gráfico llega a esto por el mayor entre el máximo y
+    /// el pico visible: el máximo siempre se ve y un pico no se sale.
+    pub const SCALE_HEADROOM: f32 = 1.1;
+
+    const _: () = assert!(MAX_CPU_MIN <= MAX_CPU && MAX_CPU <= MAX_CPU_MAX);
+    const _: () = assert!(MAX_RAM_MB_MIN <= MAX_RAM_MB && MAX_RAM_MB <= MAX_RAM_MB_MAX);
+    const _: () = assert!(HISTORY >= 2);
+    const _: () = assert!(EARLY.as_millis() < PERIOD.as_millis());
+    const _: () = assert!(GAP_RESET.as_millis() > PERIOD.as_millis());
 }
 
 // --- Ajustes (spec 007) ---

@@ -28,9 +28,10 @@ use super::{
     hotkeys::{self, Hotkeys},
     layout,
     menu::{self, Command, Menus},
-    settings::{self, Geometry, Palette, Settings, Target, WindowAction},
+    settings::{self, Geometry, Palette, Settings, Target, VizMode, WindowAction},
     theme::{Theme, bold, color, installed_fonts, mono},
-    viz::{Track, Visualizer},
+    usage::{self, Usage},
+    viz::{self, Track, Visualizer},
     window::Content,
 };
 use crate::{
@@ -118,6 +119,9 @@ pub(super) struct DesktopApp {
     started: bool,
     /// Visualización del panel derecho (spec 010).
     viz: Visualizer,
+    /// Mediciones del panel de consumo (spec 014), arriba de la
+    /// visualización.
+    usage: Usage,
     /// Dónde quedó cada botón de "sonando" en el último frame.
     player_buttons: Vec<(PlayerButton, Rect)>,
 }
@@ -162,6 +166,7 @@ impl DesktopApp {
             keep_file,
             started: false,
             viz: Visualizer::new(tap),
+            usage: Usage::new(),
             player_buttons: Vec::new(),
         };
         app.push(ConsoleLine::Out(
@@ -1179,7 +1184,15 @@ impl Content for DesktopApp {
             .frame(Frame::new().inner_margin(Margin::symmetric(14, 0)))
             .show_inside(ui, |ui| self.input_row(ui));
         self.sync_viz();
-        if let Some(width) = self.viz.panel_width(self.settings.viz_width, rect.width()) {
+        let usage_on = self.settings.usage.visible;
+        let column = self
+            .viz
+            .panel_width(usage_on, self.settings.viz_width, rect.width());
+        // El consumo solo se mide mientras se dibuja (spec 014).
+        if !usage_on || column.is_none() {
+            self.usage.reset();
+        }
+        if let Some(width) = column {
             let panel = Panel::right("visualizacion")
                 .exact_size(width)
                 .resizable(false)
@@ -1190,6 +1203,27 @@ impl Content for DesktopApp {
                         .stroke(Stroke::new(1.0_f32, color(p.border))),
                 )
                 .show_inside(ui, |ui| {
+                    let mut area = Some(ui.max_rect());
+                    if usage_on {
+                        let full = ui.max_rect();
+                        let height = usage::height(&self.settings.usage, console_row);
+                        let top = Rect::from_min_size(full.min, Vec2::new(full.width(), height));
+                        ctx.request_repaint_after(self.usage.tick(Instant::now()));
+                        self.usage
+                            .show(ui, top, &self.settings.usage, &p, &content_font);
+                        // Separación: el margen del panel, con una línea al
+                        // medio si abajo hay visualización.
+                        let gap = f32::from(VIZ_MARGIN);
+                        area = viz::below(full, height + 2.0 * gap)
+                            .filter(|_| self.viz.mode() != VizMode::None);
+                        if area.is_some() {
+                            ui.painter().hline(
+                                (full.left() - gap)..=(full.right() + gap),
+                                top.bottom() + gap,
+                                Stroke::new(1.0_f32, color(p.border)),
+                            );
+                        }
+                    }
                     let track = self
                         .now
                         .as_ref()
@@ -1197,7 +1231,9 @@ impl Content for DesktopApp {
                             state: now.state,
                             cover: now.cover.as_deref(),
                         });
-                    if self.viz.show(ui, ui.max_rect(), track, &p) {
+                    if let Some(area) = area.filter(|_| self.viz.mode() != VizMode::None)
+                        && self.viz.show(ui, area, track, &p)
+                    {
                         ctx.request_repaint_after(Duration::from_millis(1000 / config::viz::FPS));
                     }
                 });

@@ -10,6 +10,7 @@ mod layout;
 mod menu;
 pub(crate) mod settings;
 mod theme;
+mod usage;
 mod viz;
 mod window;
 
