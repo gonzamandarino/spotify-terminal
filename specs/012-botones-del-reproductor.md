@@ -158,5 +158,12 @@ apagado).
 - Captura de la app en release sin nada sonando: ⏮ ▶ ⏭, ♥ y 🔀 atenuados
   y alineados.
 - AC-11: test `el_icono_de_estado_no_cambia_de_color_en_pausa`.
+- Prueba manual 1: los íconos no quedaban a la misma altura (capturas en
+  `screens/`). egui centra el texto por la caja del renglón, así que las
+  letras se veían más arriba que los botones dibujados, y ⏸ / 🔀 (glyphs
+  de otra fuente) cada uno a su altura. Corregido: el texto se centra por
+  sus mayúsculas (`caps_shift`), los glyphs por su dibujo (`paint_glyph`)
+  y el ♥ por su forma. Medido en una captura: todos los elementos de la
+  fila con el centro a la misma altura (±1 px).
 - Pendiente, prueba manual con algo sonando: AC-1, AC-8 (resaltado y
   tooltip), AC-10 (CPU con el mouse quieto contra 0.3.0).

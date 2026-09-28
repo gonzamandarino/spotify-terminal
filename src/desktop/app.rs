@@ -826,6 +826,8 @@ impl DesktopApp {
         };
         // Con algo sonando hay dos filas (con la letra por defecto, a 20 del
         // borde de arriba y 18 del de abajo, como en 0.1.0); si no, una.
+        // Todo lo de la fila se centra en `top` por lo que se ve: el texto
+        // por el centro de las mayúsculas, los íconos por su dibujo.
         let top = if now.is_some() {
             rect.center().y - t(12.0)
         } else {
@@ -847,12 +849,14 @@ impl DesktopApp {
         let mut left = rect.left();
         if let Some(now) = &now {
             let (state_icon, state_color) = state_icon(&p, now.state);
-            let icon = painter.text(
-                Pos2::new(rect.left(), top),
-                Align2::LEFT_CENTER,
+            let icon = paint_glyph(
+                ui,
+                &painter,
                 state_icon,
                 bold(t(14.0)),
                 state_color,
+                Pos2::new(rect.left(), top),
+                Align::Min,
             );
             left = icon.right() + t(10.0);
         }
@@ -871,9 +875,10 @@ impl DesktopApp {
             volume.as_ref().map(|(text, _)| measure(text)),
             &widths,
         );
+        let chip_y = top + caps_shift(ui, &chip_font);
         if let (Some(x), Some((text, chip_color))) = (row.volume, &volume) {
             painter.text(
-                Pos2::new(x, top),
+                Pos2::new(x, chip_y),
                 Align2::RIGHT_CENTER,
                 text,
                 chip_font.clone(),
@@ -883,7 +888,7 @@ impl DesktopApp {
         for ((text, chip_color), x) in others.iter().zip(&row.others) {
             if let Some(x) = x {
                 painter.text(
-                    Pos2::new(*x, top),
+                    Pos2::new(*x, chip_y),
                     Align2::RIGHT_CENTER,
                     text,
                     chip_font.clone(),
@@ -901,32 +906,30 @@ impl DesktopApp {
                 } else {
                     now.title.as_str()
                 };
-                let title_galley = one_line(
-                    ui,
-                    title,
-                    self.strong(t(14.0)),
-                    color(p.text_strong),
-                    max_width,
-                );
+                let title_font = self.strong(t(14.0));
+                let title_y = top + caps_shift(ui, &title_font);
+                let title_galley = one_line(ui, title, title_font, color(p.text_strong), max_width);
                 let title_width = title_galley.size().x;
                 painter.galley(
-                    Pos2::new(left, top - title_galley.size().y / 2.0),
+                    Pos2::new(left, title_y - title_galley.size().y / 2.0),
                     title_galley,
                     color(p.text_strong),
                 );
                 let mut end = left + title_width;
                 if !now.artists.is_empty() {
                     let artists = format!("  —  {}", now.artists);
+                    let font = mono(t(13.0));
+                    let y = top + caps_shift(ui, &font);
                     let galley = one_line(
                         ui,
                         &artists,
-                        mono(t(13.0)),
+                        font,
                         color(p.secondary),
                         (max_width - title_width).max(0.0),
                     );
                     end += galley.size().x;
                     painter.galley(
-                        Pos2::new(left + title_width, top - galley.size().y / 2.0),
+                        Pos2::new(left + title_width, y - galley.size().y / 2.0),
                         galley,
                         color(p.secondary),
                     );
@@ -934,16 +937,18 @@ impl DesktopApp {
                 end
             }
             None => {
+                let font = mono(t(13.0));
+                let y = top + caps_shift(ui, &font);
                 let idle = one_line(
                     ui,
                     "Nada sonando · escribí  play <nombre>",
-                    mono(t(13.0)),
+                    font,
                     color(p.secondary),
                     max_width,
                 );
                 let end = left + idle.size().x;
                 painter.galley(
-                    Pos2::new(left, top - idle.size().y / 2.0),
+                    Pos2::new(left, y - idle.size().y / 2.0),
                     idle,
                     color(p.secondary),
                 );
@@ -1324,6 +1329,39 @@ fn volume_chip(p: &Palette, volume: Volume) -> (String, Color32) {
 }
 
 /// Texto en una línea, cortado con "…" si no entra en `max_width`.
+/// Cuánto bajar el centro de un renglón de `font` para que el centro de
+/// sus mayúsculas quede donde estaba (egui centra por la caja del renglón,
+/// que incluye el lugar de los descendentes: el texto se ve más arriba).
+fn caps_shift(ui: &Ui, font: &FontId) -> f32 {
+    let galley =
+        ui.fonts_mut(|fonts| fonts.layout_no_wrap("H".into(), font.clone(), Color32::WHITE));
+    galley.rect.center().y - galley.mesh_bounds.center().y
+}
+
+/// Dibuja `text` (un ícono de una o dos letras) con su dibujo centrado en
+/// `at.y`; en x, su caja empieza en `at.x` (`Align::Min`) o su dibujo se
+/// centra en `at.x` (`Align::Center`). Devuelve la caja donde quedó.
+fn paint_glyph(
+    ui: &Ui,
+    painter: &egui::Painter,
+    text: &str,
+    font: FontId,
+    text_color: Color32,
+    at: Pos2,
+    align: Align,
+) -> Rect {
+    let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(text.into(), font, text_color));
+    let ink = galley.mesh_bounds;
+    let x = match align {
+        Align::Center => at.x - ink.center().x,
+        _ => at.x - galley.rect.left(),
+    };
+    let pos = Pos2::new(x, at.y - ink.center().y);
+    let rect = galley.rect.translate(pos.to_vec2());
+    painter.galley(pos, galley, text_color);
+    rect
+}
+
 fn one_line(ui: &Ui, text: &str, font: FontId, text_color: Color32, max_width: f32) -> Arc<Galley> {
     let mut job = LayoutJob::simple_singleline(text.to_string(), font, text_color);
     job.wrap = TextWrapping {
@@ -1511,22 +1549,27 @@ fn player_button(
             painter.rect_filled(bar, 1.0, tint);
         }
         PlayerButton::Like => {
+            // Va de -0,37 a 0,50: se sube 0,065 para que su dibujo quede
+            // centrado como el de los demás.
+            let lift = -0.065;
             for x in [-0.22, 0.22] {
-                painter.circle_filled(at(x, -0.12), 0.25 * k, tint);
+                painter.circle_filled(at(x, -0.12 + lift), 0.25 * k, tint);
             }
             painter.add(triangle(vec![
-                at(-0.46, -0.04),
-                at(0.46, -0.04),
-                at(0.0, 0.5),
+                at(-0.46, -0.04 + lift),
+                at(0.46, -0.04 + lift),
+                at(0.0, 0.5 + lift),
             ]));
         }
         PlayerButton::Shuffle => {
-            painter.text(
-                c,
-                Align2::CENTER_CENTER,
+            paint_glyph(
+                ui,
+                painter,
                 "🔀",
                 look.shuffle_font.clone(),
                 tint,
+                c,
+                Align::Center,
             );
         }
     }
