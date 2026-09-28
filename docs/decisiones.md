@@ -415,7 +415,10 @@ entradas viejas — se marcan reemplazadas.
   = 7–9 %; quieto = 0 %.
 - **Alternativa descartada:** 30 fps (el doble de CPU sin verse mucho
   mejor); fps elegibles desde el menú (pedido tuyo: fijo en config).
-- **Estado:** Vigente (spec 010)
+- **Estado:** Vigente (spec 010). Reconfirmada el 2026-09-28: tras la
+  prueba con audio real se probó 30 fps (más fluido) y se volvió a 15
+  para mantener el tope de 10 % de un núcleo (AC-8); la fluidez se busca
+  con el suavizado de la onda y la caída de las barras.
 
 ## 2026-09-27 — Muestras para dibujar: copia que nunca frena el audio
 - **Decisión:** la salida de audio de librespot se envuelve en `TapSink`,
@@ -446,4 +449,33 @@ entradas viejas — se marcan reemplazadas.
 - **Consecuencias:** las guías de marca de Spotify piden no recortar ni
   alterar las tapas. Para un cliente personal se acepta; si el proyecto
   se distribuyera más allá, revisar.
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-28 — Barras relativas a lo más fuerte reciente, onda con disparo
+- **Decisión:** las barras miden cada banda en dB con una pendiente de
+  +3 dB/octava desde 1 kHz y la altura es relativa a una referencia que
+  sube de golpe a la banda más fuerte y baja 4 dB/s (rango visible 36 dB,
+  `config::viz::BAR_*`). La onda arranca en un cruce por cero hacia arriba
+  (de la señal pasada por un pasabajos), promedia las muestras de cada
+  punto y mezcla 40 % del cuadro anterior.
+- **Motivo:** con un piso fijo de −60 dB la música llenaba casi todas las
+  barras todo el tiempo y los agudos no se movían ("casi quietas"); la
+  onda saltaba de fase en cada cuadro y se veía como ruido.
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-28 — Salida de audio propia que sigue al dispositivo por defecto
+- **Decisión:** en vez de la salida rodio de librespot
+  (`audio_backend::find`), `spotify::output::DeviceSink`: también rodio
+  (0.21, misma versión y features que ya trae librespot, ahora como
+  dependencia directa), pero reabre el dispositivo por defecto si el
+  abierto avisa un error, si cambió el de por defecto (se mira cada 1 s
+  mientras suena) o si su cola no baja en 1 s. Sin dispositivo, devuelve
+  error y librespot pausa.
+- **Motivo:** la de librespot se queda con el dispositivo que había al
+  abrirla; al cambiar la salida de audio de Windows o desconectarla, deja
+  de pedir audio y librespot espera a que se vacíe su cola sin límite: no
+  suena más y el hilo del reproductor queda colgado (pausa y cerrar la app
+  también). No tiene forma de configurarlo desde afuera.
+- **Consecuencias:** al pasar de dispositivo se pierde lo que estaba en
+  cola en el viejo (≤ ~340 ms). No se suma ninguna crate al árbol.
 - **Estado:** Vigente (spec 010)

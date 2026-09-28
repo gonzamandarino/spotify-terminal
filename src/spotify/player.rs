@@ -21,8 +21,8 @@ use librespot_core::{
 };
 use librespot_metadata::{Album, Metadata, Playlist};
 use librespot_playback::{
-    audio_backend,
-    config::{AudioFormat, Bitrate, PlayerConfig},
+    audio_backend::Sink,
+    config::{Bitrate, PlayerConfig},
     mixer::{Mixer, MixerConfig, softmixer::SoftMixer},
     player::{self, PlayerEventChannel},
 };
@@ -34,6 +34,7 @@ use crate::{
     error::AppError,
     spotify::{
         auth::Token,
+        output::DeviceSink,
         tap::{AudioTap, TapSink},
     },
 };
@@ -74,9 +75,11 @@ impl Player {
     ///   Client ID la sesión conecta pero no carga audio: spike T2).
     /// - Post: reproductor listo, sin nada cargado, con `volume` y calidad
     ///   `bitrate` (fija mientras viva: para otra, otro `connect`); la
-    ///   sesión corre en su propio hilo. Con `tap`, cada paquete que sale
-    ///   al audio se copia ahí sin demorarlo (`TapSink`, spec 010); sin
-    ///   `tap`, la salida es la de siempre.
+    ///   sesión corre en su propio hilo. La salida es el dispositivo por
+    ///   defecto del sistema y lo sigue si cambia o se desconecta
+    ///   (`DeviceSink`, spec 010 AC-13); si no queda ninguno, librespot
+    ///   pausa. Con `tap`, cada paquete que sale al audio se copia ahí sin
+    ///   demorarlo (`TapSink`, spec 010).
     /// - Errores: sin dispositivo de salida → `NoAudioOutput` (se chequea
     ///   antes de conectar); Spotify rechaza el token → `SessionRejected`;
     ///   no se llega al servidor → `Network`.
@@ -92,7 +95,6 @@ impl Player {
         if cpal::default_host().default_output_device().is_none() {
             return Err(AppError::NoAudioOutput);
         }
-        let backend = audio_backend::find(None).ok_or(AppError::NoAudioOutput)?;
 
         let runtime = AudioRuntime::start()?;
         let credentials = Credentials::with_access_token(token.access_token());
@@ -119,7 +121,7 @@ impl Player {
             session.clone(),
             mixer.get_soft_volume(),
             move || {
-                let sink = backend(None, AudioFormat::default());
+                let sink: Box<dyn Sink> = Box::new(DeviceSink::system());
                 match tap {
                     Some(tap) => Box::new(TapSink::new(sink, tap, tap_volume)),
                     None => sink,

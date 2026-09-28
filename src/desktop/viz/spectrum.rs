@@ -1,6 +1,7 @@
 //! Espectro para las barras (spec 010): FFT radix-2 escrita a mano (sin
 //! `rustfft`: 1024 puntos 15 veces por segundo no justifican una
-//! dependencia), ventana de Hann y bandas en escala logarítmica.
+//! dependencia), ventana de Hann, bandas en escala logarítmica y alturas
+//! relativas a lo más fuerte reciente (`normalize`).
 
 use std::f32::consts::PI;
 
@@ -12,14 +13,18 @@ pub(super) struct Spectrum {
     im: Vec<f32>,
     /// Bins `[desde, hasta)` de cada banda.
     ranges: Vec<(usize, usize)>,
+    /// dB que se suman a cada banda (`tilt_db_per_oct` por octava desde
+    /// 1 kHz, en el centro de la banda).
+    tilt: Vec<f32>,
     /// Magnitud de un seno de amplitud 1 con la ventana de Hann: 0 dB.
     full_scale: f32,
-    floor_db: f32,
 }
 
+/// Nivel de una banda sin nada: más bajo que cualquier sonido real.
+pub(super) const SILENCE_DB: f32 = -200.0;
+
 impl Spectrum {
-    /// - Pre: `size` potencia de 2 (≥ 4); `0 < min_hz < max_hz`;
-    ///   `floor_db < 0`.
+    /// - Pre: `size` potencia de 2 (≥ 4); `0 < min_hz < max_hz`.
     /// - Post: `bars` bandas de `min_hz` a `max_hz` (recortado a Nyquist),
     ///   cada una con al menos un bin y sin pisarse con la anterior.
     pub(super) fn new(
@@ -27,7 +32,7 @@ impl Spectrum {
         bars: usize,
         (min_hz, max_hz): (f32, f32),
         sample_rate: f32,
-        floor_db: f32,
+        tilt_db_per_oct: f32,
     ) -> Self {
         let hann = (0..size)
             .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / size as f32).cos())
@@ -50,40 +55,73 @@ impl Spectrum {
             ranges.push((from.min(half), to));
             from = to;
         }
+        let hz = |bin: usize| bin as f32 * sample_rate / size as f32;
+        let tilt = ranges
+            .iter()
+            .map(|&(from, to)| {
+                let center = (hz(from.max(1)) * hz(to - 1).max(hz(1))).sqrt();
+                tilt_db_per_oct * (center / 1000.0).log2()
+            })
+            .collect();
         Spectrum {
             hann,
             re: vec![0.0; size],
             im: vec![0.0; size],
             ranges,
+            tilt,
             full_scale: size as f32 / 4.0,
-            floor_db,
         }
     }
 
-    /// Nivel de cada banda, de 0 (en `floor_db` o menos) a 1 (un seno de
-    /// amplitud 1), según el pico de sus bins.
+    /// Nivel de cada banda en dB (0 = un seno de amplitud 1), según el pico
+    /// de sus bins, más la pendiente de `new`.
     ///
     /// - Pre: `samples.len()` = el `size` de `new`; `out.len()` = `bars`.
-    /// - Post: cada valor en `[0, 1]`; silencio → todos 0.
+    /// - Post: silencio → todos `SILENCE_DB`.
     pub(super) fn bands(&mut self, samples: &[f32], out: &mut [f32]) {
         for (i, (re, im)) in self.re.iter_mut().zip(self.im.iter_mut()).enumerate() {
             *re = samples.get(i).copied().unwrap_or(0.0) * self.hann[i];
             *im = 0.0;
         }
         fft(&mut self.re, &mut self.im);
-        for (level, &(from, to)) in out.iter_mut().zip(&self.ranges) {
+        for ((level, &(from, to)), &tilt) in out.iter_mut().zip(&self.ranges).zip(&self.tilt) {
             let peak = (from..to)
                 .map(|k| (self.re[k] * self.re[k] + self.im[k] * self.im[k]).sqrt())
                 .fold(0.0_f32, f32::max);
-            *level = if peak <= 0.0 {
-                0.0
+            *level = if peak <= f32::MIN_POSITIVE {
+                SILENCE_DB
             } else {
-                let db = 20.0 * (peak / self.full_scale).log10();
-                ((db - self.floor_db) / -self.floor_db).clamp(0.0, 1.0)
+                (20.0 * (peak / self.full_scale).log10() + tilt).max(SILENCE_DB)
             };
         }
     }
+}
 
+/// Pasa los dB de cada banda a alturas de 0 a 1, relativas a `reference`
+/// (lo más fuerte reciente, en dB).
+///
+/// - Post: `reference` sube de golpe a la banda más fuerte, o baja
+///   `ref_fall_db_per_sec` × `dt`, sin bajar de `ref_min_db`. Cada altura
+///   es 1 en `reference` y 0 a `range_db` por debajo. Silencio → todas 0.
+/// - Con la referencia sobre `ref_min_db`, si todo sube N dB la
+///   referencia sube lo mismo y las alturas no cambian.
+pub(super) fn normalize(
+    db: &[f32],
+    reference: &mut f32,
+    dt: f32,
+    (range_db, ref_fall_db_per_sec, ref_min_db): (f32, f32, f32),
+    out: &mut [f32],
+) {
+    let loudest = db.iter().copied().fold(SILENCE_DB, f32::max);
+    *reference = loudest
+        .max(*reference - ref_fall_db_per_sec * dt)
+        .max(ref_min_db);
+    for (level, &db) in out.iter_mut().zip(db) {
+        *level = ((db - (*reference - range_db)) / range_db).clamp(0.0, 1.0);
+    }
+}
+
+impl Spectrum {
     #[cfg(test)]
     fn band_of(&self, bin: usize) -> Option<usize> {
         self.ranges
@@ -147,7 +185,7 @@ mod tests {
             viz::BARS,
             (viz::BAR_MIN_HZ, viz::BAR_MAX_HZ),
             RATE,
-            viz::BAR_FLOOR_DB,
+            viz::BAR_TILT_DB_PER_OCT,
         )
     }
 
@@ -175,19 +213,82 @@ mod tests {
         }
     }
 
+    /// Alturas de las barras para `samples`, arrancando con la referencia
+    /// en `reference`.
+    fn levels(s: &mut Spectrum, samples: &[f32], reference: &mut f32) -> [f32; viz::BARS] {
+        let mut db = [0.0; viz::BARS];
+        s.bands(samples, &mut db);
+        let mut out = [0.0; viz::BARS];
+        normalize(
+            &db,
+            reference,
+            0.0,
+            (
+                viz::BAR_RANGE_DB,
+                viz::BAR_REF_FALL_DB_PER_SEC,
+                viz::BAR_REF_MIN_DB,
+            ),
+            &mut out,
+        );
+        out
+    }
+
     #[test]
     fn silencio_da_todo_en_cero() {
         let mut s = spectrum();
-        let mut out = [1.0; viz::BARS];
-        s.bands(&vec![0.0; viz::FFT_SIZE], &mut out);
+        let mut db = [1.0; viz::BARS];
+        s.bands(&vec![0.0; viz::FFT_SIZE], &mut db);
+        assert_eq!(db, [SILENCE_DB; viz::BARS]);
+        let mut reference = 0.0;
+        let out = levels(&mut s, &vec![0.0; viz::FFT_SIZE], &mut reference);
         assert_eq!(out, [0.0; viz::BARS]);
+    }
+
+    #[test]
+    fn la_referencia_sube_de_golpe_y_baja_despacio() {
+        let mut reference = viz::BAR_REF_MIN_DB;
+        let range = (viz::BAR_RANGE_DB, 10.0, viz::BAR_REF_MIN_DB);
+        let mut out = [0.0; 2];
+        normalize(
+            &[-6.0, -6.0 - viz::BAR_RANGE_DB / 2.0],
+            &mut reference,
+            0.1,
+            range,
+            &mut out,
+        );
+        assert_eq!(reference, -6.0);
+        assert_eq!(out, [1.0, 0.5]);
+        // Más bajo: la referencia baja 10 dB/s, no de golpe.
+        normalize(&[-30.0, -30.0], &mut reference, 0.5, range, &mut out);
+        assert_eq!(reference, -11.0);
+        // Y nunca baja del mínimo.
+        normalize(&[SILENCE_DB; 2], &mut reference, 100.0, range, &mut out);
+        assert_eq!(reference, viz::BAR_REF_MIN_DB);
+        assert_eq!(out, [0.0, 0.0]);
+    }
+
+    #[test]
+    fn la_misma_senal_mas_fuerte_se_ve_igual() {
+        let mut s = spectrum();
+        let mix: Vec<f32> = sine(200.0, 0.3)
+            .iter()
+            .zip(sine(3000.0, 0.05))
+            .map(|(a, b)| a + b)
+            .collect();
+        let louder: Vec<f32> = mix.iter().map(|x| x * 2.0).collect();
+        let (mut r1, mut r2) = (viz::BAR_REF_MIN_DB, viz::BAR_REF_MIN_DB);
+        let a = levels(&mut s, &mix, &mut r1);
+        let b = levels(&mut s, &louder, &mut r2);
+        for (x, y) in a.iter().zip(&b) {
+            assert!((x - y).abs() < 1e-3, "{a:?} {b:?}");
+        }
     }
 
     #[test]
     fn un_tono_de_1_khz_levanta_su_banda() {
         let mut s = spectrum();
-        let mut out = [0.0; viz::BARS];
-        s.bands(&sine(1000.0, 0.8), &mut out);
+        let mut reference = viz::BAR_REF_MIN_DB;
+        let out = levels(&mut s, &sine(1000.0, 0.8), &mut reference);
         let bin = (1000.0 * viz::FFT_SIZE as f32 / RATE).round() as usize;
         let band = s.band_of(bin).unwrap();
         let loudest = out

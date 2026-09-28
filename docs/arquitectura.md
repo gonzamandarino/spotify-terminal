@@ -32,7 +32,9 @@ main ──> ui::cli (parseo de subcomandos → Command)
   ├──> spotify::player (token Audio): connect + resolve_tracks
   │         ├──> hilo "sesion-audio" (runtime propio): Session de librespot,
   │         │      metadata de álbum/playlist (librespot-metadata)
-  │         └──> hilos de librespot: reproductor + salida de audio (rodio/WASAPI)
+  │         └──> hilos de librespot: reproductor + salida de audio
+  │                (spotify::output::DeviceSink: rodio/WASAPI, sigue al
+  │                dispositivo por defecto)
   │
   ├──> app::volume (carga el último volumen y lo guarda al salir)
   │
@@ -104,7 +106,10 @@ ventana como `Output::Cover`.
   librespot. Está separado para que un bloqueo en `main` no haga fallar la
   carga de un tema (las claves de audio tienen timeout de 1,5 s).
 - **librespot**: el reproductor crea sus propios hilos (decodificación,
-  carga de temas, salida de audio).
+  carga de temas, salida de audio). La salida es nuestra
+  (`spotify::output::DeviceSink`) y corre en el hilo del reproductor:
+  nunca espera más de `config::output::STALL` a un dispositivo que dejó
+  de sonar, y se pasa al de por defecto si cambia.
 - **App de escritorio:** el hilo principal es la ventana (winit + egui);
   el **motor** (`app::engine`) corre en su hilo con un runtime tokio de un
   hilo, y los tokens se piden en un hilo de bloqueo (`spawn_blocking`)
@@ -219,8 +224,9 @@ corregir la tabla.
 | `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
 | `player::Player` (incl. `restart`, `set_volume`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
 | `tap::AudioTap` (`push`, `snapshot`, `set_enabled`), `tap::TapSink` | `src/spotify/tap.rs` | doc-comment |
+| `output::DeviceSink` (crate; `Sink`: `start`, `stop`, `write`) | `src/spotify/output.rs` | doc-comment |
 | `cover::fetch`, `cover::Cover` | `src/spotify/cover.rs` | doc-comment |
-| `viz::Visualizer` (`show`, `set_mode`, `set_cover`, `panel_width`), `viz::Track`, `spectrum::Spectrum::bands` | `src/desktop/viz/` | doc-comment |
+| `viz::Visualizer` (`show`, `set_mode`, `set_cover`, `panel_width`), `viz::Track`, `spectrum::Spectrum::bands`, `spectrum::normalize` | `src/desktop/viz/` | doc-comment |
 | `playback::play_queue` (teclas, cola, shuffle), `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
 | `queue::Queue`, `queue::Step`, `queue::Clock`, `queue::on_player_event` (crate) | `src/app/queue.rs` | doc-comment |
 | `volume::Volume` (`load`, `save`, `output`) | `src/app/volume.rs` | doc-comment |

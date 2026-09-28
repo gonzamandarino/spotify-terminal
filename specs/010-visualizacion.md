@@ -68,6 +68,30 @@ ventana. El análisis del audio (copiar muestras, una FFT de 1024 puntos
   nota (≥ ~100 ms), se atrasa el dibujo con un valor de config.
 - **¿La CLI?** → Asumido: no cambia; no copia muestras ni descarga tapas
   (cero costo).
+- **Prueba con audio real (2026-09-28), pedidos tuyos:**
+  - **Cambiar la salida de audio rompe la app** (deja de sonar y se
+    cuelga). No lo causa la visualización: la salida rodio de librespot
+    queda atada al dispositivo que había al abrirla y, cuando ese deja de
+    pedir audio, librespot espera su cola sin límite (pasaba desde spec
+    001). Entra en este spec porque salió al verificar AC-9. Asumido: la
+    app sigue al dispositivo **por defecto** de Windows (como la app
+    oficial); al cambiarlo o desconectarlo sigue sonando por el nuevo en
+    ~1 s, perdiendo lo que había en cola (≤ ~340 ms). Sin ningún
+    dispositivo queda en pausa; al reanudar con uno vuelve a sonar.
+  - **Tamaño de la visualización** → Respondido por vos: arrastrando el
+    borde izquierdo del panel; queda guardado en `ajustes.json`
+    (`visualizacion.ancho`). Asumido: rango 160–1200 pt (config); con la
+    ventana angosta el panel se achica antes de ocultarse.
+  - **Animaciones poco convincentes** → Respondido por vos: barras casi
+    quietas, onda que tiembla, movimiento a los tirones. Se probó 30 fps
+    y se descartó (respondido por vos): se mantiene 15 fps y el tope de
+    10 % de CPU de AC-8. Asumido: barras relativas a
+    lo más fuerte reciente y con pendiente hacia los agudos; onda que
+    arranca siempre en un cruce por cero y se suaviza con el cuadro
+    anterior.
+  - **Vinilo: el borde de la tapa se ve serruchado** → Respondido por
+    vos: es el borde, no la nitidez de la imagen. Asumido: borde suavizado
+    de 1 pixel, como las figuras de egui.
 - **¿Versión y Release?** → Spec nuevo → minor: `0.2.0`. Va en la misma
   rama que spec 009 (sin mergear, a pedido tuyo). Asumido: al publicar,
   el changelog junta 0.1.1 y 0.2.0 en una sola sección `[0.2.0]` (0.1.1
@@ -89,28 +113,37 @@ ventana. El análisis del audio (copiar muestras, una FFT de 1024 puntos
       Ninguna / Onda / Barras / Vinilo; la elegida se marca, se aplica en
       el mismo frame, persiste al reabrir y "Restaurar todo" vuelve a
       Ninguna. Con Ninguna no hay panel.
-- [x] **AC-2** — Con otra opción, hay un panel de ancho de config a la
-      derecha de la consola, del alto de la consola. Si la ventana es tan
-      angosta que la consola quedaría bajo el mínimo de config, el panel
-      no se muestra; al agrandarla vuelve.
-- [x] **AC-3** — **Onda:** dibuja las últimas muestras que salieron al
-      audio. Con silencio es una línea plana; con un tono puro es una
-      senoidal (test con muestras sintéticas).
-- [x] **AC-4** — **Barras:** espectro en N bandas (config) de graves a
-      agudos, con caída suave. Un tono de 1 kHz levanta la banda que
-      contiene 1 kHz más que las demás; silencio → todas en cero (test).
-- [x] **AC-5** — **Vinilo:** gira a las rpm de config mientras suena y se
+- [ ] **AC-2** — Con otra opción, hay un panel a la derecha de la
+      consola, del alto de la consola, del ancho guardado en los ajustes
+      (de fábrica 280 pt). Arrastrando su borde izquierdo cambia de ancho
+      dentro del rango de config y queda guardado; "Restaurar" vuelve al
+      de fábrica. Si la ventana es angosta el panel se achica para que la
+      consola no quede bajo el mínimo de config; si ni el ancho mínimo
+      entra, no se muestra; al agrandarla vuelve.
+- [ ] **AC-3** — **Onda:** dibuja las últimas muestras que salieron al
+      audio, empezando en un cruce por cero hacia arriba: con silencio es
+      una línea plana; con un tono puro es una senoidal que no se corre
+      entre cuadros, empiece donde empiece la lectura (test con muestras
+      sintéticas).
+- [ ] **AC-4** — **Barras:** espectro en N bandas (config) de graves a
+      agudos, con caída suave, relativas a lo más fuerte reciente (la
+      referencia sube de golpe y baja despacio, con un piso). Un tono de
+      1 kHz levanta la banda que contiene 1 kHz más que las demás;
+      silencio → todas en cero; la misma señal más fuerte se ve igual
+      (test). Con música se mueven con el ritmo (verificación tuya).
+- [ ] **AC-5** — **Vinilo:** gira a las rpm de config mientras suena y se
       detiene en pausa; lleva la tapa del disco del tema que suena y la
-      cambia con el tema. Sin tapa (falla la descarga, tema sin tapa)
-      gira un disco sin imagen, sin avisos en la consola.
+      cambia con el tema, con el borde suavizado (no serruchado). Sin
+      tapa (falla la descarga, tema sin tapa) gira un disco sin imagen,
+      sin avisos en la consola.
 - [x] **AC-6** — Forma independiente del volumen: la misma música a 20 %
       y a 100 % se ve igual (test); con 0 % o mute, plana / en cero.
 - [x] **AC-7** — Se anima a ≤ 15 fps (config) solo mientras suena y la
       ventana no está minimizada. En pausa, stop, sin música o con
       Ninguna: CPU ~0 % en reposo, como spec 007 AC-14.
-- [ ] **AC-8** — Consumo reproduciendo en 920×580, con cada
-      visualización: CPU ≤ 10 % de un núcleo y RAM ≤ 100 MB (tope de spec
-      004), medido por PID. 20 cambios de tema con Vinilo no acumulan
+- [ ] **AC-8** — Consumo reproduciendo en 920×580 con el panel de
+      fábrica, con cada visualización: CPU ≤ 10 % de un núcleo y RAM
+      ≤ 100 MB (tope de spec 004), medido por PID. 20 cambios de tema con Vinilo no acumulan
       memoria (se suelta la tapa anterior).
 - [ ] **AC-9** — La reproducción no espera nunca a la visualización: si
       la ventana está ocupada, se pierden muestras para el dibujo, no
@@ -122,6 +155,14 @@ ventana. El análisis del audio (copiar muestras, una FFT de 1024 puntos
 - [x] **AC-11** — `ajustes.json` con un modo de visualización inválido
       abre con Ninguna y avisa la clave (como spec 007 AC-9).
 - [x] **AC-12** — La CLI (`spotify-terminal.exe`) no cambia.
+- [ ] **AC-13** — Cambiar la salida de audio de Windows (o desconectar
+      la actual) mientras suena no corta la música más de ~1 s ni cuelga
+      la app: sigue por el nuevo dispositivo por defecto. Sin ningún
+      dispositivo queda en pausa y pausar/cerrar responden; al reanudar
+      con uno, vuelve a sonar. La salida nunca espera más de
+      `config::output::STALL` a un dispositivo que no avanza (tests con
+      dispositivos falsos). Vale para la CLI y la app de escritorio
+      (verificación tuya con audio real).
 
 ## Riesgos / casos de falla
 - **Cortes de audio:** la copia de muestras corre en el hilo de audio de
@@ -215,6 +256,26 @@ rama (junto con spec 009).
 - Se corrigió de paso un doc-comment de spec 009 que había quedado
   pegado a la función equivocada en `desktop::app` (`text_size` /
   `strong`).
+- Después de la prueba con audio real (2026-09-28):
+  - `src/spotify/output.rs` *(nuevo)*: `DeviceSink`, salida propia con
+    rodio (dependencia directa, misma versión que trae librespot) en vez
+    de `audio_backend::find`. Reabre el dispositivo por defecto si falla,
+    si cambió (mirado cada `config::output::DEVICE_CHECK`) o si su cola
+    no baja en `STALL`. `Player::connect` la usa siempre (CLI también:
+    el bug era de las dos).
+  - `settings`: `viz_width` (`visualizacion.ancho`). `app`: borde
+    arrastrable del panel (`viz_grip`); `Visualizer::panel_width` recibe
+    el ancho pedido.
+  - `spectrum::bands` devuelve dB con pendiente; `spectrum::normalize`
+    (nuevo) los pasa a alturas relativas a la referencia.
+    `BAR_FLOOR_DB` se reemplaza por `BAR_TILT_DB_PER_OCT`, `BAR_RANGE_DB`,
+    `BAR_REF_FALL_DB_PER_SEC`, `BAR_REF_MIN_DB`.
+  - Onda: `trigger` + `blend_wave` (`WAVE_SAMPLES`, `WAVE_SEARCH`,
+    `WAVE_BLEND`, `WAVE_TRIGGER_*`); el tap guarda `READ_SAMPLES` más el
+    atraso.
+  - Vinilo: `label_mesh` con anillo de 1 pixel que se desvanece; 128
+    lados en vez de 64.
+  - `FPS` sigue en 15 (30 se probó y se descartó por CPU).
 
 ## Tareas
 
@@ -235,6 +296,14 @@ rama (junto con spec 009).
       modo (AC-8, AC-9).
 - [x] **T8** — Contratos, decisiones, arquitectura, glosario, README,
       changelog y versión `0.2.0`.
+- [x] **T9** — `DeviceSink`: sigue al dispositivo por defecto, nunca
+      espera sin tope. Tests con dispositivos falsos (AC-13).
+- [x] **T10** — Ancho del panel arrastrable y guardado (AC-2).
+- [x] **T11** — Onda con disparo y mezcla, barras relativas, borde
+      suavizado del vinilo. Tests (AC-3, AC-4, AC-5).
+- [ ] **T12** — Verificación tuya con audio real: cambio de dispositivo
+      (AC-13), las tres visualizaciones y el arrastre (AC-2–AC-5), y
+      consumo (AC-8).
 
 ## Definition of Done
 

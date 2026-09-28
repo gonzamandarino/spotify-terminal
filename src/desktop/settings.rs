@@ -314,6 +314,9 @@ pub(crate) struct Settings {
     pub(crate) console: ConsoleSettings,
     pub(crate) window: WindowSettings,
     pub(crate) visualization: VizMode,
+    /// Ancho pedido del panel de la visualización, en puntos (se cambia
+    /// arrastrando su borde), en `[PANEL_WIDTH_MIN, PANEL_WIDTH_MAX]`.
+    pub(crate) viz_width: f32,
 }
 
 impl Default for Settings {
@@ -358,6 +361,7 @@ impl Default for Settings {
                 geometry: None,
             },
             visualization: VizMode::None,
+            viz_width: config::viz::PANEL_WIDTH,
         }
     }
 }
@@ -499,7 +503,10 @@ impl Settings {
             Section::Playback => self.playback = defaults.playback,
             Section::Console => self.console = defaults.console,
             Section::Window => self.window = defaults.window,
-            Section::Visualization => self.visualization = defaults.visualization,
+            Section::Visualization => {
+                self.visualization = defaults.visualization;
+                self.viz_width = defaults.viz_width;
+            }
         }
     }
 
@@ -922,6 +929,24 @@ fn fields() -> Vec<Field> {
             Ok(())
         },
     ));
+    fields.push(field(
+        Section::Visualization,
+        "ancho",
+        |s| json!(s.viz_width),
+        |s, v| {
+            let width = number_in(
+                v,
+                config::viz::PANEL_WIDTH_MIN.into(),
+                config::viz::PANEL_WIDTH_MAX.into(),
+            )?;
+            // Dentro del rango de config: entra en f32.
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                s.viz_width = width as f32;
+            }
+            Ok(())
+        },
+    ));
     fields
 }
 
@@ -1230,10 +1255,26 @@ mod tests {
         }
         let mut s = Settings {
             visualization: VizMode::Vinyl,
+            viz_width: 500.0,
             ..Settings::default()
         };
         s.restore(Section::Visualization);
         assert_eq!(s.visualization, VizMode::None);
+        assert_eq!(s.viz_width, config::viz::PANEL_WIDTH);
+    }
+
+    #[test]
+    fn ancho_de_la_visualizacion_en_rango() {
+        let (s, warnings) = load_json(r#"{"visualizacion": {"ancho": 420}}"#);
+        assert_eq!(s.viz_width, 420.0);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(s.to_json(), json!({"visualizacion": {"ancho": 420.0}}));
+        for bad in ["10", "99999", r#""ancho""#] {
+            let (s, warnings) = load_json(&format!(r#"{{"visualizacion": {{"ancho": {bad}}}}}"#));
+            assert_eq!(s.viz_width, config::viz::PANEL_WIDTH, "{bad}");
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(warnings[0].contains("visualizacion.ancho"), "{warnings:?}");
+        }
     }
 
     #[test]

@@ -8,7 +8,14 @@
   espectro o un **vinilo** girando con la tapa del disco del tema. Se
   anima a 15 cuadros por segundo solo mientras suena; en pausa o sin
   música no gasta CPU. Viene apagada (Ninguna).
-- El panel se oculta solo si la ventana es muy angosta para la consola.
+- El ancho del panel se cambia arrastrando su borde izquierdo y queda
+  guardado. Si la ventana es angosta el panel se achica para dejarle
+  lugar a la consola, y se oculta si ni así entra.
+
+### Corregido
+- Cambiar o desconectar la salida de audio de Windows cortaba la música y
+  colgaba la app (también al pausar o cerrarla). Ahora sigue sonando por
+  el nuevo dispositivo por defecto; si no queda ninguno, pausa.
 
 ## [0.1.1] - 2026-09-27
 

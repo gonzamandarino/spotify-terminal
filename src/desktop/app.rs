@@ -1007,6 +1007,28 @@ impl DesktopApp {
     }
 }
 
+impl DesktopApp {
+    /// Borde izquierdo del panel de la visualización (`panel`, que hoy
+    /// mide `width`): arrastrarlo cambia `settings.viz_width` (spec 010,
+    /// AC-2), que se guarda como cualquier ajuste.
+    fn viz_grip(&mut self, ui: &mut Ui, panel: Rect, width: f32) {
+        let half = config::viz::PANEL_GRIP / 2.0;
+        let grip =
+            Rect::from_x_y_ranges(panel.left() - half..=panel.left() + half, panel.y_range());
+        let response = ui.interact(grip, Id::new("borde-visualizacion"), Sense::drag());
+        if response.hovered() || response.dragged() {
+            ui.ctx().set_cursor_icon(CursorIcon::ResizeHorizontal);
+        }
+        if response.dragged() {
+            // Desde el ancho que se ve (puede estar recortado por la
+            // ventana), así el borde sigue al mouse.
+            self.settings.viz_width = (width - response.drag_delta().x)
+                .round()
+                .clamp(config::viz::PANEL_WIDTH_MIN, config::viz::PANEL_WIDTH_MAX);
+        }
+    }
+}
+
 impl Content for DesktopApp {
     fn ui(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
@@ -1058,8 +1080,8 @@ impl Content for DesktopApp {
             .frame(Frame::new().inner_margin(Margin::symmetric(14, 0)))
             .show_inside(ui, |ui| self.input_row(ui));
         self.sync_viz();
-        if let Some(width) = self.viz.panel_width(rect.width()) {
-            Panel::right("visualizacion")
+        if let Some(width) = self.viz.panel_width(self.settings.viz_width, rect.width()) {
+            let panel = Panel::right("visualizacion")
                 .exact_size(width)
                 .resizable(false)
                 .frame(
@@ -1080,6 +1102,7 @@ impl Content for DesktopApp {
                         ctx.request_repaint_after(Duration::from_millis(1000 / config::viz::FPS));
                     }
                 });
+            self.viz_grip(ui, panel.response.rect, width);
         }
         CentralPanel::default()
             .frame(Frame::new().inner_margin(Margin {
