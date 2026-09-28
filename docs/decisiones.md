@@ -264,7 +264,8 @@ entradas viejas — se marcan reemplazadas.
   entre el ícono y el título (como VS Code). Fue la primera versión;
   se cambió a pedido tuyo al verla.
 - **Consecuencias:** la consola tiene un renglón menos de alto.
-- **Estado:** Vigente (spec 007)
+- **Estado:** Vigente (spec 007); los siete menús se juntaron en tres en
+  spec 009 (ver "Menú Personalización con submenús").
 
 ## 2026-09-27 — El tamaño de letra es un zoom de toda la ventana
 - **Decisión:** el tamaño de letra de los ajustes se aplica como zoom de
@@ -273,7 +274,8 @@ entradas viejas — se marcan reemplazadas.
   para que `Ctrl++`/`Ctrl+-`/`Ctrl+0` sean atajos configurables.
 - **Alternativa descartada:** cambiar solo el tamaño del texto (las
   barras de alto fijo lo cortaban con letra grande).
-- **Estado:** Vigente (spec 007)
+- **Estado:** Reemplazada por "El tamaño de letra cambia el texto, no la
+  UI" (2026-09-27, spec 009).
 
 ## 2026-09-27 — La calidad de audio cambia desde el próximo `play`
 - **Decisión:** librespot fija la calidad al crear el reproductor. Al
@@ -371,3 +373,109 @@ entradas viejas — se marcan reemplazadas.
   el tag puede no coincidir con `Cargo.toml`); versionar con cada merge
   aunque sea de docs (Releases vacíos).
 - **Estado:** Vigente
+
+## 2026-09-27 — Menú Personalización con submenús
+- **Decisión:** la barra de menús queda con Personalización,
+  Reproducción y Ajustes (`Alt+P` / `Alt+R` / `Alt+A`). Tema, Fuente,
+  Atajos, Consola y Ventana pasan a ser submenús de Personalización, con
+  el mismo contenido. egui abre un submenú con el mouse o Enter; se suma
+  → para abrirlo y ← para cerrarlo y volver a su botón (en un slider o en
+  el campo del prompt, las flechas siguen siendo de ellos).
+- **Motivo:** menos cosas en la barra, pedido tuyo (spec 009).
+- **Alternativa descartada:** un diálogo "Personalización" con pestañas
+  (más código nuevo; los submenús reusan los menús de spec 007).
+- **Consecuencias:** `Alt+T`/`F`/`C`/`V`/`J` quedan libres como atajo
+  de ventana y `Alt+P` pasa a estar reservada; un `ajustes.json` con un
+  atajo de ventana en `Alt+P` vuelve a fábrica en ese atajo, con aviso.
+- **Estado:** Vigente (spec 009)
+
+## 2026-09-27 — El tamaño de letra cambia el texto, no la UI
+- **Decisión:** el tamaño de letra de los ajustes cambia solo el texto
+  de la consola, la línea de entrada y la barra "sonando", en las mismas
+  proporciones de antes. La barra de título, la de menús, los menús
+  desplegados y los diálogos tienen letra fija
+  (`config::layout::UI_FONT_SIZE`). "Sonando" y la entrada crecen con la
+  letra para que no se corte (`desktop::layout::bars`); si la ventana no
+  da, bajan hasta lo justo para el texto y la consola se achica, sin que
+  nada se superponga.
+- **Motivo:** el zoom de toda la ventana (spec 007) agrandaba la UI
+  entera: con 32 pt las barras ocupaban más que la ventana mínima y la
+  consola desaparecía (spec 009).
+- **Alternativa descartada:** seguir con el zoom y agrandar la ventana
+  mínima (la UI seguiría creciendo en vez de la letra).
+- **Estado:** Vigente (spec 009)
+
+## 2026-09-27 — Visualización: 15 fps y solo mientras suena
+- **Decisión:** la visualización (onda, barras, vinilo) se redibuja a
+  `config::viz::FPS` = 15 cuadros por segundo y solo con música sonando y
+  la ventana visible. En pausa, stop o sin visualización no pide cuadros.
+  Ninguna es el default. Las muestras se copian solo con Onda o Barras.
+- **Motivo:** el costo es redibujar la ventana por CPU. Medido con un
+  prototipo en 920×580 (spec 010): 30 fps = 16–18 % de un núcleo; 15 fps
+  = 7–9 %; quieto = 0 %.
+- **Alternativa descartada:** 30 fps (el doble de CPU sin verse mucho
+  mejor); fps elegibles desde el menú (pedido tuyo: fijo en config).
+- **Estado:** Vigente (spec 010). Reconfirmada el 2026-09-28: tras la
+  prueba con audio real se probó 30 fps (más fluido) y se volvió a 15
+  para mantener el tope de 10 % de un núcleo (AC-8); la fluidez se busca
+  con el suavizado de la onda y la caída de las barras.
+
+## 2026-09-27 — Muestras para dibujar: copia que nunca frena el audio
+- **Decisión:** la salida de audio de librespot se envuelve en `TapSink`,
+  que pasa cada paquete tal cual y copia sus muestras (mono, sin el
+  volumen) a `AudioTap` con `try_lock`: si la ventana lo está leyendo, se
+  saltea esa copia. El volumen se saca dividiendo por el factor que aplicó
+  librespot, así la forma no cambia con el volumen.
+- **Motivo:** la reproducción gana siempre; perder un paquete del dibujo
+  no se nota, esperar en el hilo de audio sí.
+- **Alternativa descartada:** un canal con cada paquete (reserva memoria
+  por paquete en el hilo de audio y se acumula si la ventana no lee).
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-27 — FFT propia y JPEG de `image` para las tapas
+- **Decisión:** la FFT de las barras es radix-2 escrita a mano (~60
+  líneas, con test contra una DFT). Las tapas (JPEG de `i.scdn.co`) se
+  decodifican con `image`, que ya estaba en el árbol por el portapapeles
+  de `egui-winit`, sumándole el formato `jpeg` (`zune-jpeg`, Rust puro).
+  Se bajan una vez por tema, de ~300 px, en el motor.
+- **Motivo:** una FFT de 1024 puntos 15 veces por segundo no justifica
+  `rustfft`; para JPEG no hay alternativa sin dependencia y esta es la
+  más chica (no suma otra crate de imágenes).
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-27 — La tapa se recorta en círculo en el vinilo
+- **Decisión:** en Vinilo la tapa del disco es la etiqueta del centro,
+  recortada en círculo y girando (~10 rpm, `config::viz::VINYL_RPM`).
+- **Consecuencias:** las guías de marca de Spotify piden no recortar ni
+  alterar las tapas. Para un cliente personal se acepta; si el proyecto
+  se distribuyera más allá, revisar.
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-28 — Barras relativas a lo más fuerte reciente, onda con disparo
+- **Decisión:** las barras miden cada banda en dB con una pendiente de
+  +3 dB/octava desde 1 kHz y la altura es relativa a una referencia que
+  sube de golpe a la banda más fuerte y baja 4 dB/s (rango visible 36 dB,
+  `config::viz::BAR_*`). La onda arranca en un cruce por cero hacia arriba
+  (de la señal pasada por un pasabajos), promedia las muestras de cada
+  punto y mezcla 40 % del cuadro anterior.
+- **Motivo:** con un piso fijo de −60 dB la música llenaba casi todas las
+  barras todo el tiempo y los agudos no se movían ("casi quietas"); la
+  onda saltaba de fase en cada cuadro y se veía como ruido.
+- **Estado:** Vigente (spec 010)
+
+## 2026-09-28 — Salida de audio propia que sigue al dispositivo por defecto
+- **Decisión:** en vez de la salida rodio de librespot
+  (`audio_backend::find`), `spotify::output::DeviceSink`: también rodio
+  (0.21, misma versión y features que ya trae librespot, ahora como
+  dependencia directa), pero reabre el dispositivo por defecto si el
+  abierto avisa un error, si cambió el de por defecto (se mira cada 1 s
+  mientras suena) o si su cola no baja en 1 s. Sin dispositivo, devuelve
+  error y librespot pausa.
+- **Motivo:** la de librespot se queda con el dispositivo que había al
+  abrirla; al cambiar la salida de audio de Windows o desconectarla, deja
+  de pedir audio y librespot espera a que se vacíe su cola sin límite: no
+  suena más y el hilo del reproductor queda colgado (pausa y cerrar la app
+  también). No tiene forma de configurarlo desde afuera.
+- **Consecuencias:** al pasar de dispositivo se pierde lo que estaba en
+  cola en el viejo (≤ ~340 ms). No se suma ninguna crate al árbol.
+- **Estado:** Vigente (spec 010)

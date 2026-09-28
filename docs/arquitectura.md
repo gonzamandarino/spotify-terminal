@@ -32,7 +32,9 @@ main ──> ui::cli (parseo de subcomandos → Command)
   ├──> spotify::player (token Audio): connect + resolve_tracks
   │         ├──> hilo "sesion-audio" (runtime propio): Session de librespot,
   │         │      metadata de álbum/playlist (librespot-metadata)
-  │         └──> hilos de librespot: reproductor + salida de audio (rodio/WASAPI)
+  │         └──> hilos de librespot: reproductor + salida de audio
+  │                (spotify::output::DeviceSink: rodio/WASAPI, sigue al
+  │                dispositivo por defecto)
   │
   ├──> app::volume (carga el último volumen y lo guarda al salir)
   │
@@ -58,15 +60,24 @@ bin/desktop ──> desktop::run
                   │      └──> desktop::app::DesktopApp (consola: salida,
                   │             entrada, historial, Tab, barra "sonando";
                   │             dueña de los Settings vivos)
-                  │               ├──> desktop::menu (barra de menús y
+                  │               ├──> desktop::menu (barra de menús:
+                  │               │      Personalización ▸ submenús,
+                  │               │      Reproducción, Ajustes; y
                   │               │      diálogos: editan Settings)
-                  │               ├──> desktop::theme (Settings → estilo,
-                  │               │      fuente y zoom de egui)
+                  │               ├──> desktop::theme (Settings → estilo
+                  │               │      y fuente de egui)
+                  │               ├──> desktop::layout (altos de
+                  │               │      "sonando" y la entrada según
+                  │               │      el tamaño de letra)
+                  │               ├──> desktop::viz (panel derecho: onda,
+                  │               │      barras con viz::spectrum, vinilo;
+                  │               │      lee spotify::tap::AudioTap y
+                  │               │      recibe las tapas del motor)
                   │               ├──> desktop::settings::save (diferido)
                   │               └──> desktop::hotkeys::replace (al
                   │                      cambiar un atajo global)
                   │                 │ Input (línea, atajos, Esc,
-                  │                 │ Playback, Shortcuts)
+                  │                 │ Playback, Shortcuts, Covers)
                   │                 ▼
                   ├──> desktop::hotkeys (hilo "atajos": RegisterHotKey)
                   │                 │ Input::Global (con la app minimizada)
@@ -77,9 +88,16 @@ bin/desktop ──> desktop::run
                          ├──> app::volume::Volume (mismo volumen que la CLI)
                          └──> app::backend::Backend (costura para tests)
                                 └── SpotifyBackend ──> spotify::auth / web /
-                                                       player (como la CLI)
+                                                       player (como la CLI,
+                                                       con AudioTap) / cover
                                                        y setup (Client ID)
 ```
+
+Visualización (spec 010): el hilo de audio de librespot escribe cada
+paquete en `spotify::tap::AudioTap` (a través de `TapSink`, sin esperar
+nunca) y la ventana lo lee al dibujar. Las tapas las baja y decodifica el
+motor (`spotify::cover`, aparte de su tarea de fondo) y llegan a la
+ventana como `Output::Cover`.
 
 ## Hilos
 - **main** (runtime `current_thread`): login, Web API, UI y teclado
@@ -88,13 +106,21 @@ bin/desktop ──> desktop::run
   librespot. Está separado para que un bloqueo en `main` no haga fallar la
   carga de un tema (las claves de audio tienen timeout de 1,5 s).
 - **librespot**: el reproductor crea sus propios hilos (decodificación,
-  carga de temas, salida de audio).
+  carga de temas, salida de audio). La salida es nuestra
+  (`spotify::output::DeviceSink`) y corre en el hilo del reproductor:
+  nunca espera más de `config::output::STALL` a un dispositivo que dejó
+  de sonar, y se pasa al de por defecto si cambia.
 - **App de escritorio:** el hilo principal es la ventana (winit + egui);
   el **motor** (`app::engine`) corre en su hilo con un runtime tokio de un
   hilo, y los tokens se piden en un hilo de bloqueo (`spawn_blocking`)
   porque librespot-oauth espera el callback del navegador con una llamada
   bloqueante. La ventana y el motor se hablan solo por canales; el motor
   despierta a la ventana con `request_repaint`.
+- **Visualización (spec 010):** el hilo de salida de audio de librespot
+  copia cada paquete a `AudioTap` con `try_lock` (si la ventana lo tiene
+  tomado, se saltea la copia, nunca el audio); la ventana lo lee al
+  dibujar el panel, a lo sumo `config::viz::FPS` veces por segundo y solo
+  mientras suena.
 - **atajos** (`desktop::hotkeys`, solo Windows): registra los atajos
   globales y duerme en `GetMessageW` hasta que se aprieta uno; entonces
   manda un `Input::Global` al motor por el mismo canal que la ventana. Se
@@ -197,6 +223,10 @@ corregir la tabla.
 | `auth::get_valid_token`, `auth::logout`, `auth::Token`, `auth::TokenKind` | `src/spotify/auth.rs` | doc-comment |
 | `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
 | `player::Player` (incl. `restart`, `set_volume`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
+| `tap::AudioTap` (`push`, `snapshot`, `set_enabled`), `tap::TapSink` | `src/spotify/tap.rs` | doc-comment |
+| `output::DeviceSink` (crate; `Sink`: `start`, `stop`, `write`) | `src/spotify/output.rs` | doc-comment |
+| `cover::fetch`, `cover::Cover` | `src/spotify/cover.rs` | doc-comment |
+| `viz::Visualizer` (`show`, `set_mode`, `set_cover`, `panel_width`), `viz::Track`, `spectrum::Spectrum::bands`, `spectrum::normalize` | `src/desktop/viz/` | doc-comment |
 | `playback::play_queue` (teclas, cola, shuffle), `playback::restore_terminal_on_panic` | `src/ui/playback.rs` | doc-comment |
 | `queue::Queue`, `queue::Step`, `queue::Clock`, `queue::on_player_event` (crate) | `src/app/queue.rs` | doc-comment |
 | `volume::Volume` (`load`, `save`, `output`) | `src/app/volume.rs` | doc-comment |
@@ -209,6 +239,7 @@ corregir la tabla.
 | `engine::PlaybackSettings` (crate) | `src/app/engine.rs` | doc-comment |
 | `menu::Menus` (`keyboard`, `bar`, `dialogs`, `wants_keyboard`), `menu::Command` | `src/desktop/menu.rs` | doc-comment |
 | `theme::Theme::apply`, `theme::installed_fonts` | `src/desktop/theme.rs` | doc-comment |
+| `layout::bars`, `layout::scale` | `src/desktop/layout.rs` | doc-comment |
 | `engine::GlobalAction` (crate) | `src/app/engine.rs` | doc-comment |
 | `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |
 | `config::data_dir` | `src/config.rs` | doc-comment |

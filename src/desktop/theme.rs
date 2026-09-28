@@ -9,7 +9,7 @@ use std::{
 use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle, Visuals};
 
 use super::settings::Appearance;
-use crate::config::{self, FontEntry, theme::FONT_SIZE};
+use crate::config::{self, FontEntry, layout::UI_FONT_SIZE};
 
 /// Familia de la fuente en negrita (título, tema que suena).
 pub(super) const BOLD: &str = "bold";
@@ -61,12 +61,15 @@ pub(super) struct Theme {
 }
 
 impl Theme {
-    /// Aplica `appearance`: fuente, colores y tamaño.
+    /// Aplica `appearance`: fuente y colores.
     ///
     /// - Post: la fuente se relee del disco solo si cambió (la anterior se
-    ///   suelta: cambiar varias veces no acumula memoria). El tamaño de
-    ///   letra se aplica como zoom de toda la ventana (barras incluidas),
-    ///   como `Ctrl++` en VS Code. Los símbolos que la fuente no tiene (♫,
+    ///   suelta: cambiar varias veces no acumula memoria). Los estilos de
+    ///   texto de egui (menús, diálogos) quedan en `UI_FONT_SIZE`, fijo:
+    ///   `appearance.font_size` no se aplica acá sino en el texto de la
+    ///   consola, la entrada y "sonando" (`app`, spec 009). No toca el zoom
+    ///   de egui: queda en 1 (el `Ctrl++` / `Ctrl+-` de egui se apaga para
+    ///   que sean atajos propios). Los símbolos que la fuente no tiene (♫,
     ///   🔀...) salen de las fuentes de egui. Con fondo claro, los widgets
     ///   de egui usan su estilo claro. El cursor de texto no titila: cada
     ///   parpadeo sería un redibujo completo por CPU (T5 del spec 004: ~6 %
@@ -100,18 +103,17 @@ impl Theme {
             visuals.widgets.open.weak_bg_fill = color(p.border);
             style.visuals = visuals;
             for text_style in [TextStyle::Body, TextStyle::Monospace, TextStyle::Button] {
-                style.text_styles.insert(text_style, mono(FONT_SIZE));
+                style.text_styles.insert(text_style, mono(UI_FONT_SIZE));
             }
             style
                 .text_styles
-                .insert(TextStyle::Small, mono(FONT_SIZE - 3.0));
+                .insert(TextStyle::Small, mono(UI_FONT_SIZE - 3.0));
             style.spacing.scroll.bar_width = 6.0;
             style.spacing.scroll.floating = true;
         });
         // Ctrl++ / Ctrl+- son atajos propios (configurables), no el zoom
         // de egui.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
-        ctx.set_zoom_factor(appearance.font_size / FONT_SIZE);
         warning
     }
 }

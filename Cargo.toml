@@ -1,6 +1,6 @@
 [package]
 name = "spotify-terminal"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Cliente de Spotify liviano para la terminal"
@@ -25,12 +25,18 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06"] }
 dotenvy = "0.15.7"
 # Ya la trae librespot; solo por `StreamExt::next` sobre las teclas.
 futures-util = { version = "0.3.34", default-features = false }
+# Ya la trae el portapapeles de egui-winit (BMP/PNG); se le suma JPEG para
+# las tapas de la visualización (spec 010, ver docs/decisiones.md).
+image = { version = "0.25.9", default-features = false, features = ["jpeg"] }
 librespot-core = "0.8.0"
 librespot-metadata = "0.8.0"
 librespot-oauth = "0.8.0"
 librespot-playback = "0.8.0"
 # Misma versión y features que ya compila librespot: shuffle de la cola.
 rand = "0.9.5"
+# Misma versión y features que ya trae librespot: salida de audio propia
+# que sigue al dispositivo por defecto (spec 010, ver docs/decisiones.md).
+rodio = { version = "0.21.1", default-features = false, features = ["playback"] }
 # Misma versión que ya trae librespot-oauth: un solo stack HTTP/TLS.
 reqwest = { version = "0.12.28", features = ["json"] }
 serde = { version = "1.0.229", features = ["derive"] }

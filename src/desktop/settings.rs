@@ -263,6 +263,42 @@ pub(crate) struct WindowSettings {
     pub(crate) geometry: Option<Geometry>,
 }
 
+/// Qué se dibuja en el panel de la derecha (spec 010).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum VizMode {
+    /// Sin panel.
+    #[default]
+    None,
+    Wave,
+    Bars,
+    Vinyl,
+}
+
+impl VizMode {
+    pub(crate) const ALL: [VizMode; 4] =
+        [VizMode::None, VizMode::Wave, VizMode::Bars, VizMode::Vinyl];
+
+    /// Como se escribe en `ajustes.json`.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            VizMode::None => "ninguna",
+            VizMode::Wave => "onda",
+            VizMode::Bars => "barras",
+            VizMode::Vinyl => "vinilo",
+        }
+    }
+
+    /// Como se ve en el menú.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            VizMode::None => "Ninguna",
+            VizMode::Wave => "Onda",
+            VizMode::Bars => "Barras",
+            VizMode::Vinyl => "Vinilo con la tapa del disco",
+        }
+    }
+}
+
 /// Todos los ajustes.
 ///
 /// Invariante (la cumplen `default()` y `from_json`, y la mantienen
@@ -277,6 +313,10 @@ pub(crate) struct Settings {
     pub(crate) playback: PlaybackSettings,
     pub(crate) console: ConsoleSettings,
     pub(crate) window: WindowSettings,
+    pub(crate) visualization: VizMode,
+    /// Ancho pedido del panel de la visualización, en puntos (se cambia
+    /// arrastrando su borde), en `[PANEL_WIDTH_MIN, PANEL_WIDTH_MAX]`.
+    pub(crate) viz_width: f32,
 }
 
 impl Default for Settings {
@@ -320,6 +360,8 @@ impl Default for Settings {
                 remember_geometry: true,
                 geometry: None,
             },
+            visualization: VizMode::None,
+            viz_width: config::viz::PANEL_WIDTH,
         }
     }
 }
@@ -334,10 +376,11 @@ pub(crate) enum Section {
     Playback,
     Console,
     Window,
+    Visualization,
 }
 
 impl Section {
-    const ALL: [Section; 7] = [
+    const ALL: [Section; 8] = [
         Section::Colors,
         Section::Font,
         Section::WindowKeys,
@@ -345,6 +388,7 @@ impl Section {
         Section::Playback,
         Section::Console,
         Section::Window,
+        Section::Visualization,
     ];
 
     fn key(self) -> &'static str {
@@ -356,6 +400,7 @@ impl Section {
             Section::Playback => "reproduccion",
             Section::Console => "consola",
             Section::Window => "ventana",
+            Section::Visualization => "visualizacion",
         }
     }
 }
@@ -458,6 +503,10 @@ impl Settings {
             Section::Playback => self.playback = defaults.playback,
             Section::Console => self.console = defaults.console,
             Section::Window => self.window = defaults.window,
+            Section::Visualization => {
+                self.visualization = defaults.visualization;
+                self.viz_width = defaults.viz_width;
+            }
         }
     }
 
@@ -864,6 +913,40 @@ fn fields() -> Vec<Field> {
             Ok(())
         },
     ));
+    fields.push(field(
+        Section::Visualization,
+        "modo",
+        |s| json!(s.visualization.key()),
+        |s, v| {
+            let text = v.as_str().map(str::trim).unwrap_or_default();
+            s.visualization = VizMode::ALL
+                .into_iter()
+                .find(|m| m.key().eq_ignore_ascii_case(text))
+                .ok_or_else(|| {
+                    let known: Vec<&str> = VizMode::ALL.iter().map(|m| m.key()).collect();
+                    format!("tiene que ser uno de: {}", known.join(", "))
+                })?;
+            Ok(())
+        },
+    ));
+    fields.push(field(
+        Section::Visualization,
+        "ancho",
+        |s| json!(s.viz_width),
+        |s, v| {
+            let width = number_in(
+                v,
+                config::viz::PANEL_WIDTH_MIN.into(),
+                config::viz::PANEL_WIDTH_MAX.into(),
+            )?;
+            // Dentro del rango de config: entra en f32.
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                s.viz_width = width as f32;
+            }
+            Ok(())
+        },
+    ));
     fields
 }
 
@@ -1133,6 +1216,68 @@ mod tests {
     }
 
     #[test]
+    fn letras_de_los_menus_de_spec_009() {
+        // Un archivo de 0.1.0 con Alt+P (antes libre) y Alt+T (antes de
+        // Tema): Alt+P ahora abre Personalización y vuelve a fábrica con
+        // aviso; Alt+T quedó libre y se respeta. El tamaño de letra se lee
+        // igual que antes (AC-8).
+        let (s, warnings) = load_json(
+            r#"{
+                "fuente": {"tamaño": 20.0},
+                "atajos_ventana": {"stop": "Alt+P", "shuffle": "Alt+T"}
+            }"#,
+        );
+        let d = Settings::default();
+        assert_eq!(s.appearance.font_size, 20.0);
+        assert_eq!(
+            s.combo(Target::Window(WindowAction::Stop)),
+            d.combo(Target::Window(WindowAction::Stop))
+        );
+        assert_eq!(
+            s.combo(Target::Window(WindowAction::Shuffle)),
+            Some(combo("Alt+T"))
+        );
+        assert_eq!(warnings.len(), 1, "{warnings:#?}");
+        assert!(warnings[0].contains("atajos_ventana.stop"), "{warnings:#?}");
+    }
+
+    #[test]
+    fn visualizacion_valida_o_de_fabrica() {
+        let (s, warnings) = load_json(r#"{"visualizacion": {"modo": "Barras"}}"#);
+        assert_eq!(s.visualization, VizMode::Bars);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(s.to_json(), json!({"visualizacion": {"modo": "barras"}}));
+        for bad in [r#""espiral""#, "3", "null"] {
+            let (s, warnings) = load_json(&format!(r#"{{"visualizacion": {{"modo": {bad}}}}}"#));
+            assert_eq!(s.visualization, VizMode::None, "{bad}");
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(warnings[0].contains("visualizacion.modo"), "{warnings:?}");
+        }
+        let mut s = Settings {
+            visualization: VizMode::Vinyl,
+            viz_width: 500.0,
+            ..Settings::default()
+        };
+        s.restore(Section::Visualization);
+        assert_eq!(s.visualization, VizMode::None);
+        assert_eq!(s.viz_width, config::viz::PANEL_WIDTH);
+    }
+
+    #[test]
+    fn ancho_de_la_visualizacion_en_rango() {
+        let (s, warnings) = load_json(r#"{"visualizacion": {"ancho": 420}}"#);
+        assert_eq!(s.viz_width, 420.0);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(s.to_json(), json!({"visualizacion": {"ancho": 420.0}}));
+        for bad in ["10", "99999", r#""ancho""#] {
+            let (s, warnings) = load_json(&format!(r#"{{"visualizacion": {{"ancho": {bad}}}}}"#));
+            assert_eq!(s.viz_width, config::viz::PANEL_WIDTH, "{bad}");
+            assert_eq!(warnings.len(), 1, "{warnings:?}");
+            assert!(warnings[0].contains("visualizacion.ancho"), "{warnings:?}");
+        }
+    }
+
+    #[test]
     fn archivo_roto_o_ausente() {
         let dir = std::env::temp_dir().join(format!("spt-ajustes-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -1211,10 +1356,14 @@ mod tests {
             ComboCheck::Reserved(_)
         ));
         assert!(matches!(
-            s.check_combo(pause, combo("Alt+T")),
+            s.check_combo(pause, combo("Alt+P")),
             ComboCheck::Reserved(_)
         ));
-        assert_eq!(s.check_combo(pause, combo("Alt+Shift+T")), ComboCheck::Ok);
+        assert_eq!(s.check_combo(pause, combo("Alt+Shift+P")), ComboCheck::Ok);
+        // Letras de los menús de antes de spec 009: libres.
+        for free in ["Alt+T", "Alt+F", "Alt+C", "Alt+V", "Alt+J"] {
+            assert_eq!(s.check_combo(pause, combo(free)), ComboCheck::Ok, "{free}");
+        }
         assert!(matches!(
             s.check_combo(pause, config::RESTORE_ALL_SHORTCUT),
             ComboCheck::Reserved(_)

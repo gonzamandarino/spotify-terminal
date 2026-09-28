@@ -59,6 +59,25 @@ pub const SPOTIFY_ID_LEN: usize = 22;
 /// que 320, y sin diferencia audible con auriculares comunes.
 pub const AUDIO_BITRATE: Bitrate = Bitrate::Bitrate160;
 
+/// Salida de audio (`spotify::output`): sigue al dispositivo por defecto
+/// del sistema y nunca espera para siempre a uno que dejó de sonar.
+pub mod output {
+    use std::time::Duration;
+
+    /// Paquetes que se dejan en cola antes de esperar a que el dispositivo
+    /// los toque (~340 ms, lo mismo que la salida rodio de librespot; ver
+    /// `viz::LATENCY`).
+    pub const QUEUE_PACKETS: usize = 26;
+    /// Cada cuánto se mira si la cola bajó mientras se espera.
+    pub const POLL: Duration = Duration::from_millis(10);
+    /// Si la cola no baja en este tiempo, el dispositivo dejó de pedir
+    /// audio (se desconectó, Windows lo invalidó): se reabre.
+    pub const STALL: Duration = Duration::from_secs(1);
+    /// Cada cuánto se mira, mientras suena, si cambió el dispositivo por
+    /// defecto (para pasarse a él).
+    pub const DEVICE_CHECK: Duration = Duration::from_secs(1);
+}
+
 /// Temas seguidos que pueden fallar al cargar antes de cortar la lista:
 /// más que eso casi seguro es la conexión, no los temas.
 pub const MAX_CONSECUTIVE_UNAVAILABLE: u32 = 3;
@@ -186,6 +205,30 @@ pub const WINDOW_TITLE: &str = "spotify-terminal";
 pub const WINDOW_SIZE: [f32; 2] = [920.0, 580.0];
 pub const WINDOW_MIN_SIZE: [f32; 2] = [520.0, 320.0];
 
+/// Altos de las barras de la ventana, en puntos, con la letra por defecto
+/// (`theme::FONT_SIZE`). Con letra más grande, "sonando" y la entrada
+/// crecen en proporción; la barra de título y la de menús no (spec 009).
+pub mod layout {
+    pub const TITLE_HEIGHT: f32 = 36.0;
+    pub const MENU_HEIGHT: f32 = 26.0;
+    pub const NOW_HEIGHT: f32 = 64.0;
+    pub const INPUT_HEIGHT: f32 = 34.0;
+    /// Lo mínimo en que entra el texto de "sonando" (dos renglones) y de la
+    /// entrada con la letra por defecto; con otra letra, en proporción.
+    /// Si la ventana no da para los altos de arriba, bajan hasta acá.
+    pub const NOW_TIGHT_HEIGHT: f32 = 44.0;
+    pub const INPUT_TIGHT_HEIGHT: f32 = 22.0;
+    /// Renglones de consola que se intentan dejar a la vista antes de
+    /// achicar las barras.
+    pub const CONSOLE_MIN_ROWS: f32 = 3.0;
+    /// Margen de arriba y abajo de la consola.
+    pub const CONSOLE_MARGIN_TOP: i8 = 10;
+    pub const CONSOLE_MARGIN_BOTTOM: i8 = 4;
+    /// Letra de menús y diálogos: fija, no sigue el tamaño de letra de los
+    /// ajustes (spec 009).
+    pub const UI_FONT_SIZE: f32 = 14.0;
+}
+
 /// Líneas que guarda la consola; las más viejas se descartan.
 pub const SCROLLBACK_LINES: usize = 2_000;
 
@@ -219,6 +262,97 @@ pub mod theme {
     pub const CONSOLE_FONT_BOLD: &str = "consolab.ttf";
     /// Tamaño de letra de la consola, en puntos.
     pub const FONT_SIZE: f32 = 14.0;
+}
+
+// --- Visualización (spec 010) ---
+
+/// Visualización de la canción en la app de escritorio (spec 010).
+pub mod viz {
+    use std::time::Duration;
+
+    /// Cuadros por segundo mientras suena. Solo se anima sonando: en pausa,
+    /// sin música o minimizada no se redibuja (spec 010, AC-7). 30 se veía
+    /// más fluido pero pasaba el tope de CPU de AC-8.
+    pub const FPS: u64 = 15;
+    /// Ancho del panel, a la derecha de la consola, en puntos: el de
+    /// fábrica y el rango en que se puede arrastrar su borde (se guarda en
+    /// los ajustes).
+    pub const PANEL_WIDTH: f32 = 280.0;
+    pub const PANEL_WIDTH_MIN: f32 = 160.0;
+    pub const PANEL_WIDTH_MAX: f32 = 1200.0;
+    /// Ancho de la zona que se agarra para arrastrar el borde, en puntos.
+    pub const PANEL_GRIP: f32 = 6.0;
+    /// La consola nunca queda más angosta que esto: el panel se achica
+    /// hasta `PANEL_WIDTH_MIN` y, si ni así entra, no se muestra.
+    pub const MIN_CONSOLE_WIDTH: f32 = 360.0;
+    /// Muestras (mono) que se analizan por cuadro: ~23 ms a 44,1 kHz.
+    /// Potencia de 2 (FFT radix-2).
+    pub const FFT_SIZE: usize = 1024;
+    /// Muestras que muestra la onda (~23 ms) y dónde se busca, antes de
+    /// ellas, el cruce por cero que la deja quieta en pantalla.
+    pub const WAVE_SAMPLES: usize = 1024;
+    pub const WAVE_SEARCH: usize = 1024;
+    /// Puntos de la onda: cada uno es el promedio de `WAVE_SAMPLES /
+    /// WAVE_POINTS` muestras.
+    pub const WAVE_POINTS: usize = 256;
+    /// Cuánto del cuadro anterior queda en la onda (0 = nada): suaviza el
+    /// temblor sin atrasarla (~1 cuadro).
+    pub const WAVE_BLEND: f32 = 0.4;
+    /// Pasabajos (0–1, más chico = más grave) con que se busca el cruce por
+    /// cero: lo marcan los graves, que cambian menos entre cuadros.
+    pub const WAVE_TRIGGER_SMOOTH: f32 = 0.05;
+    /// Cuánto tiene que bajar la señal filtrada antes de que un cruce
+    /// hacia arriba cuente (ignora el ruido alrededor de cero).
+    pub const WAVE_TRIGGER_HYST: f32 = 0.01;
+    /// Barras del espectro y su rango de frecuencias (escala logarítmica).
+    pub const BARS: usize = 32;
+    pub const BAR_MIN_HZ: f32 = 40.0;
+    pub const BAR_MAX_HZ: f32 = 16_000.0;
+    /// Cuánto baja una barra por segundo (fracción del alto total) cuando
+    /// su valor nuevo es menor: caída suave en vez de parpadeo.
+    pub const BAR_FALL_PER_SEC: f32 = 2.2;
+    /// dB que se suman por octava sobre 1 kHz (y se restan por debajo): la
+    /// música tiene mucha más energía en los graves y sin esto los agudos
+    /// casi no se mueven.
+    pub const BAR_TILT_DB_PER_OCT: f32 = 3.0;
+    /// Rango que se ve de una barra: de la referencia (lo más fuerte
+    /// reciente) a esto menos. Más chico = más movimiento.
+    pub const BAR_RANGE_DB: f32 = 36.0;
+    /// La referencia sube de golpe a lo más fuerte y baja esto por
+    /// segundo: un pasaje suave se ve más bajo que el estribillo, pero no
+    /// queda aplastado para siempre.
+    pub const BAR_REF_FALL_DB_PER_SEC: f32 = 4.0;
+    /// La referencia no baja de acá: con casi silencio no se inflan las
+    /// barras con ruido.
+    pub const BAR_REF_MIN_DB: f32 = -42.0;
+    /// Vueltas por minuto del vinilo (no 33⅓: a 15 fps saltaría 13° por
+    /// cuadro).
+    pub const VINYL_RPM: f32 = 10.0;
+    /// Lado aproximado de la tapa que se pide a Spotify, en px.
+    pub const COVER_SIZE: u32 = 300;
+    /// Tope de la descarga de una tapa.
+    pub const COVER_MAX_BYTES: usize = 2 * 1024 * 1024;
+    /// Cuánto se atrasa el dibujo respecto de las muestras que entran a
+    /// la salida de audio (que las toca después de su buffer). Medido en
+    /// spec 010, T6: la salida de librespot (rodio) guarda hasta 26
+    /// paquetes de ~580 muestras (~340 ms); con música, las muestras
+    /// entraban en promedio 335 ms antes de sonar (entre 134 y 595).
+    pub const LATENCY: Duration = Duration::from_millis(340);
+    /// Tope de `LATENCY`: el buffer de muestras guarda esto de más.
+    pub const LATENCY_MAX: Duration = Duration::from_millis(500);
+    /// Muestras que se leen por cuadro: las de la FFT o las de la onda.
+    pub const READ_SAMPLES: usize = if FFT_SIZE > WAVE_SEARCH + WAVE_SAMPLES {
+        FFT_SIZE
+    } else {
+        WAVE_SEARCH + WAVE_SAMPLES
+    };
+    /// Muestras que guarda el buffer: lo leído más el atraso.
+    pub const TAP_CAPACITY: usize = READ_SAMPLES
+        + (LATENCY_MAX.as_millis() as usize) * (librespot_playback::SAMPLE_RATE as usize) / 1000;
+
+    const _: () = assert!(FFT_SIZE.is_power_of_two() && WAVE_POINTS <= WAVE_SAMPLES);
+    const _: () = assert!(PANEL_WIDTH_MIN <= PANEL_WIDTH && PANEL_WIDTH <= PANEL_WIDTH_MAX);
+    const _: () = assert!(LATENCY.as_millis() <= LATENCY_MAX.as_millis());
 }
 
 // --- Ajustes (spec 007) ---
@@ -261,10 +395,10 @@ pub const PROMPT_MAX_CHARS: usize = 8;
 /// Calidades de audio que se ofrecen, en kbps.
 pub const BITRATES_KBPS: &[u16] = &[96, 160, 320];
 
-/// Letra subrayada de cada menú de la barra, en orden: Tema, Fuente,
-/// Atajos, Reproducción, Consola, Ventana, Ajustes. `Alt`+letra abre el
-/// menú, así que `Alt`+esas letras no se aceptan como atajo de ventana.
-pub(crate) const MENU_ACCESS_KEYS: [char; 7] = ['T', 'F', 'A', 'R', 'C', 'V', 'J'];
+/// Letra subrayada de cada menú de la barra, en orden: Personalización,
+/// Reproducción, Ajustes (spec 009). `Alt`+letra abre el menú, así que
+/// `Alt`+esas letras no se aceptan como atajo de ventana.
+pub(crate) const MENU_ACCESS_KEYS: [char; 3] = ['P', 'R', 'A'];
 
 /// Atajo fijo que vuelve todo a fábrica: no se puede reasignar ni quitar,
 /// por si un tema deja el menú ilegible.

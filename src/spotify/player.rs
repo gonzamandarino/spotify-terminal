@@ -21,14 +21,23 @@ use librespot_core::{
 };
 use librespot_metadata::{Album, Metadata, Playlist};
 use librespot_playback::{
-    audio_backend,
-    config::{AudioFormat, Bitrate, PlayerConfig},
+    audio_backend::Sink,
+    config::{Bitrate, PlayerConfig},
     mixer::{Mixer, MixerConfig, softmixer::SoftMixer},
     player::{self, PlayerEventChannel},
 };
 use tokio::{runtime, sync::oneshot};
 
-use crate::{app::volume::Volume, config, error::AppError, spotify::auth::Token};
+use crate::{
+    app::volume::Volume,
+    config,
+    error::AppError,
+    spotify::{
+        auth::Token,
+        output::DeviceSink,
+        tap::{AudioTap, TapSink},
+    },
+};
 
 /// Reproductor conectado a Spotify y a la salida de audio por defecto.
 ///
@@ -66,7 +75,11 @@ impl Player {
     ///   Client ID la sesión conecta pero no carga audio: spike T2).
     /// - Post: reproductor listo, sin nada cargado, con `volume` y calidad
     ///   `bitrate` (fija mientras viva: para otra, otro `connect`); la
-    ///   sesión corre en su propio hilo.
+    ///   sesión corre en su propio hilo. La salida es el dispositivo por
+    ///   defecto del sistema y lo sigue si cambia o se desconecta
+    ///   (`DeviceSink`, spec 010 AC-13); si no queda ninguno, librespot
+    ///   pausa. Con `tap`, cada paquete que sale al audio se copia ahí sin
+    ///   demorarlo (`TapSink`, spec 010).
     /// - Errores: sin dispositivo de salida → `NoAudioOutput` (se chequea
     ///   antes de conectar); Spotify rechaza el token → `SessionRejected`;
     ///   no se llega al servidor → `Network`.
@@ -75,13 +88,13 @@ impl Player {
         token: &Token,
         volume: Volume,
         bitrate: Bitrate,
+        tap: Option<AudioTap>,
     ) -> Result<Player, AppError> {
         // Sin esto, rodio hace panic en el hilo del reproductor al abrir la
         // salida y el error llega tarde y confuso.
         if cpal::default_host().default_output_device().is_none() {
             return Err(AppError::NoAudioOutput);
         }
-        let backend = audio_backend::find(None).ok_or(AppError::NoAudioOutput)?;
 
         let runtime = AudioRuntime::start()?;
         let credentials = Credentials::with_access_token(token.access_token());
@@ -102,11 +115,18 @@ impl Player {
             .map_err(|e| AppError::Internal(format!("control de volumen: {e}")))?;
         // Arranca en 50 %: se fija antes de que pueda sonar nada.
         mixer.set_volume(volume.output());
+        let tap_volume = mixer.get_soft_volume();
         let inner = player::Player::new(
             player_config,
             session.clone(),
             mixer.get_soft_volume(),
-            move || backend(None, AudioFormat::default()),
+            move || {
+                let sink: Box<dyn Sink> = Box::new(DeviceSink::system());
+                match tap {
+                    Some(tap) => Box::new(TapSink::new(sink, tap, tap_volume)),
+                    None => sink,
+                }
+            },
         );
         Ok(Player {
             inner,
