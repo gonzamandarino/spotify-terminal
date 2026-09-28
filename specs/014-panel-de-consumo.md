@@ -1,7 +1,7 @@
 # 014 - Panel de consumo
 
 ## Estado
-En verificación
+Verificado
 
 ## Contexto
 Bajo consumo es un requisito del proyecto (CLAUDE.md), pero hoy la única
@@ -138,13 +138,13 @@ recurso que marca cuándo la app se pasa.
       de error del tema, en el texto y en el tramo del gráfico que lo
       pasa; el gráfico dibuja el máximo como línea horizontal. Igual o
       menor, colores normales (test del corte; captura con un máximo bajo).
-- [ ] **AC-8** — Los valores coinciden con los medidos por PID desde
+- [x] **AC-8** — Los valores coinciden con los medidos por PID desde
       afuera (Administrador de tareas / script de medición) con margen de
       ±1 punto de CPU y ±5 MB de RAM, en reposo y reproduciendo con
       Barras. Mismas unidades que el Administrador de tareas.
-- [ ] **AC-9** — Consumo del propio panel: prendido con los dos valores
+- [x] **AC-9** — Consumo del propio panel: prendido con los dos valores
       y los dos gráficos, en reposo (sin música, visualización Ninguna),
-      la app queda ≤ 1 % de un núcleo y la RAM no crece más de 1 MB
+      la app queda ≤ 1 % de un núcleo y la RAM no crece más de 2 MB
       respecto de apagado. Minimizada no se mide ni redibuja. Apagado,
       reposo en ~0 % como spec 007 AC-14.
 - [x] **AC-10** — `ajustes.json` con una clave de `consumo` inválida
@@ -244,14 +244,14 @@ Sin dependencias nuevas: se suma la feature
       AC-4).
 - [x] **T6** — Repintado cada período solo con el panel visible y sin
       minimizar; historia borrada al apagar/minimizar (AC-6, AC-9).
-- [ ] **T7** — Verificación: capturas, comparación por PID y consumo en
+- [x] **T7** — Verificación: capturas, comparación por PID y consumo en
       reposo en release (AC-8, AC-9, AC-11).
 - [x] **T8** — Contratos, arquitectura, decisiones, glosario, README,
       changelog y versión `0.6.0`.
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
 - [x] Tests corren y pasan
 - [x] Contratos de funciones públicas y doc de arquitectura actualizados si
@@ -301,7 +301,7 @@ mandando teclas a la ventana.
 - **AC-7:** con `max_ram` 20 MB, `RAM 28 MB` y su línea en rojo (captura);
   en la captura del menú, el pico de CPU al abrirlo pasó el 10 % y ese
   tramo se ve rojo. `pasar_el_maximo_es_mayor_estricto`.
-- **AC-8 (parcial):** con las unidades del Administrador (release, en
+- **AC-8:** con las unidades del Administrador (release, en
   reposo, tres capturas cada ~2,5 s): el panel mostró `CPU 0,0 %` /
   `RAM 15 MB`; afuera, CPU 0,00 % de la PC y working set privado
   (`Win32_PerfRawData_PerfProc_Process.WorkingSetPrivate`, el del
@@ -310,7 +310,7 @@ mandando teclas a la ventana.
   = 1,1 % de la PC: la diferencia que viste era de unidades. **Falta** reproduciendo con Barras (hace
   falta música; no se pudo mandar `play` sin que la ventana tuviera foco
   estable).
-- **AC-9 (no cumple la RAM):** reposo, visualización Ninguna, por PID.
+- **AC-9:** reposo, visualización Ninguna, por PID.
   Primero en working set, tres corridas de 20–30 s cada una:
 
   | Panel | CPU (% de un núcleo) | RAM (MB) |
@@ -328,9 +328,14 @@ mandando teclas a la ventana.
   por encima del tope de 1 MB que se asumió en este spec. Lo que el panel
   guarda son 2×60 `f32`; la diferencia es de redibujar una vez por
   segundo (buffers de egui y de la superficie que Windows mantiene en el
-  working set). Pendiente decisión tuya: aceptar el tope en ~2 MB o
-  buscar reducirlo.
+  working set). Resuelto al cierre: el tope pasa a 2 MB (ver abajo).
 - **AC-10:** `settings::tests::consumo_valido_o_de_fabrica` (tipo
   equivocado, opción desconocida, máximos fuera de rango y RAM no entera:
   valor de fábrica + aviso con la clave).
 - **AC-11:** el diff no toca `src/main.rs`, `src/ui/` ni `src/app/`.
+
+Cierre (2026-09-28, confirmado por vos, "todo ok"):
+- **AC-8:** con música, los valores del panel coinciden con el
+  Administrador de tareas (verificación tuya).
+- **AC-9:** se acepta el costo medido. El tope de RAM del AC pasa de
+  1 MB a **2 MB** (+1,1–1,3 MB medidos, estable); el de CPU no cambia.
