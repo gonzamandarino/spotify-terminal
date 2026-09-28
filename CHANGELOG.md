@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0] - 2026-09-28
+
+### Agregado (spec 012 — botones del reproductor)
+- La barra de abajo tiene botones: ⏮ anterior, ⏯ pausa / reanudar y ⏭
+  siguiente en el centro, ♥ al lado del tema (agrega o quita de Tus me
+  gusta) y 🔀 shuffle a la derecha. Hacen lo mismo que sus comandos y al
+  pasar el mouse muestran su atajo. Sin nada sonando se ven apagados.
+- Si la ventana es angosta, primero se ocultan la posición, la cola y el
+  volumen de la barra, y el título se corta: los botones siempre se ven.
+
+### Cambiado
+- El ícono al lado del tema (▶ / ⏸) ya no cambia de color al pausar.
+
 ## [0.3.0] - 2026-09-28
 
 ### Agregado (spec 011 — like y mis playlists)

@@ -17,8 +17,8 @@ use std::{
 
 use egui::{
     Align, Align2, CentralPanel, Color32, CursorIcon, FontId, Frame, Galley, Id, Key, Layout,
-    Margin, Modifiers, Panel, Pos2, Rect, ResizeDirection, RichText, ScrollArea, Sense, Stroke,
-    StrokeKind, TextEdit, Ui, UiBuilder, Vec2, ViewportCommand, WindowLevel,
+    Margin, Modifiers, Panel, Pos2, Rect, ResizeDirection, RichText, ScrollArea, Sense, Shape,
+    Stroke, StrokeKind, TextEdit, Ui, UiBuilder, Vec2, ViewportCommand, WindowLevel,
     text::{CCursor, CCursorRange, LayoutJob, TextWrapping},
 };
 use tokio::sync::mpsc::UnboundedSender;
@@ -42,7 +42,10 @@ use crate::{
     },
     config::{
         self,
-        layout::{CONSOLE_MARGIN_BOTTOM, CONSOLE_MARGIN_TOP, MENU_HEIGHT, TITLE_HEIGHT},
+        layout::{
+            CONSOLE_MARGIN_BOTTOM, CONSOLE_MARGIN_TOP, MENU_HEIGHT, PLAYER_BUTTON,
+            PLAYER_BUTTON_GAP, PLAYER_SPACE, TITLE_HEIGHT,
+        },
         theme::FONT_SIZE,
     },
     spotify::tap::AudioTap,
@@ -115,6 +118,8 @@ pub(super) struct DesktopApp {
     started: bool,
     /// Visualización del panel derecho (spec 010).
     viz: Visualizer,
+    /// Dónde quedó cada botón de "sonando" en el último frame.
+    player_buttons: Vec<(PlayerButton, Rect)>,
 }
 
 impl DesktopApp {
@@ -157,6 +162,7 @@ impl DesktopApp {
             keep_file,
             started: false,
             viz: Visualizer::new(tap),
+            player_buttons: Vec::new(),
         };
         app.push(ConsoleLine::Out(
             LineKind::Track,
@@ -803,126 +809,190 @@ impl DesktopApp {
         });
     }
 
-    fn now_bar(&self, ui: &mut Ui) {
+    /// Barra "sonando": qué suena, los botones (spec 012) y el progreso.
+    /// Sin nada sonando, los botones se ven atenuados y no hacen nada.
+    fn now_bar(&mut self, ui: &mut Ui) {
         let p = self.palette();
         let rect = ui.max_rect().shrink2(Vec2::new(16.0, 0.0));
-        let t = |base: f32| self.text_size(base);
-        let painter = ui.painter();
-        let volume = self.volume.map(|v| volume_chip(&p, v));
-        let Some(now) = &self.now else {
-            let mut right = rect.right();
-            if let Some((text, chip_color)) = volume {
-                let chip = painter.text(
-                    rect.right_center(),
-                    Align2::RIGHT_CENTER,
-                    text,
-                    mono(t(12.0)),
-                    chip_color,
-                );
-                right = chip.left() - t(14.0);
-            }
-            // Cortado con "…" si con letra grande no entra antes del volumen.
-            let idle = one_line(
-                ui,
-                "Nada sonando · escribí  play <nombre>",
-                mono(t(13.0)),
-                color(p.secondary),
-                (right - rect.left()).max(0.0),
-            );
-            painter.galley(
-                Pos2::new(rect.left(), rect.center().y - idle.size().y / 2.0),
-                idle,
-                color(p.secondary),
-            );
-            return;
+        let scale = layout::scale(self.settings.appearance.font_size);
+        let t = move |base: f32| base * scale;
+        let painter = ui.painter().clone();
+        let now = self.now.clone();
+        let chip_font = mono(t(12.0));
+        let measure = |text: &str| {
+            one_line(ui, text, chip_font.clone(), Color32::WHITE, f32::INFINITY)
+                .size()
+                .x
+        };
+        // Con algo sonando hay dos filas (con la letra por defecto, a 20 del
+        // borde de arriba y 18 del de abajo, como en 0.1.0); si no, una.
+        // Todo lo de la fila se centra en `top` por lo que se ve: el texto
+        // por el centro de las mayúsculas, los íconos por su dibujo.
+        let top = if now.is_some() {
+            rect.center().y - t(12.0)
+        } else {
+            rect.center().y
         };
 
-        // Fila de arriba: estado, tema — artistas, e indicadores a la derecha.
-        // Las dos filas, centradas en la barra (con la letra por defecto,
-        // a 20 del borde de arriba y 18 del de abajo, como en 0.1.0).
-        let top = rect.center().y - t(12.0);
-        let mut chips = Vec::new();
-        if !now.position.trim().is_empty() {
-            chips.push((now.position.trim().to_string(), color(p.secondary)));
+        // Chips de la derecha: volumen y, con algo sonando, cola y posición.
+        let volume = self.volume.map(|v| volume_chip(&p, v));
+        let mut others = Vec::new();
+        if let Some(now) = &now {
+            if now.queued > 0 {
+                others.push((format!("cola {}", now.queued), color(p.secondary)));
+            }
+            if !now.position.trim().is_empty() {
+                others.push((now.position.trim().to_string(), color(p.secondary)));
+            }
         }
-        if now.queued > 0 {
-            chips.push((format!("cola {}", now.queued), color(p.secondary)));
+
+        let mut left = rect.left();
+        if let Some(now) = &now {
+            let (state_icon, state_color) = state_icon(&p, now.state);
+            let icon = paint_glyph(
+                ui,
+                &painter,
+                state_icon,
+                bold(t(14.0)),
+                state_color,
+                Pos2::new(rect.left(), top),
+                Align::Min,
+            );
+            left = icon.right() + t(10.0);
         }
-        // ♥ lleno si está en Tus me gusta; apagado si no o si no se sabe
-        // (spec 011).
-        let liked = if now.liked == Some(true) {
-            color(p.accent)
-        } else {
-            color(p.secondary).gamma_multiply(0.5)
-        };
-        chips.push(("♥".to_string(), liked));
-        let shuffle = if now.shuffle {
-            color(p.accent)
-        } else {
-            color(p.secondary).gamma_multiply(0.5)
-        };
-        chips.push(("🔀".to_string(), shuffle));
-        chips.extend(volume);
-        let mut right = rect.right();
-        for (text, chip_color) in chips.iter().rev() {
-            let r = painter.text(
-                Pos2::new(right, top),
+
+        let (button, space) = (t(PLAYER_BUTTON), t(PLAYER_SPACE));
+        let widths: Vec<f32> = others.iter().map(|(text, _)| measure(text)).collect();
+        let row = layout::player_row(
+            left,
+            rect.right(),
+            rect.center().x,
+            layout::ButtonSizes {
+                button,
+                gap: t(PLAYER_BUTTON_GAP),
+                space,
+            },
+            volume.as_ref().map(|(text, _)| measure(text)),
+            &widths,
+        );
+        let chip_y = top + caps_shift(ui, &chip_font);
+        if let (Some(x), Some((text, chip_color))) = (row.volume, &volume) {
+            painter.text(
+                Pos2::new(x, chip_y),
                 Align2::RIGHT_CENTER,
                 text,
-                mono(t(12.0)),
+                chip_font.clone(),
                 *chip_color,
             );
-            right = r.left() - t(14.0);
+        }
+        for ((text, chip_color), x) in others.iter().zip(&row.others) {
+            if let Some(x) = x {
+                painter.text(
+                    Pos2::new(*x, chip_y),
+                    Align2::RIGHT_CENTER,
+                    text,
+                    chip_font.clone(),
+                    *chip_color,
+                );
+            }
         }
 
-        let (state_icon, state_color) = match now.state {
-            PlayState::Loading => ("…", color(p.secondary)),
-            PlayState::Playing => ("▶", color(p.accent)),
-            PlayState::Paused => ("⏸", color(p.warning)),
+        // Título — artistas (o "nada sonando"), cortados con "…" antes del ♥.
+        let max_width = (row.text_right - button - space - left).max(0.0);
+        let text_end = match &now {
+            Some(now) => {
+                let title = if now.title.is_empty() {
+                    "Cargando…"
+                } else {
+                    now.title.as_str()
+                };
+                let title_font = self.strong(t(14.0));
+                let title_y = top + caps_shift(ui, &title_font);
+                let title_galley = one_line(ui, title, title_font, color(p.text_strong), max_width);
+                let title_width = title_galley.size().x;
+                painter.galley(
+                    Pos2::new(left, title_y - title_galley.size().y / 2.0),
+                    title_galley,
+                    color(p.text_strong),
+                );
+                let mut end = left + title_width;
+                if !now.artists.is_empty() {
+                    let artists = format!("  —  {}", now.artists);
+                    let font = mono(t(13.0));
+                    let y = top + caps_shift(ui, &font);
+                    let galley = one_line(
+                        ui,
+                        &artists,
+                        font,
+                        color(p.secondary),
+                        (max_width - title_width).max(0.0),
+                    );
+                    end += galley.size().x;
+                    painter.galley(
+                        Pos2::new(left + title_width, y - galley.size().y / 2.0),
+                        galley,
+                        color(p.secondary),
+                    );
+                }
+                end
+            }
+            None => {
+                let font = mono(t(13.0));
+                let y = top + caps_shift(ui, &font);
+                let idle = one_line(
+                    ui,
+                    "Nada sonando · escribí  play <nombre>",
+                    font,
+                    color(p.secondary),
+                    max_width,
+                );
+                let end = left + idle.size().x;
+                painter.galley(
+                    Pos2::new(left, y - idle.size().y / 2.0),
+                    idle,
+                    color(p.secondary),
+                );
+                end
+            }
         };
-        let icon = painter.text(
-            Pos2::new(rect.left(), top),
-            Align2::LEFT_CENTER,
-            state_icon,
-            bold(t(14.0)),
-            state_color,
-        );
-        let title = if now.title.is_empty() {
-            "Cargando…"
-        } else {
-            now.title.as_str()
-        };
-        let x = icon.right() + t(10.0);
-        let max_width = (right - x).max(0.0);
-        let title_galley = one_line(
-            ui,
-            title,
-            self.strong(t(14.0)),
-            color(p.text_strong),
-            max_width,
-        );
-        let title_width = title_galley.size().x;
-        painter.galley(
-            Pos2::new(x, top - title_galley.size().y / 2.0),
-            title_galley,
-            color(p.text_strong),
-        );
-        if !now.artists.is_empty() {
-            let artists = format!("  —  {}", now.artists);
-            let galley = one_line(
-                ui,
-                &artists,
-                mono(t(13.0)),
-                color(p.secondary),
-                (max_width - title_width).max(0.0),
-            );
-            painter.galley(
-                Pos2::new(x + title_width, top - galley.size().y / 2.0),
-                galley,
-                color(p.secondary),
-            );
+        let heart = (text_end + space / 2.0 + button / 2.0).min(row.text_right - button / 2.0);
+
+        // Botones.
+        let active = now.is_some();
+        let playing = now.as_ref().is_some_and(|n| n.state == PlayState::Playing);
+        let liked = now.as_ref().is_some_and(|n| n.liked == Some(true));
+        let shuffled = now.as_ref().is_some_and(|n| n.shuffle);
+        let buttons = [
+            (PlayerButton::Prev, row.controls[0], false),
+            (PlayerButton::PlayPause, row.controls[1], false),
+            (PlayerButton::Next, row.controls[2], false),
+            (PlayerButton::Shuffle, row.shuffle, shuffled),
+            (PlayerButton::Like, heart, liked),
+        ];
+        let mut clicked = None;
+        self.player_buttons.clear();
+        for (kind, x, on) in buttons {
+            let area = Rect::from_center_size(Pos2::new(x, top), Vec2::splat(button));
+            let look = ButtonLook {
+                active,
+                on,
+                playing,
+                shuffle_font: mono(t(13.0)),
+                corner: t(4.0),
+            };
+            let tip = self.button_tip(kind, playing, liked);
+            if player_button(ui, &p, area, kind, &look, &tip) {
+                clicked = Some(kind);
+            }
+            self.player_buttons.push((kind, area));
+        }
+        if let Some(kind) = clicked {
+            self.send(kind.input());
         }
 
+        let Some(now) = now else {
+            return;
+        };
         // Fila de abajo: tiempo, barra de progreso y duración.
         let bottom = rect.center().y + t(14.0);
         let elapsed = now.clock.elapsed().min(now.duration);
@@ -950,6 +1020,27 @@ impl DesktopApp {
             let mut done = track;
             done.set_width(track.width() * fraction.clamp(0.0, 1.0));
             painter.rect_filled(done, 2.0, color(p.accent));
+        }
+    }
+
+    /// Tooltip de un botón de "sonando": la acción y, si tiene, su atajo
+    /// de ventana vigente.
+    fn button_tip(&self, kind: PlayerButton, playing: bool, liked: bool) -> String {
+        let label = match kind {
+            PlayerButton::Prev => "Anterior",
+            PlayerButton::PlayPause if playing => "Pausar",
+            PlayerButton::PlayPause => "Reanudar",
+            PlayerButton::Next => "Siguiente",
+            PlayerButton::Shuffle => "Shuffle sí / no",
+            PlayerButton::Like if liked => "Quitar de Tus me gusta",
+            PlayerButton::Like => "Agregar a Tus me gusta",
+        };
+        let combo = kind
+            .window_action()
+            .and_then(|action| self.settings.window_keys.get(&action).copied().flatten());
+        match combo {
+            Some(combo) => format!("{label}  ({combo})"),
+            None => label.to_string(),
         }
     }
 
@@ -1238,6 +1329,39 @@ fn volume_chip(p: &Palette, volume: Volume) -> (String, Color32) {
 }
 
 /// Texto en una línea, cortado con "…" si no entra en `max_width`.
+/// Cuánto bajar el centro de un renglón de `font` para que el centro de
+/// sus mayúsculas quede donde estaba (egui centra por la caja del renglón,
+/// que incluye el lugar de los descendentes: el texto se ve más arriba).
+fn caps_shift(ui: &Ui, font: &FontId) -> f32 {
+    let galley =
+        ui.fonts_mut(|fonts| fonts.layout_no_wrap("H".into(), font.clone(), Color32::WHITE));
+    galley.rect.center().y - galley.mesh_bounds.center().y
+}
+
+/// Dibuja `text` (un ícono de una o dos letras) con su dibujo centrado en
+/// `at.y`; en x, su caja empieza en `at.x` (`Align::Min`) o su dibujo se
+/// centra en `at.x` (`Align::Center`). Devuelve la caja donde quedó.
+fn paint_glyph(
+    ui: &Ui,
+    painter: &egui::Painter,
+    text: &str,
+    font: FontId,
+    text_color: Color32,
+    at: Pos2,
+    align: Align,
+) -> Rect {
+    let galley = ui.fonts_mut(|fonts| fonts.layout_no_wrap(text.into(), font, text_color));
+    let ink = galley.mesh_bounds;
+    let x = match align {
+        Align::Center => at.x - ink.center().x,
+        _ => at.x - galley.rect.left(),
+    };
+    let pos = Pos2::new(x, at.y - ink.center().y);
+    let rect = galley.rect.translate(pos.to_vec2());
+    painter.galley(pos, galley, text_color);
+    rect
+}
+
 fn one_line(ui: &Ui, text: &str, font: FontId, text_color: Color32, max_width: f32) -> Arc<Galley> {
     let mut job = LayoutJob::simple_singleline(text.to_string(), font, text_color);
     job.wrap = TextWrapping {
@@ -1297,6 +1421,166 @@ fn title_button(ui: &mut Ui, p: &Palette, rect: Rect, id: &str, icon: TitleIcon)
         }
     }
     response
+}
+
+/// Ícono de estado al lado del tema. Sonando y en pausa, del mismo color
+/// (el de acento, spec 012); cargando, apagado.
+fn state_icon(p: &Palette, state: PlayState) -> (&'static str, Color32) {
+    match state {
+        PlayState::Loading => ("…", color(p.secondary)),
+        PlayState::Playing => ("▶", color(p.accent)),
+        PlayState::Paused => ("⏸", color(p.accent)),
+    }
+}
+
+/// Un botón de la barra "sonando" (spec 012).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlayerButton {
+    Prev,
+    PlayPause,
+    Next,
+    Shuffle,
+    Like,
+}
+
+impl PlayerButton {
+    /// Lo que se le manda al motor: lo mismo que el comando o el atajo.
+    fn input(self) -> Input {
+        match self {
+            PlayerButton::Prev => Input::Prev,
+            PlayerButton::PlayPause => Input::TogglePause,
+            PlayerButton::Next => Input::Next,
+            PlayerButton::Shuffle => Input::Shuffle,
+            PlayerButton::Like => Input::ToggleLike,
+        }
+    }
+
+    /// El atajo de ventana que hace lo mismo, para el tooltip.
+    fn window_action(self) -> Option<WindowAction> {
+        match self {
+            PlayerButton::Prev => Some(WindowAction::Prev),
+            PlayerButton::PlayPause => Some(WindowAction::TogglePause),
+            PlayerButton::Next => Some(WindowAction::Next),
+            PlayerButton::Shuffle => Some(WindowAction::Shuffle),
+            PlayerButton::Like => None,
+        }
+    }
+}
+
+/// Cómo se dibuja un botón de "sonando".
+struct ButtonLook {
+    /// Hay algo sonando: si no, se ve atenuado y no responde.
+    active: bool,
+    /// Encendido (shuffle sí, ♥ lleno): color de acento.
+    on: bool,
+    /// Para ⏯: sonando muestra ⏸, si no ▶.
+    playing: bool,
+    shuffle_font: FontId,
+    corner: f32,
+}
+
+/// Dibuja un botón de "sonando" en `area`. `true` si se lo clickeó estando
+/// activo. Los íconos se dibujan con formas (no dependen de la fuente),
+/// salvo el de shuffle, que es el 🔀 de siempre.
+fn player_button(
+    ui: &Ui,
+    p: &Palette,
+    area: Rect,
+    kind: PlayerButton,
+    look: &ButtonLook,
+    tip: &str,
+) -> bool {
+    let sense = if look.active {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let response = ui.interact(area, Id::new(("boton-sonando", kind as u8)), sense);
+    let painter = ui.painter();
+    if look.active && response.hovered() {
+        painter.rect_filled(area, look.corner, color(p.border));
+    }
+    let tint = if !look.active {
+        color(p.secondary).gamma_multiply(0.35)
+    } else if look.on {
+        color(p.accent)
+    } else if kind == PlayerButton::Shuffle || kind == PlayerButton::Like {
+        color(p.secondary)
+    } else {
+        color(p.text_strong)
+    };
+    let c = area.center();
+    let k = area.width() / 2.0;
+    let at = |x: f32, y: f32| c + Vec2::new(x * k, y * k);
+    let triangle = |points: Vec<Pos2>| Shape::convex_polygon(points, tint, Stroke::NONE);
+    match kind {
+        PlayerButton::PlayPause if look.playing => {
+            for x in [-0.22, 0.22] {
+                let bar = Rect::from_center_size(at(x, 0.0), Vec2::new(0.2 * k, 0.8 * k));
+                painter.rect_filled(bar, 1.0, tint);
+            }
+        }
+        PlayerButton::PlayPause => {
+            painter.add(triangle(vec![
+                at(-0.3, -0.42),
+                at(0.48, 0.0),
+                at(-0.3, 0.42),
+            ]));
+        }
+        PlayerButton::Next | PlayerButton::Prev => {
+            // Dibujado hacia la derecha; "anterior" es el espejo.
+            let dir = if kind == PlayerButton::Next {
+                1.0
+            } else {
+                -1.0
+            };
+            let (a, b, d) = (
+                at(-0.4 * dir, -0.36),
+                at(0.2 * dir, 0.0),
+                at(-0.4 * dir, 0.36),
+            );
+            let points = if dir > 0.0 {
+                vec![a, b, d]
+            } else {
+                vec![a, d, b]
+            };
+            painter.add(triangle(points));
+            let bar = Rect::from_center_size(at(0.32 * dir, 0.0), Vec2::new(0.14 * k, 0.72 * k));
+            painter.rect_filled(bar, 1.0, tint);
+        }
+        PlayerButton::Like => {
+            // Va de -0,37 a 0,50: se sube 0,065 para que su dibujo quede
+            // centrado como el de los demás.
+            let lift = -0.065;
+            for x in [-0.22, 0.22] {
+                painter.circle_filled(at(x, -0.12 + lift), 0.25 * k, tint);
+            }
+            painter.add(triangle(vec![
+                at(-0.46, -0.04 + lift),
+                at(0.46, -0.04 + lift),
+                at(0.0, 0.5 + lift),
+            ]));
+        }
+        PlayerButton::Shuffle => {
+            paint_glyph(
+                ui,
+                painter,
+                "🔀",
+                look.shuffle_font.clone(),
+                tint,
+                c,
+                Align::Center,
+            );
+        }
+    }
+    let response = if look.active {
+        response.on_hover_cursor(CursorIcon::PointingHand)
+    } else {
+        response
+    };
+    let clicked = look.active && response.clicked();
+    response.on_hover_text(tip);
+    clicked
 }
 
 #[cfg(test)]
@@ -1439,6 +1723,152 @@ mod tests {
         app.complete(&ctx);
         assert_eq!(app.input, "log");
         assert_eq!(app.lines.len(), before + 1);
+    }
+
+    /// Contexto con las fuentes del tema, como al abrir la app.
+    fn themed(app: &DesktopApp) -> egui::Context {
+        let ctx = egui::Context::default();
+        let _ = Theme::default().apply(&ctx, &app.settings.appearance);
+        ctx
+    }
+
+    /// Un frame de la ventana, sin ventana de verdad.
+    fn frame(ctx: &egui::Context, app: &mut DesktopApp, events: Vec<egui::Event>) {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::from(config::WINDOW_SIZE),
+            )),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(raw, |ui| app.ui(ui));
+    }
+
+    /// Click (apretar y soltar) en el centro de `area`.
+    fn click(ctx: &egui::Context, app: &mut DesktopApp, area: Rect) {
+        let pos = area.center();
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        frame(ctx, app, vec![egui::Event::PointerMoved(pos), button(true)]);
+        frame(ctx, app, vec![button(false)]);
+    }
+
+    fn sonando() -> NowPlaying {
+        NowPlaying {
+            title: "Tema".into(),
+            artists: "Artista".into(),
+            position: "[1/3] ".into(),
+            duration: Duration::from_secs(200),
+            clock: Default::default(),
+            state: PlayState::Playing,
+            shuffle: false,
+            queued: 0,
+            cover: None,
+            liked: Some(false),
+        }
+    }
+
+    fn area_of(app: &DesktopApp, kind: PlayerButton) -> Rect {
+        app.player_buttons
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map(|(_, r)| *r)
+            .unwrap()
+    }
+
+    #[test]
+    fn cada_boton_manda_lo_mismo_que_su_comando_y_la_entrada_sigue_con_foco() {
+        let (mut app, mut rx) = app();
+        app.now = Some(sonando());
+        let ctx = themed(&app);
+        frame(&ctx, &mut app, Vec::new());
+        for (kind, expected) in [
+            (PlayerButton::Prev, Input::Prev),
+            (PlayerButton::PlayPause, Input::TogglePause),
+            (PlayerButton::Next, Input::Next),
+            (PlayerButton::Shuffle, Input::Shuffle),
+            (PlayerButton::Like, Input::ToggleLike),
+        ] {
+            let area = area_of(&app, kind);
+            click(&ctx, &mut app, area);
+            let sent: Vec<Input> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+            assert_eq!(sent, [expected], "{kind:?}");
+            frame(&ctx, &mut app, Vec::new());
+            assert!(ctx.memory(|m| m.has_focus(app.input_id)), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn sin_nada_sonando_los_botones_no_mandan_nada() {
+        let (mut app, mut rx) = app();
+        let ctx = themed(&app);
+        frame(&ctx, &mut app, Vec::new());
+        assert_eq!(app.player_buttons.len(), 5);
+        for (_, area) in app.player_buttons.clone() {
+            click(&ctx, &mut app, area);
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn los_botones_no_se_pisan_con_letra_maxima_en_la_ventana_minima() {
+        let (mut app, _rx) = app();
+        app.settings.appearance.font_size = config::FONT_SIZE_MAX;
+        app.now = Some(NowPlaying {
+            title: "Un título larguísimo que no entra de ninguna manera".into(),
+            queued: 12,
+            ..sonando()
+        });
+        app.volume = Some(Volume::default());
+        let ctx = themed(&app);
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::from(config::WINDOW_MIN_SIZE),
+            )),
+            ..Default::default()
+        };
+        let _ = ctx.run_ui(raw, |ui| app.ui(ui));
+        let areas: Vec<Rect> = app.player_buttons.iter().map(|(_, r)| *r).collect();
+        for (i, a) in areas.iter().enumerate() {
+            assert!(
+                a.min.x >= 0.0 && a.max.x <= config::WINDOW_MIN_SIZE[0],
+                "{i}"
+            );
+            for b in &areas[i + 1..] {
+                assert!(!a.intersects(*b), "{a:?} {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn el_icono_de_estado_no_cambia_de_color_en_pausa() {
+        let p = Settings::default().appearance.palette;
+        assert_eq!(
+            state_icon(&p, PlayState::Playing).1,
+            state_icon(&p, PlayState::Paused).1
+        );
+        assert_eq!(state_icon(&p, PlayState::Paused).0, "⏸");
+    }
+
+    #[test]
+    fn tooltip_con_el_atajo_de_ventana() {
+        let (app, _rx) = app();
+        let tip = app.button_tip(PlayerButton::Next, true, false);
+        assert!(tip.starts_with("Siguiente  (Ctrl+"), "{tip}");
+        assert_eq!(
+            app.button_tip(PlayerButton::PlayPause, true, false),
+            "Pausar  (Ctrl+Espacio)"
+        );
+        assert_eq!(
+            app.button_tip(PlayerButton::Like, true, true),
+            "Quitar de Tus me gusta"
+        );
     }
 
     #[test]
