@@ -1,9 +1,7 @@
 # 012 - Botones en el reproductor
 
 ## Estado
-En verificación
-
-Falta la prueba manual con algo sonando (T6: AC-1, AC-8, AC-10).
+Verificado
 
 ## Contexto
 La barra "sonando" de la app de escritorio (debajo de la consola) solo
@@ -56,7 +54,7 @@ apagado).
 
 ## Criterios de aceptación
 
-- [ ] **AC-1** — Con un tema sonando, la barra "sonando" muestra ⏮, ⏯ y ⏭
+- [x] **AC-1** — Con un tema sonando, la barra "sonando" muestra ⏮, ⏯ y ⏭
       centrados en la fila de arriba, ♥ junto al título y 🔀 a la derecha,
       sin superponerse con el texto ni con la barra de progreso.
 - [x] **AC-2** — Click en ⏭ / ⏮ hace lo mismo que `next` / `prev`
@@ -74,11 +72,11 @@ apagado).
       no hace nada ni escribe en la consola.
 - [x] **AC-7** — Después de clickear cualquier botón, lo que se escribe va
       a la línea de entrada sin tener que clickearla.
-- [ ] **AC-8** — Al pasar el mouse, cada botón se resalta y muestra un
+- [x] **AC-8** — Al pasar el mouse, cada botón se resalta y muestra un
       tooltip con su acción y su atajo de ventana, si tiene.
 - [x] **AC-9** — Con letra máxima y con la ventana en su tamaño mínimo, los
       botones siguen visibles y clickeables (el título se corta con "…").
-- [ ] **AC-10** — Con música sonando y el mouse quieto, el consumo de CPU
+- [x] **AC-10** — Con música sonando y el mouse quieto, el consumo de CPU
       no sube respecto de 0.3.0 (los botones no agregan redibujos
       continuos).
 - [x] **AC-11** — El ícono de estado al lado del nombre del tema (▶ sonando,
@@ -129,22 +127,22 @@ apagado).
 - [x] T3 — `desktop`: botones en `now_bar`, layout y tooltips.
 - [x] T4 — Tests de la ventana (click → input, deshabilitados, foco).
 - [x] T5 — Docs, changelog 0.4.0, versión; fmt/clippy/test.
-- [ ] T6 — Prueba manual (AC-1, AC-8, AC-9, AC-10).
+- [x] T6 — Prueba manual (AC-1, AC-8, AC-9, AC-10).
 
 ## Definition of Done
 
-- [ ] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
+- [x] Todos los AC tildados, o el estado es `Reabierto (parcial)` con el
       motivo explícito
-- [ ] Tests corren y pasan
-- [ ] Contratos de funciones públicas y `docs/arquitectura.md` actualizados
+- [x] Tests corren y pasan
+- [x] Contratos de funciones públicas y `docs/arquitectura.md` actualizados
       si el spec cambió una firma, comportamiento o el mapa de módulos
-- [ ] Decisiones de diseño relevantes documentadas en `docs/decisiones.md`
-- [ ] Changelog actualizado: sección `## [0.4.0] - fecha`
-- [ ] Versión subida en `Cargo.toml` y `Cargo.lock`; el Release lo publica
+- [x] Decisiones de diseño relevantes documentadas en `docs/decisiones.md`
+- [x] Changelog actualizado: sección `## [0.4.0] - fecha`
+- [x] Versión subida en `Cargo.toml` y `Cargo.lock`; el Release lo publica
       CI al mergear
-- [ ] Sin constantes/umbrales hardcodeados fuera de `src/config.rs`
-- [ ] Sin secretos ni credenciales en el diff
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
+- [x] Sin constantes/umbrales hardcodeados fuera de `src/config.rs`
+- [x] Sin secretos ni credenciales en el diff
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
 
@@ -158,12 +156,12 @@ apagado).
 - Captura de la app en release sin nada sonando: ⏮ ▶ ⏭, ♥ y 🔀 atenuados
   y alineados.
 - AC-11: test `el_icono_de_estado_no_cambia_de_color_en_pausa`.
-- Prueba manual 1: los íconos no quedaban a la misma altura (capturas en
-  `screens/`). egui centra el texto por la caja del renglón, así que las
+- Prueba manual 1: los íconos no quedaban a la misma altura. egui centra el texto por la caja del renglón, así que las
   letras se veían más arriba que los botones dibujados, y ⏸ / 🔀 (glyphs
   de otra fuente) cada uno a su altura. Corregido: el texto se centra por
   sus mayúsculas (`caps_shift`), los glyphs por su dibujo (`paint_glyph`)
   y el ♥ por su forma. Medido en una captura: todos los elementos de la
   fila con el centro a la misma altura (±1 px).
-- Pendiente, prueba manual con algo sonando: AC-1, AC-8 (resaltado y
-  tooltip), AC-10 (CPU con el mouse quieto contra 0.3.0).
+- Prueba manual 2 (vos, con algo sonando): botones en su lugar y
+  alineados, resaltado y tooltip (AC-1, AC-8), CPU con el mouse quieto sin
+  cambios (AC-10).
