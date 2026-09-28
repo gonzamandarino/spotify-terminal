@@ -229,6 +229,12 @@ pub mod layout {
     pub const TITLE_HEIGHT: f32 = 36.0;
     pub const MENU_HEIGHT: f32 = 26.0;
     pub const NOW_HEIGHT: f32 = 64.0;
+    /// Botones de "sonando" (spec 012), con la letra por defecto: lado de
+    /// cada uno, espacio entre ⏮ ⏯ ⏭ y entre el resto de los elementos de
+    /// la fila.
+    pub const PLAYER_BUTTON: f32 = 24.0;
+    pub const PLAYER_BUTTON_GAP: f32 = 6.0;
+    pub const PLAYER_SPACE: f32 = 14.0;
     pub const INPUT_HEIGHT: f32 = 34.0;
     /// Lo mínimo en que entra el texto de "sonando" (dos renglones) y de la
     /// entrada con la letra por defecto; con otra letra, en proporción.

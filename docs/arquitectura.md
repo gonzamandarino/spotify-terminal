@@ -68,7 +68,8 @@ bin/desktop ──> desktop::run
                   │               │      y fuente de egui)
                   │               ├──> desktop::layout (altos de
                   │               │      "sonando" y la entrada según
-                  │               │      el tamaño de letra)
+                  │               │      el tamaño de letra; dónde van
+                  │               │      los botones de "sonando")
                   │               ├──> desktop::viz (panel derecho: onda,
                   │               │      barras con viz::spectrum, vinilo;
                   │               │      lee spotify::tap::AudioTap y
@@ -76,8 +77,9 @@ bin/desktop ──> desktop::run
                   │               ├──> desktop::settings::save (diferido)
                   │               └──> desktop::hotkeys::replace (al
                   │                      cambiar un atajo global)
-                  │                 │ Input (línea, atajos, Esc,
-                  │                 │ Playback, Shortcuts, Covers)
+                  │                 │ Input (línea, atajos, botones de
+                  │                 │ "sonando", Esc, Playback,
+                  │                 │ Shortcuts, Covers)
                   │                 ▼
                   ├──> desktop::hotkeys (hilo "atajos": RegisterHotKey)
                   │                 │ Input::Global (con la app minimizada)
@@ -246,7 +248,7 @@ corregir la tabla.
 | `engine::PlaybackSettings` (crate) | `src/app/engine.rs` | doc-comment |
 | `menu::Menus` (`keyboard`, `bar`, `dialogs`, `wants_keyboard`), `menu::Command` | `src/desktop/menu.rs` | doc-comment |
 | `theme::Theme::apply`, `theme::installed_fonts` | `src/desktop/theme.rs` | doc-comment |
-| `layout::bars`, `layout::scale` | `src/desktop/layout.rs` | doc-comment |
+| `layout::bars`, `layout::scale`, `layout::player_row`, `layout::ButtonSizes` | `src/desktop/layout.rs` | doc-comment |
 | `engine::GlobalAction` (crate) | `src/app/engine.rs` | doc-comment |
 | `desktop::run`, `desktop::show_fatal_error` | `src/desktop/mod.rs` | doc-comment |
 | `config::data_dir` | `src/config.rs` | doc-comment |

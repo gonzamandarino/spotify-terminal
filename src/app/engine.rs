@@ -55,6 +55,11 @@ pub(crate) enum Input {
     TogglePause,
     Next,
     Prev,
+    /// Botón de shuffle (spec 012): igual que `shuffle`.
+    Shuffle,
+    /// Botón ♥ (spec 012): `unlike` si el tema está en Tus me gusta; si
+    /// no (o no se sabe), `like`.
+    ToggleLike,
     /// Atajos de volumen: igual que `vol +` y `vol -`, sin escribir en la
     /// consola.
     VolumeUp,
@@ -566,6 +571,11 @@ impl<B: Backend + 'static> Engine<B> {
             Input::TogglePause => self.control(Control::Pause),
             Input::Next => self.control(Control::Next),
             Input::Prev => self.control(Control::Prev),
+            Input::Shuffle => self.control(Control::Shuffle),
+            Input::ToggleLike => {
+                let liked = self.playing.as_ref().and_then(|p| p.liked);
+                self.set_liked(liked != Some(true));
+            }
             Input::VolumeUp => self.volume_step(true, false),
             Input::VolumeDown => self.volume_step(false, false),
             Input::Cancel => {
@@ -1939,6 +1949,35 @@ mod tests {
         assert!(h.engine.playing.is_some());
         assert_eq!(h.liked(), None);
         assert!(!h.take_log().contains(&"stop".to_string()));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn boton_like_alterna_segun_el_corazon() {
+        let mut h = harness(true);
+        h.playing_track("t1").await;
+        h.take_log();
+        h.engine.on_input(Input::ToggleLike);
+        h.finish_library().await;
+        assert_eq!(h.take_log(), ["save t1"]);
+        assert_eq!(h.liked(), Some(true));
+        h.engine.on_input(Input::ToggleLike);
+        h.finish_library().await;
+        assert_eq!(h.take_log(), ["unsave t1"]);
+        assert_eq!(h.liked(), Some(false));
+        let outputs = h.outputs();
+        assert!(has_line(&outputs, LineKind::Ok, "agregado a Tus me gusta"));
+        assert!(has_line(&outputs, LineKind::Ok, "quitado de Tus me gusta"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn boton_shuffle_igual_que_el_comando() {
+        let mut h = harness(true);
+        h.type_line(&format!("play {}", album("a"))).await;
+        h.confirm(1);
+        h.engine.on_input(Input::Shuffle);
+        h.engine.publish();
+        assert!(has_line(&h.outputs(), LineKind::Ok, "Shuffle: sí"));
+        assert!(h.engine.shown.as_ref().unwrap().shuffle);
     }
 
     #[tokio::test(flavor = "current_thread")]

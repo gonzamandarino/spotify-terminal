@@ -1,7 +1,9 @@
 # 012 - Botones en el reproductor
 
 ## Estado
-En plan
+En verificación
+
+Falta la prueba manual con algo sonando (T6: AC-1, AC-8, AC-10).
 
 ## Contexto
 La barra "sonando" de la app de escritorio (debajo de la consola) solo
@@ -53,24 +55,24 @@ apagado).
 - [ ] **AC-1** — Con un tema sonando, la barra "sonando" muestra ⏮, ⏯ y ⏭
       centrados en la fila de arriba, ♥ junto al título y 🔀 a la derecha,
       sin superponerse con el texto ni con la barra de progreso.
-- [ ] **AC-2** — Click en ⏭ / ⏮ hace lo mismo que `next` / `prev`
+- [x] **AC-2** — Click en ⏭ / ⏮ hace lo mismo que `next` / `prev`
       (incluido reiniciar el tema si pasaron más de unos segundos, como el
       comando) y deja la misma línea en la consola.
-- [ ] **AC-3** — Click en ⏯ pausa si suena y reanuda si está en pausa; el
+- [x] **AC-3** — Click en ⏯ pausa si suena y reanuda si está en pausa; el
       ícono muestra la acción disponible (⏸ sonando, ▶ en pausa).
-- [ ] **AC-4** — Click en 🔀 alterna shuffle como `shuffle`; se ve
+- [x] **AC-4** — Click en 🔀 alterna shuffle como `shuffle`; se ve
       encendido (color de acento) o apagado.
-- [ ] **AC-5** — Click en ♥ apagado agrega el tema a Tus me gusta; en ♥
+- [x] **AC-5** — Click en ♥ apagado agrega el tema a Tus me gusta; en ♥
       lleno lo quita. El ícono cambia al confirmarse y la consola lo informa
       como `like` / `unlike` (spec 011). Si el pedido falla, el ícono vuelve
       a su estado anterior y se ve el error.
-- [ ] **AC-6** — Sin nada sonando, los botones se ven atenuados y el click
+- [x] **AC-6** — Sin nada sonando, los botones se ven atenuados y el click
       no hace nada ni escribe en la consola.
-- [ ] **AC-7** — Después de clickear cualquier botón, lo que se escribe va
+- [x] **AC-7** — Después de clickear cualquier botón, lo que se escribe va
       a la línea de entrada sin tener que clickearla.
 - [ ] **AC-8** — Al pasar el mouse, cada botón se resalta y muestra un
       tooltip con su acción y su atajo de ventana, si tiene.
-- [ ] **AC-9** — Con letra máxima y con la ventana en su tamaño mínimo, los
+- [x] **AC-9** — Con letra máxima y con la ventana en su tamaño mínimo, los
       botones siguen visibles y clickeables (el título se corta con "…").
 - [ ] **AC-10** — Con música sonando y el mouse quieto, el consumo de CPU
       no sube respecto de 0.3.0 (los botones no agregan redibujos
@@ -97,6 +99,11 @@ apagado).
     (`request_focus`), así que el click no se lo saca (AC-7); se verifica
     con un test.
   - `config::layout`: tamaño de botón y separación (escalan con la letra).
+  - `desktop::layout::player_row` (pura, sin egui): dónde va cada botón y
+    qué chips entran; sin lugar se ocultan posición, cola y volumen, en
+    ese orden, antes que cualquier botón.
+  - Íconos dibujados con formas (⏮ ⏯ ⏭ ♥), sin depender de la fuente;
+    🔀 sigue siendo texto.
 - Tests necesarios:
   - `engine`: `Input::ToggleLike` alterna según el ♥; `Input::Shuffle`
     igual que `shuffle`; sin nada sonando no escribe nada.
@@ -111,11 +118,11 @@ apagado).
 
 ## Tareas
 
-- [ ] T1 — `engine`: `Input::Shuffle` e `Input::ToggleLike` + tests.
-- [ ] T2 — `config`: medidas de los botones.
-- [ ] T3 — `desktop`: botones en `now_bar`, layout y tooltips.
-- [ ] T4 — Tests de la ventana (click → input, deshabilitados, foco).
-- [ ] T5 — Docs, changelog 0.4.0, versión; fmt/clippy/test.
+- [x] T1 — `engine`: `Input::Shuffle` e `Input::ToggleLike` + tests.
+- [x] T2 — `config`: medidas de los botones.
+- [x] T3 — `desktop`: botones en `now_bar`, layout y tooltips.
+- [x] T4 — Tests de la ventana (click → input, deshabilitados, foco).
+- [x] T5 — Docs, changelog 0.4.0, versión; fmt/clippy/test.
 - [ ] T6 — Prueba manual (AC-1, AC-8, AC-9, AC-10).
 
 ## Definition of Done
@@ -134,3 +141,15 @@ apagado).
 - [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` y `cargo test` pasan
 
 ## Notas de verificación
+
+- Tests: `engine` (`Input::ToggleLike` alterna, `Input::Shuffle` como el
+  comando: AC-4, AC-5), ventana sin ventana real con clicks de egui (cada
+  botón manda su `Input`, sin nada sonando no manda nada, la entrada
+  conserva el foco: AC-2, AC-3, AC-6, AC-7), letra máxima en la ventana
+  mínima sin superposiciones (AC-9), `player_row`.
+- AC-5 "si falla vuelve a su estado anterior": el ♥ solo cambia cuando
+  Spotify confirma, así que si falla nunca cambió (test de spec 011).
+- Captura de la app en release sin nada sonando: ⏮ ▶ ⏭, ♥ y 🔀 atenuados
+  y alineados.
+- Pendiente, prueba manual con algo sonando: AC-1, AC-8 (resaltado y
+  tooltip), AC-10 (CPU con el mouse quieto contra 0.3.0).
