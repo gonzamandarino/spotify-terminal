@@ -208,4 +208,8 @@ elegir un número empieza a sonar esa playlist como con `play <link>`.
 - Tests automáticos (motor con backend falso, parseo de `web` y `shell`):
   AC-2, AC-3, AC-4, AC-6, AC-7, AC-8, AC-10 (errores de red; 401/403/429
   pasan por `status_error`, ya testeado), AC-11.
+- Prueba manual 1: `like` fallaba con `411 Length Required` (el `PUT` iba
+  sin cuerpo ni `Content-Length`). Corregido: los pedidos que no son `GET`
+  van con cuerpo vacío y `Content-Length: 0` (test
+  `put_y_delete_van_con_content_length_cero`).
 - Pendiente, prueba manual con la cuenta: AC-1, AC-5, AC-9.

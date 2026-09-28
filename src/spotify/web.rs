@@ -1,7 +1,10 @@
 //! Llamadas a la Spotify Web API.
 
 use librespot_core::SpotifyUri;
-use reqwest::{Method, Response, StatusCode, header::RETRY_AFTER};
+use reqwest::{
+    Method, Response, StatusCode,
+    header::{CONTENT_LENGTH, RETRY_AFTER},
+};
 use serde::{Deserialize, de::DeserializeOwned};
 
 use crate::{config, error::AppError, spotify::auth::Token};
@@ -189,10 +192,7 @@ impl WebClient {
         query: &[(&str, &str)],
         action: &str,
     ) -> Result<Response, AppError> {
-        let response = self
-            .http
-            .request(method, format!("{}{path}", config::WEB_API_BASE))
-            .query(query)
+        let response = request(&self.http, method, path, query)
             .bearer_auth(self.token.access_token())
             .send()
             .await
@@ -211,6 +211,25 @@ impl WebClient {
             return Err(status_error(status, retry_after, &body, action));
         }
         Ok(response)
+    }
+}
+
+/// Arma un pedido a la Web API. Uno que no es `GET` va con cuerpo vacío y
+/// `Content-Length: 0`: sin eso, `PUT /me/library` responde 411.
+fn request(
+    http: &reqwest::Client,
+    method: Method,
+    path: &str,
+    query: &[(&str, &str)],
+) -> reqwest::RequestBuilder {
+    let with_body = method != Method::GET;
+    let builder = http
+        .request(method, format!("{}{path}", config::WEB_API_BASE))
+        .query(query);
+    if with_body {
+        builder.header(CONTENT_LENGTH, "0").body(Vec::new())
+    } else {
+        builder
     }
 }
 
@@ -560,6 +579,20 @@ mod tests {
         let page: PlaylistPage =
             serde_json::from_str(r#"{"items":[],"next":null,"total":0}"#).unwrap();
         assert!(page.next.is_none() && page.items.is_empty());
+    }
+
+    #[test]
+    fn put_y_delete_van_con_content_length_cero() {
+        let http = reqwest::Client::new();
+        for method in [Method::PUT, Method::DELETE] {
+            let req = request(&http, method.clone(), "/me/library", &[("uris", "x")])
+                .build()
+                .unwrap();
+            assert_eq!(req.headers()[CONTENT_LENGTH], "0", "{method}");
+            assert_eq!(req.body().and_then(|b| b.as_bytes()), Some(&[][..]));
+        }
+        let get = request(&http, Method::GET, "/me", &[]).build().unwrap();
+        assert!(get.headers().get(CONTENT_LENGTH).is_none());
     }
 
     #[test]
