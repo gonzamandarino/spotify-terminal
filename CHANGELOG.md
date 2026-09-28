@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0] - 2026-09-28
+
+### Agregado (spec 013 — reproducir mis me gusta)
+- `likes` reproduce Tus me gusta, del último like al más viejo, como la
+  app oficial; `likes -s` arranca mezclado. Siguiente, anterior, shuffle,
+  cola y ♥ andan igual que con una playlist.
+- Mientras carga se ve el avance (`cargando tus me gusta 150/1200`) y lo
+  que sonaba sigue hasta que arranca la lista. Suenan hasta 2000 me gusta
+  (los más recientes); si hay más, se avisa.
+
 ## [0.4.0] - 2026-09-28
 
 ### Agregado (spec 012 — botones del reproductor)

@@ -128,6 +128,48 @@ impl WebClient {
         }
     }
 
+    /// Temas de Tus me gusta (`GET /me/tracks`), del más reciente al más
+    /// viejo, como la app oficial (spec 013).
+    ///
+    /// - Pre: `max` ≥ 1.
+    /// - Post: pide páginas de `config::LIKES_PAGE` hasta que no haya más o
+    ///   se junten `max` temas; `tracks` tiene a lo sumo `max`. Los
+    ///   elementos `null`, los archivos locales y los de URI inválida no
+    ///   entran y se cuentan en `omitted`. `total` es el que informa
+    ///   Spotify. Después de cada página llama a `progress(recibidos,
+    ///   total)`. Errores como en [`WebClient::current_user`]; un error en
+    ///   cualquier página corta todo (nunca devuelve una lista a medias).
+    /// - No debe: pedir más páginas que las que hacen falta para `max`, ni
+    ///   reintentar.
+    pub async fn liked_tracks(
+        &self,
+        max: usize,
+        mut progress: impl FnMut(usize, usize),
+    ) -> Result<LikedTracks, AppError> {
+        let limit = config::LIKES_PAGE.to_string();
+        let mut liked = LikedTracks::default();
+        let mut offset = 0;
+        loop {
+            let offset_text = offset.to_string();
+            let page: SavedTrackPage = self
+                .get_json(
+                    "/me/tracks",
+                    &[("limit", &limit), ("offset", &offset_text)],
+                    "pedir tus me gusta",
+                )
+                .await?;
+            let received = page.items.len();
+            offset += received;
+            liked.total = page.total;
+            liked.add(page.items);
+            progress(offset, page.total);
+            if page.next.is_none() || received == 0 || liked.tracks.len() >= max {
+                liked.tracks.truncate(max);
+                return Ok(liked);
+            }
+        }
+    }
+
     /// Si `uri` está en la biblioteca (`GET /me/library/contains`; para un
     /// tema, "Tus me gusta").
     ///
@@ -247,6 +289,35 @@ pub struct MyPlaylists {
     pub total: usize,
 }
 
+/// Resultado de [`WebClient::liked_tracks`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LikedTracks {
+    /// Temas reproducibles, del más reciente al más viejo.
+    pub tracks: Vec<SpotifyUri>,
+    /// Elementos recibidos que no entran (archivos locales, `null`, URI
+    /// inválida).
+    pub omitted: usize,
+    /// Cuántos informa Spotify en total.
+    pub total: usize,
+}
+
+impl LikedTracks {
+    /// Suma los elementos de una página de `/me/tracks`.
+    fn add(&mut self, items: Vec<Option<SavedTrack>>) {
+        for item in items {
+            let uri = item
+                .and_then(|i| i.track)
+                .filter(|t| !t.is_local)
+                .and_then(|t| SpotifyUri::from_uri(&t.uri).ok())
+                .filter(|u| matches!(u, SpotifyUri::Track { .. }));
+            match uri {
+                Some(uri) => self.tracks.push(uri),
+                None => self.omitted += 1,
+            }
+        }
+    }
+}
+
 /// Qué se busca.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SearchKind {
@@ -301,6 +372,28 @@ struct PlaylistPage {
     next: Option<String>,
     #[serde(default)]
     total: usize,
+}
+
+/// Una página de `GET /me/tracks`.
+#[derive(Deserialize)]
+struct SavedTrackPage {
+    items: Vec<Option<SavedTrack>>,
+    next: Option<String>,
+    #[serde(default)]
+    total: usize,
+}
+
+#[derive(Deserialize)]
+struct SavedTrack {
+    /// Un tema retirado puede venir como `null`.
+    track: Option<SavedTrackItem>,
+}
+
+#[derive(Deserialize)]
+struct SavedTrackItem {
+    uri: String,
+    #[serde(default)]
+    is_local: bool,
 }
 
 #[derive(Deserialize)]
@@ -577,6 +670,39 @@ mod tests {
     #[test]
     fn ultima_pagina_de_mis_playlists() {
         let page: PlaylistPage =
+            serde_json::from_str(r#"{"items":[],"next":null,"total":0}"#).unwrap();
+        assert!(page.next.is_none() && page.items.is_empty());
+    }
+
+    #[test]
+    fn pagina_de_mis_me_gusta() {
+        let json = r#"{"items":[
+            {"added_at":"2026-09-01T00:00:00Z","track":{"uri":"spotify:track:4PTG3Z6ehGkBFwjybzWkR8","name":"A"}},
+            null,
+            {"added_at":"x","track":null},
+            {"added_at":"x","track":{"uri":"spotify:local:Artista:Album:Tema:180","is_local":true}},
+            {"added_at":"x","track":{"uri":"no-es-uri"}},
+            {"added_at":"x","track":{"uri":"spotify:track:3pepZAOvUCBt3qWi9Ax6Aq","is_local":false}}
+        ],"next":"https://api.spotify.com/v1/me/tracks?offset=50","total":130}"#;
+        let page: SavedTrackPage = serde_json::from_str(json).unwrap();
+        assert!(page.next.is_some());
+        assert_eq!(page.total, 130);
+        let mut liked = LikedTracks::default();
+        liked.add(page.items);
+        let ids: Vec<_> = liked.tracks.iter().map(|u| u.to_uri().unwrap()).collect();
+        assert_eq!(
+            ids,
+            [
+                "spotify:track:4PTG3Z6ehGkBFwjybzWkR8",
+                "spotify:track:3pepZAOvUCBt3qWi9Ax6Aq"
+            ]
+        );
+        assert_eq!(liked.omitted, 4);
+    }
+
+    #[test]
+    fn ultima_pagina_de_mis_me_gusta() {
+        let page: SavedTrackPage =
             serde_json::from_str(r#"{"items":[],"next":null,"total":0}"#).unwrap();
         assert!(page.next.is_none() && page.items.is_empty());
     }
