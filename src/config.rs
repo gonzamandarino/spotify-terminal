@@ -25,7 +25,15 @@ pub const AUDIO_SCOPES: &[&str] = &["streaming"];
 
 /// Scopes del token de la Web API (con el Client ID propio). Si un spec
 /// agrega uno, los tokens cacheados sin ese scope vuelven a pasar por login.
-pub const WEB_SCOPES: &[&str] = &["user-read-private"];
+/// Spec 011: `user-library-*` para likear (`/me/library`) y
+/// `playlist-read-*` para listar las playlists propias y seguidas.
+pub const WEB_SCOPES: &[&str] = &[
+    "user-read-private",
+    "user-library-read",
+    "user-library-modify",
+    "playlist-read-private",
+    "playlist-read-collaborative",
+];
 
 /// Redirect URI del login, la misma para ambos Client IDs. El puerto es
 /// donde escucha el callback local.
@@ -93,6 +101,15 @@ pub const SEARCH_API_MAX_LIMIT: usize = 10;
 // `ui::select` elige con una sola tecla (1-9).
 const _: () =
     assert!(SEARCH_LIMIT >= 1 && SEARCH_LIMIT <= 9 && SEARCH_LIMIT <= SEARCH_API_MAX_LIMIT);
+
+/// Playlists por pedido a `GET /me/playlists` (el máximo de la API).
+pub const MY_PLAYLISTS_PAGE: usize = 50;
+
+/// Tope de playlists que lista `playlists` (spec 011): más no entran
+/// cómodas en la consola y serían pedidos de más.
+pub const MY_PLAYLISTS_MAX: usize = 500;
+
+const _: () = assert!(MY_PLAYLISTS_PAGE >= 1 && MY_PLAYLISTS_PAGE <= 50 && MY_PLAYLISTS_MAX >= 1);
 
 /// "Anterior" con más que esto de tema sonando lo reinicia en vez de volver
 /// al tema anterior (como la app oficial).

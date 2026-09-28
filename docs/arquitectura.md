@@ -27,7 +27,7 @@ main ──> ui::cli (parseo de subcomandos → Command)
   │         └──> caches %APPDATA%\spotify-terminal\token-{audio,web}.json
   │
   ├──> spotify::web::WebClient (token Web) ──> api.spotify.com/v1
-  │         (/me, /search)
+  │         (/me, /search, /me/playlists, /me/library[/contains])
   │
   ├──> spotify::player (token Audio): connect + resolve_tracks
   │         ├──> hilo "sesion-audio" (runtime propio): Session de librespot,
@@ -98,6 +98,13 @@ paquete en `spotify::tap::AudioTap` (a través de `TapSink`, sin esperar
 nunca) y la ventana lo lee al dibujar. Las tapas las baja y decodifica el
 motor (`spotify::cover`, aparte de su tarea de fondo) y llegan a la
 ventana como `Output::Cover`.
+
+Tus me gusta (spec 011): el motor consulta el ♥ de cada tema nuevo
+(`Backend::is_saved`) y hace `like`/`unlike` (`Backend::set_saved`) en dos
+carriles propios, aparte de su tarea de fondo, como las tapas: no chocan
+con una búsqueda o un `play`. El estado llega a la ventana en
+`NowPlaying::liked`. `playlists` usa la tarea de fondo y la misma elección
+por número que la búsqueda.
 
 ## Hilos
 - **main** (runtime `current_thread`): login, Web API, UI y teclado
@@ -221,7 +228,7 @@ corregir la tabla.
 | `setup::validate`, `setup::read_saved`, `setup::save`, `setup::apply`, `setup::prompt`, `setup::ClientId`, `setup::Applied` | `src/setup.rs` | doc-comment |
 | `AppError` (una variante por caso) | `src/error.rs` | doc-comment |
 | `auth::get_valid_token`, `auth::logout`, `auth::Token`, `auth::TokenKind` | `src/spotify/auth.rs` | doc-comment |
-| `web::WebClient` (`current_user`, `search`), `web::User`, `web::SearchKind`, `web::Hit` | `src/spotify/web.rs` | doc-comment |
+| `web::WebClient` (`current_user`, `search`, `my_playlists`, `is_saved`, `set_saved`), `web::User`, `web::SearchKind`, `web::Hit`, `web::MyPlaylists` | `src/spotify/web.rs` | doc-comment |
 | `player::Player` (incl. `restart`, `set_volume`), `player::Resolved` | `src/spotify/player.rs` | doc-comment |
 | `tap::AudioTap` (`push`, `snapshot`, `set_enabled`), `tap::TapSink` | `src/spotify/tap.rs` | doc-comment |
 | `output::DeviceSink` (crate; `Sink`: `start`, `stop`, `write`) | `src/spotify/output.rs` | doc-comment |
@@ -232,7 +239,7 @@ corregir la tabla.
 | `volume::Volume` (`load`, `save`, `output`) | `src/app/volume.rs` | doc-comment |
 | `shell::parse_line`, `shell::complete`, `shell::ShellCommand`, `shell::VolumeCommand` (crate) | `src/app/shell.rs` | doc-comment |
 | `engine::spawn`, `engine::Input`, `engine::Output`, `engine::Engine` (crate) | `src/app/engine.rs` | doc-comment |
-| `backend::Backend` (incl. `client_id_status`, `set_client_id`), `backend::ClientIdStatus`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
+| `backend::Backend` (incl. `client_id_status`, `set_client_id`, `my_playlists`, `is_saved`, `set_saved`), `backend::ClientIdStatus`, `backend::Playback` (crate) | `src/app/backend.rs` | doc-comment |
 | `hotkeys::spawn`, `hotkeys::replace`, `hotkeys::from_settings`, `hotkeys::Hotkeys`, `hotkeys::Shortcut` (crate) | `src/desktop/hotkeys.rs` | doc-comment |
 | `combo::Combo`, `combo::Key` (crate; `Combo::from_str` con contrato) | `src/desktop/combo.rs` | doc-comment |
 | `settings::Settings` (`from_json`, `to_json`, `check_combo`, `assign`, `restore`), `settings::load`, `settings::save` (crate) | `src/desktop/settings.rs` | doc-comment |

@@ -848,6 +848,14 @@ impl DesktopApp {
         if now.queued > 0 {
             chips.push((format!("cola {}", now.queued), color(p.secondary)));
         }
+        // ♥ lleno si está en Tus me gusta; apagado si no o si no se sabe
+        // (spec 011).
+        let liked = if now.liked == Some(true) {
+            color(p.accent)
+        } else {
+            color(p.secondary).gamma_multiply(0.5)
+        };
+        chips.push(("♥".to_string(), liked));
         let shuffle = if now.shuffle {
             color(p.accent)
         } else {

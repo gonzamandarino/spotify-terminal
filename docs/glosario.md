@@ -11,6 +11,11 @@ concepto nuevo — no antes, no de antemano especulando.
 - **Visualización** — lo que se dibuja de la canción en el panel derecho
   de la app de escritorio (spec 010): onda, barras (espectro) o vinilo
   con la tapa del disco. Se elige en Personalización → Visualización.
+- **Tus me gusta** — la biblioteca de temas likeados del usuario en
+  Spotify ("Liked Songs"). `like` / `unlike` agregan o quitan el tema que
+  suena (spec 011); en la API es `/me/library`, no una playlist.
+- **Mis playlists** — las que devuelve `GET /me/playlists`: las creadas
+  por el usuario y las que sigue (spec 011). No incluye Tus me gusta.
 - **Tamaño de letra** — el del texto de la consola, la línea de entrada
   y la barra "sonando" (spec 009). Los menús, diálogos y la barra de
   título tienen letra fija.

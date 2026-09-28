@@ -479,3 +479,19 @@ entradas viejas — se marcan reemplazadas.
 - **Consecuencias:** al pasar de dispositivo se pierde lo que estaba en
   cola en el viejo (≤ ~340 ms). No se suma ninguna crate al árbol.
 - **Estado:** Vigente (spec 010)
+
+## 2026-09-28 — Likes con `/me/library`, y `like` / `unlike` por separado
+- **Decisión:** likear y deslikear usan `PUT` / `DELETE /me/library` y el
+  ♥ se consulta con `GET /me/library/contains`, con la URI del tema. Hay
+  dos comandos (`like` agrega, `unlike` quita) en vez de uno que alterne.
+  El ♥ se consulta una vez por tema nuevo, sin polling; si todavía no se
+  sabe, `like` pide igual (es idempotente).
+- **Motivo:** desde feb 2026 Spotify eliminó `/me/tracks` (guardar, quitar
+  y `contains`) y lo reemplazó por la biblioteca unificada. Un comando que
+  alterna, escrito dos veces sin querer, deslikea sin que se vea.
+- **Consecuencias:** se suman los scopes `user-library-read`,
+  `user-library-modify`, `playlist-read-private` y
+  `playlist-read-collaborative`: el token Web cacheado de 0.2.0 pide login
+  una vez. Si se cambia el ♥ desde otra app mientras suena el tema, se ve
+  recién en el próximo.
+- **Estado:** Vigente (spec 011)

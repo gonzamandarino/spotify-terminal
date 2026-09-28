@@ -339,6 +339,8 @@ impl Queue {
 /// Datos del tema que empezó a cargar (`TrackChanged`), para mostrar.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrackInfo {
+    /// El tema (o episodio) que empezó a cargar: lo que se likea (spec 011).
+    pub(crate) uri: SpotifyUri,
     pub(crate) name: String,
     /// Artistas separados por coma; vacío si no es un tema (episodio).
     pub(crate) artists: String,
@@ -385,6 +387,7 @@ pub(crate) fn on_player_event(
                 _ => String::new(),
             };
             let info = TrackInfo {
+                uri: audio_item.track_id,
                 name: audio_item.name,
                 artists,
                 duration: Duration::from_millis(audio_item.duration_ms.into()),

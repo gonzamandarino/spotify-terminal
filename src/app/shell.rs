@@ -10,11 +10,13 @@ Comandos:
   play list <nombre>     lo mismo con playlists
   play <link>            tema, álbum o playlist por link, URI o ID
   play -s <…>            igual, pero arranca mezclado
+  playlists, pl          tus playlists; elegís una por número (-s mezclado)
   pause                  pausa / reanudar
   next, n                siguiente tema
   prev, p                anterior o reinicia el tema
   shuffle, s             shuffle sí / no
   queue <tema>, a <tema> busca un tema y lo agrega a la cola
+  like / unlike          agrega / quita el tema que suena de Tus me gusta
   vol, v                 muestra el volumen
   vol <0-100>            fija el volumen
   vol + / vol -          sube / baja el volumen
@@ -30,9 +32,27 @@ Comandos:
 ↑ ↓ historial · Tab completa · Esc cancela una búsqueda o elección";
 
 /// Nombres de comando, para completar con Tab.
-const NAMES: [&str; 17] = [
-    "play", "pause", "next", "prev", "shuffle", "queue", "stop", "vol", "mute", "login", "logout",
-    "setup", "whoami", "version", "clear", "help", "exit",
+const NAMES: [&str; 20] = [
+    "play",
+    "playlists",
+    "pause",
+    "next",
+    "prev",
+    "shuffle",
+    "queue",
+    "like",
+    "unlike",
+    "stop",
+    "vol",
+    "mute",
+    "login",
+    "logout",
+    "setup",
+    "whoami",
+    "version",
+    "clear",
+    "help",
+    "exit",
 ];
 
 /// Una línea de la consola, ya interpretada.
@@ -48,6 +68,14 @@ pub(crate) enum ShellCommand {
     /// Buscar un tema para encolar. Invariante: no vacío, palabras
     /// separadas por un solo espacio.
     Queue(String),
+    /// Agregar el tema que suena a Tus me gusta (spec 011).
+    Like,
+    /// Quitarlo de Tus me gusta.
+    Unlike,
+    /// Listar mis playlists para elegir una; `shuffle` = arrancar mezclado.
+    Playlists {
+        shuffle: bool,
+    },
     Stop,
     Volume(VolumeCommand),
     Mute,
@@ -75,7 +103,8 @@ pub(crate) enum VolumeCommand {
 ///   separan por espacios; entre comillas (`"…"` o `'…'`) un texto cuenta
 ///   como una sola palabra, igual que en PowerShell (`play "list of
 ///   demands"` busca ese tema). `help` → `Help`; `vol` acepta nada, `+`,
-///   `-` o un entero de 0 a 100; los comandos de la CLI se validan con
+///   `-` o un entero de 0 a 100; `playlists` / `pl`, solo `-s` o
+///   `--shuffle`; los comandos de la CLI se validan con
 ///   `cli::parse_command`.
 /// - Errores: el motivo, sin la ayuda (comando desconocido, argumentos de
 ///   más o de menos, comillas sin cerrar, link mal formado).
@@ -98,6 +127,15 @@ pub(crate) fn parse_line(line: &str) -> Result<ShellCommand, String> {
         "prev" | "p" => no_args(ShellCommand::Prev),
         "shuffle" | "s" => no_args(ShellCommand::Shuffle),
         "stop" => no_args(ShellCommand::Stop),
+        "like" => no_args(ShellCommand::Like),
+        "unlike" => no_args(ShellCommand::Unlike),
+        "playlists" | "pl" => match &words[1..] {
+            [] => Ok(ShellCommand::Playlists { shuffle: false }),
+            [flag] if cli::SHUFFLE_FLAGS.contains(&flag.as_str()) => {
+                Ok(ShellCommand::Playlists { shuffle: true })
+            }
+            _ => Err(format!("{} solo acepta -s", words[0])),
+        },
         "mute" | "m" => no_args(ShellCommand::Mute),
         "vol" | "v" => parse_volume(&words[1..]).map(ShellCommand::Volume),
         "clear" => no_args(ShellCommand::Clear),
@@ -192,6 +230,16 @@ mod tests {
             ("  Shuffle ", ShellCommand::Shuffle),
             ("s", ShellCommand::Shuffle),
             ("stop", ShellCommand::Stop),
+            ("like", ShellCommand::Like),
+            ("LIKE", ShellCommand::Like),
+            ("unlike", ShellCommand::Unlike),
+            ("playlists", ShellCommand::Playlists { shuffle: false }),
+            ("pl", ShellCommand::Playlists { shuffle: false }),
+            ("pl -s", ShellCommand::Playlists { shuffle: true }),
+            (
+                "playlists --shuffle",
+                ShellCommand::Playlists { shuffle: true },
+            ),
             ("clear", ShellCommand::Clear),
             ("exit", ShellCommand::Exit),
             ("help", ShellCommand::Help),
@@ -279,6 +327,10 @@ mod tests {
             "play",
             "next ya",
             "whoami x",
+            "like esto",
+            "unlike ya",
+            "playlists rock",
+            "pl -s -s",
             "play \"abc",
             "play spotify:artist:x",
         ] {
@@ -289,8 +341,10 @@ mod tests {
 
     #[test]
     fn completar() {
-        assert_eq!(complete("pl"), vec!["play"]);
-        assert_eq!(complete("P"), vec!["play", "pause", "prev"]);
+        assert_eq!(complete("pl"), vec!["play", "playlists"]);
+        assert_eq!(complete("P"), vec!["play", "playlists", "pause", "prev"]);
+        assert_eq!(complete("li"), vec!["like"]);
+        assert_eq!(complete("un"), vec!["unlike"]);
         assert_eq!(complete("log"), vec!["login", "logout"]);
         assert!(complete("").is_empty());
         assert!(complete("play x").is_empty());

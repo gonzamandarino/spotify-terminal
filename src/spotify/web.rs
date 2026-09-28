@@ -1,7 +1,10 @@
 //! Llamadas a la Spotify Web API.
 
 use librespot_core::SpotifyUri;
-use reqwest::{StatusCode, header::RETRY_AFTER};
+use reqwest::{
+    Method, Response, StatusCode,
+    header::{CONTENT_LENGTH, RETRY_AFTER},
+};
 use serde::{Deserialize, de::DeserializeOwned};
 
 use crate::{config, error::AppError, spotify::auth::Token};
@@ -89,6 +92,82 @@ impl WebClient {
         Ok(response.hits())
     }
 
+    /// Mis playlists (`GET /me/playlists`): las creadas y las seguidas, en
+    /// el orden de Spotify (spec 011).
+    ///
+    /// - Pre: `max` ≥ 1.
+    /// - Post: pide páginas de `config::MY_PLAYLISTS_PAGE` hasta que no haya
+    ///   más o se junten `max`; `hits` tiene a lo sumo `max`, sin los
+    ///   elementos `null` ni los de URI inválida. `total` es el que informa
+    ///   Spotify (puede ser mayor que `hits.len()`). Sin playlists → `hits`
+    ///   vacío. Errores como en [`WebClient::current_user`]; un error en
+    ///   cualquier página corta todo.
+    /// - No debe: pedir más páginas que las que hacen falta para `max`, ni
+    ///   reintentar.
+    pub async fn my_playlists(&self, max: usize) -> Result<MyPlaylists, AppError> {
+        let limit = config::MY_PLAYLISTS_PAGE.to_string();
+        let mut hits = Vec::new();
+        let mut offset = 0;
+        loop {
+            let offset_text = offset.to_string();
+            let page: PlaylistPage = self
+                .get_json(
+                    "/me/playlists",
+                    &[("limit", &limit), ("offset", &offset_text)],
+                    "pedir tus playlists",
+                )
+                .await?;
+            let received = page.items.len();
+            let total = page.total;
+            hits.extend(page.items.into_iter().flatten().filter_map(playlist_hit));
+            offset += received;
+            if page.next.is_none() || received == 0 || hits.len() >= max {
+                hits.truncate(max);
+                return Ok(MyPlaylists { hits, total });
+            }
+        }
+    }
+
+    /// Si `uri` está en la biblioteca (`GET /me/library/contains`; para un
+    /// tema, "Tus me gusta").
+    ///
+    /// - Post: `Ok(true)` / `Ok(false)` según Spotify; una respuesta sin
+    ///   valor → `Spotify`. Errores como en [`WebClient::current_user`].
+    /// - No debe: modificar la biblioteca.
+    pub async fn is_saved(&self, uri: &SpotifyUri) -> Result<bool, AppError> {
+        let uri = uri_param(uri)?;
+        let saved: Vec<bool> = self
+            .get_json(
+                "/me/library/contains",
+                &[("uris", &uri)],
+                "consultar Tus me gusta",
+            )
+            .await?;
+        saved
+            .first()
+            .copied()
+            .ok_or_else(|| AppError::Spotify("respuesta vacía de /me/library/contains".into()))
+    }
+
+    /// Guarda (`save`) o quita `uri` de la biblioteca (`PUT` / `DELETE
+    /// /me/library`). Guardar algo ya guardado, o quitar algo que no está,
+    /// no es error.
+    ///
+    /// - Post: `Ok(())` si Spotify lo aceptó. Errores como en
+    ///   [`WebClient::current_user`].
+    /// - No debe: tocar otra URI que `uri`.
+    pub async fn set_saved(&self, uri: &SpotifyUri, save: bool) -> Result<(), AppError> {
+        let uri = uri_param(uri)?;
+        let (method, action) = if save {
+            (Method::PUT, "guardar en Tus me gusta")
+        } else {
+            (Method::DELETE, "quitar de Tus me gusta")
+        };
+        self.send(method, "/me/library", &[("uris", &uri)], action)
+            .await
+            .map(drop)
+    }
+
     /// `GET` a `path` de la Web API y deserializa la respuesta. `action`
     /// describe la operación en los mensajes de error.
     async fn get_json<T: DeserializeOwned>(
@@ -97,10 +176,23 @@ impl WebClient {
         query: &[(&str, &str)],
         action: &str,
     ) -> Result<T, AppError> {
-        let response = self
-            .http
-            .get(format!("{}{path}", config::WEB_API_BASE))
-            .query(query)
+        self.send(Method::GET, path, query, action)
+            .await?
+            .json::<T>()
+            .await
+            .map_err(|e| AppError::Spotify(format!("respuesta inesperada de {path}: {e}")))
+    }
+
+    /// Pedido `method` a `path`; una respuesta no exitosa se traduce con
+    /// [`status_error`].
+    async fn send(
+        &self,
+        method: Method,
+        path: &str,
+        query: &[(&str, &str)],
+        action: &str,
+    ) -> Result<Response, AppError> {
+        let response = request(&self.http, method, path, query)
             .bearer_auth(self.token.access_token())
             .send()
             .await
@@ -118,11 +210,41 @@ impl WebClient {
             let body = response.text().await.unwrap_or_default();
             return Err(status_error(status, retry_after, &body, action));
         }
-        response
-            .json::<T>()
-            .await
-            .map_err(|e| AppError::Spotify(format!("respuesta inesperada de {path}: {e}")))
+        Ok(response)
     }
+}
+
+/// Arma un pedido a la Web API. Uno que no es `GET` va con cuerpo vacío y
+/// `Content-Length: 0`: sin eso, `PUT /me/library` responde 411.
+fn request(
+    http: &reqwest::Client,
+    method: Method,
+    path: &str,
+    query: &[(&str, &str)],
+) -> reqwest::RequestBuilder {
+    let with_body = method != Method::GET;
+    let builder = http
+        .request(method, format!("{}{path}", config::WEB_API_BASE))
+        .query(query);
+    if with_body {
+        builder.header(CONTENT_LENGTH, "0").body(Vec::new())
+    } else {
+        builder
+    }
+}
+
+/// `spotify:track:…` para el parámetro `uris`.
+fn uri_param(uri: &SpotifyUri) -> Result<String, AppError> {
+    uri.to_uri()
+        .map_err(|e| AppError::Internal(format!("URI sin texto: {e}")))
+}
+
+/// Resultado de [`WebClient::my_playlists`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct MyPlaylists {
+    pub hits: Vec<Hit>,
+    /// Cuántas informa Spotify en total.
+    pub total: usize,
 }
 
 /// Qué se busca.
@@ -170,6 +292,15 @@ struct SearchResponse {
 struct Page<T> {
     /// La API puede mandar `null` en lugar de un elemento.
     items: Vec<Option<T>>,
+}
+
+/// Una página de `GET /me/playlists`.
+#[derive(Deserialize)]
+struct PlaylistPage {
+    items: Vec<Option<PlaylistItem>>,
+    next: Option<String>,
+    #[serde(default)]
+    total: usize,
 }
 
 #[derive(Deserialize)]
@@ -224,25 +355,30 @@ impl SearchResponse {
                 );
                 (t.uri, t.name, detail)
             })
-            .chain(playlists.map(|p| {
-                let owner = p.owner.display_name.unwrap_or(p.owner.id);
-                let detail = match p.items {
-                    Some(Total { total }) => format!("de {owner} · {total} temas"),
-                    None => format!("de {owner}"),
-                };
-                (p.uri, p.name, detail)
-            }))
-            .filter_map(|(uri, name, detail)| {
-                let uri = SpotifyUri::from_uri(&uri).ok()?;
-                Some(Hit {
-                    uri,
-                    name: name.trim().to_string(),
-                    detail,
-                })
-            })
+            .filter_map(|(uri, name, detail)| hit(&uri, &name, detail))
+            .chain(playlists.filter_map(playlist_hit))
             .take(config::SEARCH_LIMIT)
             .collect()
     }
+}
+
+/// Una playlist como `Hit` ("de dueño · N temas"); URI inválida → `None`.
+fn playlist_hit(p: PlaylistItem) -> Option<Hit> {
+    let owner = p.owner.display_name.unwrap_or(p.owner.id);
+    let detail = match p.items {
+        Some(Total { total }) => format!("de {owner} · {total} temas"),
+        None => format!("de {owner}"),
+    };
+    hit(&p.uri, &p.name, detail)
+}
+
+/// `Hit` con el nombre sin espacios de más; URI inválida → `None`.
+fn hit(uri: &str, name: &str, detail: String) -> Option<Hit> {
+    Some(Hit {
+        uri: SpotifyUri::from_uri(uri).ok()?,
+        name: name.trim().to_string(),
+        detail,
+    })
 }
 
 /// `m:ss` (los minutos no se cortan en horas: 75:02).
@@ -409,6 +545,62 @@ mod tests {
                 .unwrap()
                 .hits()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn pagina_de_mis_playlists() {
+        let json = r#"{"items":[
+            {"uri":"spotify:playlist:627lheesMF3W2repUfJb5M","name":"Mía",
+             "owner":{"id":"yo","display_name":"Gonza"},"items":{"total":12}},
+            null,
+            {"uri":"spotify:playlist:1yBGduvI0IvHYwc1JNpdJC","name":"Seguida",
+             "owner":{"id":"otro"},"tracks":{"total":3}},
+            {"uri":"no-es-uri","name":"Rota","owner":{"id":"z"}}
+        ],"next":"https://api.spotify.com/v1/me/playlists?offset=50","total":120}"#;
+        let page: PlaylistPage = serde_json::from_str(json).unwrap();
+        assert!(page.next.is_some());
+        assert_eq!(page.total, 120);
+        let lines: Vec<_> = page
+            .items
+            .into_iter()
+            .flatten()
+            .filter_map(playlist_hit)
+            .map(|h| format!("{} {}", h.name, h.detail))
+            .collect();
+        assert_eq!(
+            lines,
+            ["Mía de Gonza · 12 temas", "Seguida de otro · 3 temas"]
+        );
+    }
+
+    #[test]
+    fn ultima_pagina_de_mis_playlists() {
+        let page: PlaylistPage =
+            serde_json::from_str(r#"{"items":[],"next":null,"total":0}"#).unwrap();
+        assert!(page.next.is_none() && page.items.is_empty());
+    }
+
+    #[test]
+    fn put_y_delete_van_con_content_length_cero() {
+        let http = reqwest::Client::new();
+        for method in [Method::PUT, Method::DELETE] {
+            let req = request(&http, method.clone(), "/me/library", &[("uris", "x")])
+                .build()
+                .unwrap();
+            assert_eq!(req.headers()[CONTENT_LENGTH], "0", "{method}");
+            assert_eq!(req.body().and_then(|b| b.as_bytes()), Some(&[][..]));
+        }
+        let get = request(&http, Method::GET, "/me", &[]).build().unwrap();
+        assert!(get.headers().get(CONTENT_LENGTH).is_none());
+    }
+
+    #[test]
+    fn uri_para_el_parametro_uris() {
+        let uri = SpotifyUri::from_uri("spotify:track:4PTG3Z6ehGkBFwjybzWkR8").unwrap();
+        assert_eq!(
+            uri_param(&uri).unwrap(),
+            "spotify:track:4PTG3Z6ehGkBFwjybzWkR8"
         );
     }
 

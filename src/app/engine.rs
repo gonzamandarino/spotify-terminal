@@ -29,7 +29,7 @@ use tokio::{
 
 use super::{
     backend::{Backend, ClientIdStatus, Playback, SpotifyBackend},
-    queue::{Clock, PlayState, Queue, Step, on_player_event, uri_text},
+    queue::{Clock, PlayState, Queue, Step, TrackInfo, on_player_event, uri_text},
     shell::{self, ShellCommand, VolumeCommand},
     volume::Volume,
 };
@@ -41,7 +41,7 @@ use crate::{
         cover::Cover,
         player::Resolved,
         tap::AudioTap,
-        web::{Hit, SearchKind, User},
+        web::{Hit, MyPlaylists, SearchKind, User},
     },
     ui::{cli::Command, select},
 };
@@ -174,6 +174,9 @@ pub(crate) struct NowPlaying {
     /// URL de la tapa del disco (spec 010); llega con `Output::Cover` si
     /// la ventana las pidió.
     pub(crate) cover: Option<String>,
+    /// Si el tema está en Tus me gusta (spec 011); `None` = no se sabe
+    /// (consultando, falló, o es un episodio).
+    pub(crate) liked: Option<bool>,
 }
 
 /// Qué espera la línea de entrada.
@@ -292,6 +295,7 @@ pub(crate) fn spawn(
 
 const NOTHING_PLAYING: &str = "⚠ No suena nada. Probá con `play <nombre>`.";
 const NOTHING_TO_SHUFFLE: &str = "⚠ Hay un solo tema: no hay nada que mezclar.";
+const ONLY_TRACKS: &str = "⚠ Solo se pueden likear temas (esto es un episodio).";
 
 /// Para qué se buscó.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -309,6 +313,11 @@ enum Done<P> {
         kind: SearchKind,
         query: String,
         result: Result<Vec<Hit>, AppError>,
+    },
+    /// `playlists`: mis playlists, para elegir una.
+    MyPlaylists {
+        shuffle: bool,
+        result: Result<MyPlaylists, AppError>,
     },
     /// Lista de temas lista para sonar. `new_player` viene si hubo que
     /// conectar (no había reproductor, se había caído la sesión o cambió
@@ -333,10 +342,30 @@ struct Playing {
     artists: String,
     duration: Duration,
     cover: Option<String>,
+    /// El tema que suena según el último `TrackChanged`; `None` hasta que
+    /// llega.
+    uri: Option<SpotifyUri>,
+    /// Si `uri` está en Tus me gusta; `None` = no se sabe.
+    liked: Option<bool>,
 }
 
 /// Descarga de una tapa: su URL y cómo terminó.
 type CoverTask = Pin<Box<dyn Future<Output = (String, Result<Cover, AppError>)>>>;
+
+/// Consulta de si un tema está en Tus me gusta: el tema y la respuesta.
+type CheckTask = Pin<Box<dyn Future<Output = (SpotifyUri, Result<bool, AppError>)>>>;
+
+/// `like` / `unlike` en curso.
+type SaveTask = Pin<Box<dyn Future<Output = Saved>>>;
+
+/// Cómo terminó un `like` (`save`) o `unlike`.
+struct Saved {
+    uri: SpotifyUri,
+    /// Nombre del tema al pedirlo, para el mensaje.
+    name: String,
+    save: bool,
+    result: Result<(), AppError>,
+}
 
 /// Estado del motor.
 ///
@@ -351,6 +380,10 @@ type CoverTask = Pin<Box<dyn Future<Output = (String, Result<Cover, AppError>)>>
 /// - `save_at` es `Some` si hay un cambio de volumen sin guardar.
 /// - Con `asking`, `choosing` es `None`: pedir el Client ID
 ///   cancela la elección.
+/// - `check_task` y `save_task` corren aparte de `task` (spec 011): a lo
+///   sumo una consulta de ♥ (la del último tema) y un like/unlike a la
+///   vez. Sus respuestas llevan la URI pedida y solo cambian el ♥ si
+///   sigue sonando ese tema.
 pub(crate) struct Engine<B: Backend> {
     backend: Rc<B>,
     player: Option<Rc<B::Player>>,
@@ -383,6 +416,8 @@ pub(crate) struct Engine<B: Backend> {
     cover_task: Option<CoverTask>,
     /// Última tapa pedida (bajándose o ya mandada): no se pide de nuevo.
     cover_asked: Option<String>,
+    check_task: Option<CheckTask>,
+    save_task: Option<SaveTask>,
 }
 
 impl<B: Backend + 'static> Engine<B> {
@@ -411,6 +446,8 @@ impl<B: Backend + 'static> Engine<B> {
             covers: false,
             cover_task: None,
             cover_asked: None,
+            check_task: None,
+            save_task: None,
         }
     }
 
@@ -437,6 +474,14 @@ impl<B: Backend + 'static> Engine<B> {
                 (url, result) = finish_cover(&mut self.cover_task) => {
                     self.cover_task = None;
                     self.on_cover(url, result);
+                }
+                (uri, result) = finish_lane(&mut self.check_task) => {
+                    self.check_task = None;
+                    self.on_checked(uri, result);
+                }
+                saved = finish_lane(&mut self.save_task) => {
+                    self.save_task = None;
+                    self.on_saved(saved);
                 }
             }
             self.publish();
@@ -652,6 +697,9 @@ impl<B: Backend + 'static> Engine<B> {
                     self.search(SearchKind::Track, query, Purpose::Enqueue);
                 }
             }
+            ShellCommand::Like => self.set_liked(true),
+            ShellCommand::Unlike => self.set_liked(false),
+            ShellCommand::Playlists { shuffle } => self.my_playlists(shuffle),
             ShellCommand::Stop => {
                 if self.playing.is_some() {
                     self.stop_playing();
@@ -746,6 +794,128 @@ impl<B: Backend + 'static> Engine<B> {
         );
     }
 
+    fn my_playlists(&mut self, shuffle: bool) {
+        let backend = self.backend.clone();
+        if self.start_task(
+            "buscando tus playlists",
+            Box::pin(async move {
+                let result = backend.my_playlists().await;
+                Done::MyPlaylists { shuffle, result }
+            }),
+        ) {
+            self.out.line(LineKind::Dim, "Buscando tus playlists…");
+        }
+    }
+
+    /// `like` (`save`) o `unlike` del tema que suena.
+    ///
+    /// Si ya se sabe que está (o no está) en Tus me gusta, avisa sin
+    /// pedir nada; si no se sabe, pide igual (guardar y quitar son
+    /// idempotentes). Solo un like/unlike a la vez.
+    fn set_liked(&mut self, save: bool) {
+        let Some(playing) = &self.playing else {
+            self.out.line(LineKind::Warn, NOTHING_PLAYING);
+            return;
+        };
+        let Some(uri) = playing.uri.clone() else {
+            self.out
+                .line(LineKind::Warn, "⚠ Esperá a que empiece a sonar el tema.");
+            return;
+        };
+        if !matches!(uri, SpotifyUri::Track { .. }) {
+            self.out.line(LineKind::Warn, ONLY_TRACKS);
+            return;
+        }
+        if self.save_task.is_some() {
+            self.out
+                .line(LineKind::Warn, "⚠ Esperá a que termine el like anterior.");
+            return;
+        }
+        let name = playing.title.clone();
+        match (playing.liked, save) {
+            (Some(true), true) => {
+                self.out.line(
+                    LineKind::Normal,
+                    format!("♥ {name} ya estaba en Tus me gusta."),
+                );
+                return;
+            }
+            (Some(false), false) => {
+                self.out.line(
+                    LineKind::Normal,
+                    format!("{name} no estaba en Tus me gusta."),
+                );
+                return;
+            }
+            _ => {}
+        }
+        // Una consulta en vuelo podría pisar el ♥ con el estado de antes.
+        self.check_task = None;
+        let backend = self.backend.clone();
+        self.save_task = Some(Box::pin(async move {
+            let result = backend.set_saved(&uri, save).await;
+            Saved {
+                uri,
+                name,
+                save,
+                result,
+            }
+        }));
+    }
+
+    fn on_saved(&mut self, saved: Saved) {
+        let Saved {
+            uri,
+            name,
+            save,
+            result,
+        } = saved;
+        match result {
+            Ok(()) => {
+                if let Some(playing) = &mut self.playing {
+                    if playing.uri.as_ref() == Some(&uri) {
+                        playing.liked = Some(save);
+                    }
+                }
+                let text = if save {
+                    format!("♥ {name} — agregado a Tus me gusta")
+                } else {
+                    format!("♡ {name} — quitado de Tus me gusta")
+                };
+                self.out.line(LineKind::Ok, text);
+            }
+            Err(e) => self.out.error(&e),
+        }
+    }
+
+    /// Consulta si el tema que suena está en Tus me gusta (una vez por
+    /// tema; los episodios no se consultan). Una consulta anterior se
+    /// abandona.
+    fn check_liked(&mut self) {
+        self.check_task = None;
+        let Some(uri) = self.playing.as_ref().and_then(|p| p.uri.clone()) else {
+            return;
+        };
+        if !matches!(uri, SpotifyUri::Track { .. }) {
+            return;
+        }
+        let backend = self.backend.clone();
+        self.check_task = Some(Box::pin(async move {
+            let result = backend.is_saved(&uri).await;
+            (uri, result)
+        }));
+    }
+
+    /// Respuesta de la consulta del ♥. Un error no se avisa (el ♥ queda
+    /// en "no se sabe"): pasaría en cada tema sin que se pueda hacer nada.
+    fn on_checked(&mut self, uri: SpotifyUri, result: Result<bool, AppError>) {
+        if let (Some(playing), Ok(liked)) = (&mut self.playing, result) {
+            if playing.uri.as_ref() == Some(&uri) {
+                playing.liked = Some(liked);
+            }
+        }
+    }
+
     /// Resuelve qué temas suenan para `target` (conectando si hace falta).
     fn prepare(&mut self, target: SpotifyUri, shuffle: bool) {
         let backend = self.backend.clone();
@@ -828,6 +998,36 @@ impl<B: Backend + 'static> Engine<B> {
                 }
                 Err(e) => self.out.error(&e),
             },
+            Done::MyPlaylists { shuffle, result } => match result {
+                Ok(list) if list.hits.is_empty() => {
+                    self.out
+                        .line(LineKind::Warn, "⚠ No tenés playlists guardadas.");
+                }
+                Ok(list) => {
+                    for (i, hit) in list.hits.iter().enumerate() {
+                        self.out.line(LineKind::Normal, select::hit_line(i, hit));
+                    }
+                    if list.hits.len() >= config::MY_PLAYLISTS_MAX && list.total > list.hits.len() {
+                        self.out.line(
+                            LineKind::Warn,
+                            format!(
+                                "⚠ Se muestran las primeras {}: {} quedan afuera.",
+                                list.hits.len(),
+                                list.total - list.hits.len()
+                            ),
+                        );
+                    }
+                    self.out.line(
+                        LineKind::Dim,
+                        format!(
+                            "Elegí 1-{} y Enter (Enter solo = la primera, Esc cancela).",
+                            list.hits.len()
+                        ),
+                    );
+                    self.choosing = Some((list.hits, Purpose::Play { shuffle }));
+                }
+                Err(e) => self.out.error(&e),
+            },
             Done::Prepared {
                 shuffle,
                 new_player,
@@ -905,6 +1105,8 @@ impl<B: Backend + 'static> Engine<B> {
             artists: String::new(),
             duration: Duration::ZERO,
             cover: None,
+            uri: None,
+            liked: None,
         });
     }
 
@@ -1004,20 +1206,37 @@ impl<B: Backend + 'static> Engine<B> {
             || player.session_lost(),
         );
         if let Some(track) = track {
-            let text = format!(
-                "♪ {}{} — {}",
-                playing.queue.position(),
-                track.name,
-                track.artists
-            );
-            playing.title = track.name;
-            playing.artists = track.artists;
-            playing.duration = track.duration;
-            playing.cover = track.cover;
-            self.out.line(LineKind::Track, text);
-            self.fetch_cover();
+            self.on_track(track);
         }
         self.apply(step);
+    }
+
+    /// Empezó a cargar un tema: se muestra, se pide su tapa y, si es otro
+    /// que el anterior, se consulta su ♥.
+    fn on_track(&mut self, track: TrackInfo) {
+        let Some(playing) = &mut self.playing else {
+            return;
+        };
+        let text = format!(
+            "♪ {}{} — {}",
+            playing.queue.position(),
+            track.name,
+            track.artists
+        );
+        playing.title = track.name;
+        playing.artists = track.artists;
+        playing.duration = track.duration;
+        playing.cover = track.cover;
+        let changed = playing.uri.as_ref() != Some(&track.uri);
+        if changed {
+            playing.uri = Some(track.uri);
+            playing.liked = None;
+        }
+        self.out.line(LineKind::Track, text);
+        self.fetch_cover();
+        if changed {
+            self.check_liked();
+        }
     }
 
     fn apply(&mut self, step: Step) {
@@ -1116,6 +1335,7 @@ impl<B: Backend + 'static> Engine<B> {
             shuffle: p.queue.shuffled(),
             queued: p.queue.queued(),
             cover: p.cover.clone(),
+            liked: p.liked,
         });
         if now != self.shown {
             self.shown.clone_from(&now);
@@ -1178,6 +1398,14 @@ async fn finish_cover(task: &mut Option<CoverTask>) -> (String, Result<Cover, Ap
     }
 }
 
+/// Espera la consulta o el like en curso; sin nada, no termina nunca.
+async fn finish_lane<T>(task: &mut Option<Pin<Box<dyn Future<Output = T>>>>) -> T {
+    match task.as_mut() {
+        Some(task) => task.await,
+        None => std::future::pending().await,
+    }
+}
+
 /// Espera la tarea en curso; sin tarea, no termina nunca.
 async fn finish<P>(task: &mut Option<Task<P>>) -> Done<P> {
     match task.as_mut() {
@@ -1188,7 +1416,7 @@ async fn finish<P>(task: &mut Option<Task<P>>) -> Done<P> {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     use super::*;
 
@@ -1237,6 +1465,12 @@ mod tests {
         client_id: ClientIdStatus,
         /// Lo que devuelve `set_client_id`.
         applied: setup::Applied,
+        /// IDs de los temas en Tus me gusta.
+        library: RefCell<Vec<String>>,
+        /// Si fallan los pedidos a Tus me gusta.
+        library_fails: Cell<bool>,
+        /// Cuántas playlists devuelve `my_playlists` y cuántas dice que hay.
+        playlists: (usize, usize),
     }
 
     impl Backend for FakeBackend {
@@ -1278,6 +1512,42 @@ mod tests {
                     detail: String::new(),
                 })
                 .collect())
+        }
+        async fn my_playlists(&self) -> Result<MyPlaylists, AppError> {
+            self.log.borrow_mut().push("my-playlists".into());
+            let (shown, total) = self.playlists;
+            let hits = (1..=shown)
+                .map(|i| Hit {
+                    uri: SpotifyUri::from_uri(&format!(
+                        "spotify:playlist:{:0>22}",
+                        format!("p{i}")
+                    ))
+                    .unwrap(),
+                    name: format!("p{i}"),
+                    detail: "de yo".into(),
+                })
+                .collect();
+            Ok(MyPlaylists { hits, total })
+        }
+        async fn is_saved(&self, uri: &SpotifyUri) -> Result<bool, AppError> {
+            self.log.borrow_mut().push(format!("saved? {}", id(uri)));
+            if self.library_fails.get() {
+                return Err(AppError::Network("sin red".into()));
+            }
+            Ok(self.library.borrow().contains(&id(uri)))
+        }
+        async fn set_saved(&self, uri: &SpotifyUri, save: bool) -> Result<(), AppError> {
+            let verb = if save { "save" } else { "unsave" };
+            self.log.borrow_mut().push(format!("{verb} {}", id(uri)));
+            if self.library_fails.get() {
+                return Err(AppError::Network("sin red".into()));
+            }
+            let mut library = self.library.borrow_mut();
+            library.retain(|t| *t != id(uri));
+            if save {
+                library.push(id(uri));
+            }
+            Ok(())
         }
         async fn connect(&self, volume: Volume, bitrate: Bitrate) -> Result<FakePlayer, AppError> {
             let line = if bitrate == config::AUDIO_BITRATE {
@@ -1350,6 +1620,9 @@ mod tests {
                 changed: true,
                 overridden_by_env: false,
             },
+            library: RefCell::default(),
+            library_fails: Cell::new(false),
+            playlists: (3, 3),
         };
         Harness {
             engine: Engine::new(backend, out, Volume::default(), None),
@@ -1423,6 +1696,47 @@ mod tests {
             }
         }
 
+        /// Suena `uri` (como si hubiera llegado su `TrackChanged`), sin
+        /// esperar la consulta del ♥.
+        async fn track_changed(&mut self, uri: SpotifyUri) {
+            if self.engine.playing.is_none() {
+                self.type_line(&format!("play {}", album("a"))).await;
+                self.confirm(1);
+            }
+            let name = id(&uri);
+            self.engine.on_track(TrackInfo {
+                uri,
+                name,
+                artists: "Artista".into(),
+                duration: Duration::from_secs(200),
+                cover: None,
+            });
+            self.engine.publish();
+        }
+
+        /// Suena el tema `name` y ya se sabe su ♥.
+        async fn playing_track(&mut self, name: &str) {
+            self.track_changed(track(name)).await;
+            self.finish_library().await;
+        }
+
+        /// Termina la consulta del ♥ y el like/unlike en curso.
+        async fn finish_library(&mut self) {
+            if let Some(task) = self.engine.check_task.take() {
+                let (uri, result) = task.await;
+                self.engine.on_checked(uri, result);
+            }
+            if let Some(task) = self.engine.save_task.take() {
+                let saved = task.await;
+                self.engine.on_saved(saved);
+            }
+            self.engine.publish();
+        }
+
+        fn liked(&self) -> Option<bool> {
+            self.engine.shown.as_ref().and_then(|now| now.liked)
+        }
+
         fn covers_sent(&self) -> Vec<String> {
             self.outputs()
                 .into_iter()
@@ -1491,6 +1805,198 @@ mod tests {
         outputs
             .iter()
             .any(|o| matches!(o, Output::Line(k, t) if *k == kind && t.contains(text)))
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn like_agrega_el_tema_y_prende_el_corazon() {
+        let mut h = harness(true);
+        h.playing_track("t1").await;
+        assert!(h.take_log().contains(&"saved? t1".to_string()));
+        assert_eq!(h.liked(), Some(false));
+        h.outputs();
+
+        h.type_line("like").await;
+        h.finish_library().await;
+        assert_eq!(h.take_log(), ["save t1"]);
+        assert!(has_line(
+            &h.outputs(),
+            LineKind::Ok,
+            "♥ t1 — agregado a Tus me gusta"
+        ));
+        assert_eq!(h.liked(), Some(true));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn like_o_unlike_que_no_cambian_nada_no_piden() {
+        let mut h = harness(true);
+        h.engine.backend.library.borrow_mut().push("t1".into());
+        h.playing_track("t1").await;
+        assert_eq!(h.liked(), Some(true));
+        h.take_log();
+
+        h.type_line("like").await;
+        assert!(h.engine.save_task.is_none());
+        assert!(has_line(&h.outputs(), LineKind::Normal, "ya estaba"));
+
+        h.type_line("unlike").await;
+        h.finish_library().await;
+        assert_eq!(h.take_log(), ["unsave t1"]);
+        assert!(has_line(
+            &h.outputs(),
+            LineKind::Ok,
+            "quitado de Tus me gusta"
+        ));
+        assert_eq!(h.liked(), Some(false));
+
+        h.type_line("unlike").await;
+        assert!(h.engine.save_task.is_none());
+        assert!(has_line(&h.outputs(), LineKind::Normal, "no estaba"));
+        assert!(h.take_log().is_empty());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn like_sin_saber_el_estado_pide_igual_y_descarta_la_consulta() {
+        let mut h = harness(true);
+        h.track_changed(track("t1")).await;
+        assert!(h.engine.check_task.is_some());
+        h.type_line("like").await;
+        assert!(h.engine.check_task.is_none());
+        h.finish_library().await;
+        assert_eq!(h.liked(), Some(true));
+        assert!(has_line(&h.outputs(), LineKind::Ok, "agregado"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn like_sin_nada_sonando_o_con_un_episodio_no_pide() {
+        let mut h = harness(true);
+        h.type_line("like").await;
+        h.type_line("unlike").await;
+        let outputs = h.outputs();
+        assert!(has_line(&outputs, LineKind::Warn, "No suena nada"));
+        assert!(h.engine.save_task.is_none());
+
+        let episode = SpotifyUri::from_uri(&format!("spotify:episode:{:0>22}", "e1")).unwrap();
+        h.track_changed(episode).await;
+        assert!(h.engine.check_task.is_none());
+        h.type_line("like").await;
+        assert!(has_line(
+            &h.outputs(),
+            LineKind::Warn,
+            "Solo se pueden likear temas"
+        ));
+        assert!(h.engine.save_task.is_none());
+        assert!(!h.take_log().iter().any(|l| l.contains("save")));
+        assert_eq!(h.liked(), None);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn cambio_de_tema_consulta_de_nuevo_y_una_respuesta_vieja_no_pisa() {
+        let mut h = harness(true);
+        h.playing_track("t1").await;
+        h.type_line("like").await;
+        // Antes de que vuelva el like, ya suena otro tema.
+        let save = h.engine.save_task.take().unwrap();
+        h.track_changed(track("t2")).await;
+        assert!(h.engine.check_task.is_some());
+        h.engine.on_saved(save.await);
+        h.engine.on_checked(track("t1"), Ok(true));
+        h.engine.publish();
+        assert_eq!(h.liked(), None);
+        assert!(has_line(&h.outputs(), LineKind::Ok, "♥ t1 — agregado"));
+        h.finish_library().await;
+        assert_eq!(h.liked(), Some(false));
+
+        // El mismo tema otra vez (p. ej. reiniciado) no se vuelve a consultar.
+        h.track_changed(track("t2")).await;
+        assert!(h.engine.check_task.is_none());
+        assert_eq!(h.liked(), Some(false));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn un_like_por_vez() {
+        let mut h = harness(true);
+        h.playing_track("t1").await;
+        h.type_line("like").await;
+        h.type_line("unlike").await;
+        assert!(has_line(&h.outputs(), LineKind::Warn, "like anterior"));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn error_de_tus_me_gusta_se_ve_y_no_corta_lo_que_suena() {
+        let mut h = harness(true);
+        h.engine.backend.library_fails.set(true);
+        h.playing_track("t1").await;
+        // La consulta falla callada: el ♥ queda sin saber.
+        assert_eq!(h.liked(), None);
+        assert!(
+            !h.outputs()
+                .iter()
+                .any(|o| matches!(o, Output::Line(LineKind::Error, _)))
+        );
+        h.type_line("like").await;
+        h.finish_library().await;
+        assert!(has_line(&h.outputs(), LineKind::Error, "sin red"));
+        assert!(h.engine.playing.is_some());
+        assert_eq!(h.liked(), None);
+        assert!(!h.take_log().contains(&"stop".to_string()));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn playlists_lista_y_elegir_reproduce() {
+        let mut h = harness(true);
+        h.type_line("playlists").await;
+        let outputs = h.outputs();
+        assert!(has_line(&outputs, LineKind::Dim, "Buscando tus playlists…"));
+        assert!(has_line(&outputs, LineKind::Normal, "  1. p1 — de yo"));
+        assert!(has_line(&outputs, LineKind::Normal, "  3. p3 — de yo"));
+        assert!(outputs.contains(&Output::Prompt(Prompt::Choose(3))));
+        h.type_line("9").await;
+        assert!(has_line(&h.outputs(), LineKind::Warn, "del 1 al 3"));
+        h.type_line("2").await;
+        assert_eq!(h.take_log(), ["my-playlists", "connect 100 %", "play p2x0"]);
+
+        h.type_line("pl").await;
+        h.type_line("").await;
+        assert_eq!(h.take_log(), ["my-playlists", "stop", "play p1x0"]);
+
+        h.type_line("pl -s").await;
+        h.type_line("3").await;
+        assert!(h.engine.playing.as_ref().unwrap().queue.shuffled());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn playlists_vacia_avisa_y_no_espera_numero() {
+        let mut h = harness(true);
+        h.engine.backend = Rc::new(FakeBackend {
+            playlists: (0, 0),
+            ..Rc::into_inner(h.engine.backend).unwrap()
+        });
+        h.type_line("playlists").await;
+        assert!(has_line(&h.outputs(), LineKind::Warn, "No tenés playlists"));
+        assert!(h.engine.choosing.is_none());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn playlists_de_mas_se_cortan_en_el_tope_con_aviso() {
+        let mut h = harness(true);
+        let max = config::MY_PLAYLISTS_MAX;
+        h.engine.backend = Rc::new(FakeBackend {
+            playlists: (max, max + 7),
+            ..Rc::into_inner(h.engine.backend).unwrap()
+        });
+        h.type_line("playlists").await;
+        let outputs = h.outputs();
+        assert!(has_line(&outputs, LineKind::Warn, "7 quedan afuera"));
+        assert!(outputs.contains(&Output::Prompt(Prompt::Choose(max))));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn help_incluye_like_y_playlists() {
+        let mut h = harness(true);
+        h.type_line("help").await;
+        let outputs = h.outputs();
+        assert!(has_line(&outputs, LineKind::Normal, "like / unlike"));
+        assert!(has_line(&outputs, LineKind::Normal, "playlists, pl"));
     }
 
     #[tokio::test(flavor = "current_thread")]
