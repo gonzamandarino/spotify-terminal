@@ -91,6 +91,10 @@ se escribe.
 | `version` | versión de la app |
 | `clear` / `exit` | limpia la consola / cierra |
 
+La barra de abajo tiene botones: ⏮ ⏯ ⏭ en el centro, ♥ al lado del tema
+(agrega o quita de Tus me gusta) y 🔀 shuffle a la derecha. Hacen lo mismo
+que sus comandos; al pasar el mouse muestran el atajo.
+
 Después de una búsqueda, se elige con el número y Enter (Enter solo = el
 primero). ↑/↓ recorren el historial, Tab completa el comando y Esc cancela
 una búsqueda o elección. Un `play` nuevo reemplaza lo que suena.
